@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.10" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
+    <PackageReference Include="NAudio.Core" Version="2.2.1" />
+    <PackageReference Include="NAudio.Vorbis" Version="1.5.0" />
+    <PackageReference Include="VGAudio" Version="2.2.1" />
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="TestConfiguration.cs" />
+    <Compile Remove="TestBenchmarkCache.cs" />
+    <Compile Include="..\..\src\Plugin\Configuration.cs" Link="Source\Configuration.cs" />
+    <Compile Include="..\..\src\Audio\StreamingAudioBuffer.cs" Link="Source\StreamingAudioBuffer.cs" />
+    <Compile Include="..\..\src\Bootstrap\BackendSelector.cs" Link="Source\BackendSelector.cs" />
+    <Compile Include="..\..\src\Bootstrap\AssetManager.cs" Link="Source\AssetManager.cs" />
+    <Compile Include="..\..\src\Bootstrap\AssetManifest.cs" Link="Source\AssetManifest.cs" />
+    <Compile Include="..\..\src\Bootstrap\BackendBenchmark.cs" Link="Source\BackendBenchmark.cs" />
+    <Compile Include="..\..\src\Bootstrap\RuntimePackManager.cs" Link="Source\RuntimePackManager.cs" />
+    <Compile Include="..\..\src\Bootstrap\RuntimeEnvironmentIdentity.cs" Link="Source\RuntimeEnvironmentIdentity.cs" />
+    <Compile Include="..\..\src\Data\Database.cs" Link="Source\Database.cs" />
+    <Compile Include="..\..\src\Data\LineCache.cs" Link="Source\LineCache.cs" />
+    <Compile Include="..\..\src\Game\ScdExtractor.cs" Link="Source\ScdExtractor.cs" />
+    <Compile Include="..\..\src\Game\OfficialReferenceBuilder.cs" Link="Source\OfficialReferenceBuilder.cs" />
+    <Compile Include="..\..\src\Plugin\LegacyCastingMigration.cs" Link="Source\LegacyCastingMigration.cs" />
+    <Compile Include="..\..\src\Scheduling\CutsceneSession.cs" Link="Source\CutsceneSession.cs" />
+    <Compile Include="..\..\src\Scheduling\DubLine.cs" Link="Source\DubLine.cs" />
+    <Compile Include="..\..\src\Scheduling\DubScheduler.cs" Link="Source\DubScheduler.cs" />
+    <Compile Include="..\..\src\Tts\ITtsRuntime.cs" Link="Source\ITtsRuntime.cs" />
+    <Compile Include="..\..\src\Tts\CastingProfileCatalog.cs" Link="Source\CastingProfileCatalog.cs" />
+    <Compile Include="..\..\src\Tts\CastingPoolScheduler.cs" Link="Source\CastingPoolScheduler.cs" />
+    <Compile Include="..\..\src\Tts\CastingDomainPool.cs" Link="Source\CastingDomainPool.cs" />
+    <Compile Include="..\..\src\Tts\QwenNative.cs" Link="Source\QwenNative.cs" />
+    <Compile Include="..\..\src\Tts\QwenCppRuntime.cs" Link="Source\QwenCppRuntime.cs" />
+    <Compile Include="..\..\src\Tts\VoiceDesigner.cs" Link="Source\VoiceDesigner.cs" />
+    <Compile Include="..\..\src\Tts\VoiceRegistry.cs" Link="Source\VoiceRegistry.cs" />
+    <None Include="..\..\assets\dub-profiles.json" Link="assets\dub-profiles.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

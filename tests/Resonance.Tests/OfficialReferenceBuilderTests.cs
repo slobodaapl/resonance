@@ -1,0 +1,222 @@
+using Resonance.Audio;
+using Resonance.Data;
+using Resonance.Game;
+using Resonance.Tts;
+
+namespace Resonance.Tests;
+
+public sealed class OfficialReferenceBuilderTests
+{
+    [Fact]
+    public async Task LegacyUnknownClipIsAdoptedOnlyForTheObservedLanguage()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "resonance-reference-builder-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var path = Path.Combine(root, "voices.sqlite3");
+        try
+        {
+            using var database = new Database(path);
+            await database.WriteAsync(async connection =>
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    INSERT INTO speaker(stable_key,display_name,first_territory,created_utc)
+                    VALUES('npc:legacy-reference','Legacy Reference',1,'now');
+                    INSERT INTO official_reference_clip(
+                      speaker_id,source_hash,language,transcript,duration_seconds,created_utc)
+                    VALUES(
+                      (SELECT id FROM speaker WHERE stable_key='npc:legacy-reference'),
+                      'legacy-source','und','Observed line',1.0,'now');
+                    """;
+                await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+            }, TestContext.Current.CancellationToken);
+
+            var registry = new VoiceRegistry(database);
+            await using var builder = NewBuilder(database, registry, root);
+            var speakerId = await SpeakerIdAsync(database);
+
+            await builder.AddPcmAsync(speakerId, "legacy-source", "Observed line", "en",
+                Pcm(), TestContext.Current.CancellationToken);
+
+            var language = await database.ReadAsync(async connection =>
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = "SELECT language FROM official_reference_clip WHERE speaker_id=$speaker AND source_hash='legacy-source'";
+                command.Parameters.AddWithValue("$speaker", speakerId);
+                return (string?)await command.ExecuteScalarAsync(TestContext.Current.CancellationToken);
+            }, TestContext.Current.CancellationToken);
+
+            Assert.Equal("english", language);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task LegacyUnknownClipIsNotAdoptedWhenExactLanguageAlreadyExists()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "resonance-reference-builder-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var path = Path.Combine(root, "voices.sqlite3");
+        try
+        {
+            using var database = new Database(path);
+            await database.WriteAsync(async connection =>
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    INSERT INTO speaker(stable_key,display_name,first_territory,created_utc)
+                    VALUES('npc:legacy-existing','Legacy Existing',1,'now');
+                    INSERT INTO official_reference_clip(
+                      speaker_id,source_hash,language,transcript,duration_seconds,created_utc)
+                    VALUES
+                      ((SELECT id FROM speaker WHERE stable_key='npc:legacy-existing'),
+                        'shared-source','und','Legacy line',1.0,'now'),
+                      ((SELECT id FROM speaker WHERE stable_key='npc:legacy-existing'),
+                        'shared-source','english','English line',1.0,'now');
+                    """;
+                await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+            }, TestContext.Current.CancellationToken);
+
+            var registry = new VoiceRegistry(database);
+            await using var builder = NewBuilder(database, registry, root);
+            var speakerId = await SpeakerIdAsync(database);
+
+            await builder.AddPcmAsync(speakerId, "shared-source", "English line", "english",
+                Pcm(), TestContext.Current.CancellationToken);
+
+            var languages = await database.ReadAsync(async connection =>
+            {
+                var result = new List<string>();
+                await using var command = connection.CreateCommand();
+                command.CommandText = "SELECT language FROM official_reference_clip WHERE speaker_id=$speaker AND source_hash='shared-source' ORDER BY language";
+                command.Parameters.AddWithValue("$speaker", speakerId);
+                await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+                while (await reader.ReadAsync(TestContext.Current.CancellationToken)) result.Add(reader.GetString(0));
+                return result;
+            }, TestContext.Current.CancellationToken);
+
+            Assert.Equal(["english", "und"], languages);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task SameSourceCanBuildIndependentLanguagePackages()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "resonance-reference-builder-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var path = Path.Combine(root, "voices.sqlite3");
+        try
+        {
+            using var database = new Database(path);
+            await database.WriteAsync(async connection =>
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    INSERT INTO speaker(stable_key,display_name,first_territory,created_utc)
+                    VALUES('npc:language-reference','Language Reference',1,'now');
+                    """;
+                await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+            }, TestContext.Current.CancellationToken);
+
+            var registry = new VoiceRegistry(database);
+            await using var builder = NewBuilder(database, registry, root);
+            var speakerId = await SpeakerIdAsync(database);
+
+            await builder.AddPcmAsync(speakerId, "shared-source", "English line", "english",
+                Pcm(), TestContext.Current.CancellationToken);
+            await builder.AddPcmAsync(speakerId, "shared-source", "Japanese line", "ja",
+                Pcm(), TestContext.Current.CancellationToken);
+            await builder.AddPcmAsync(speakerId, "english-2", "English two", "english",
+                Pcm(), TestContext.Current.CancellationToken);
+            await builder.AddPcmAsync(speakerId, "english-3", "English three", "english",
+                Pcm(), TestContext.Current.CancellationToken);
+            await builder.AddPcmAsync(speakerId, "japanese-2", "Japanese two", "japanese",
+                Pcm(), TestContext.Current.CancellationToken);
+            await builder.AddPcmAsync(speakerId, "japanese-3", "Japanese three", "japanese",
+                Pcm(), TestContext.Current.CancellationToken);
+
+            var languages = await database.ReadAsync(async connection =>
+            {
+                var result = new List<string>();
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    SELECT DISTINCT p.language
+                    FROM speaker_voice sv JOIN voice_profile p ON p.id=sv.profile_id
+                    WHERE sv.speaker_id=$speaker ORDER BY p.language
+                    """;
+                command.Parameters.AddWithValue("$speaker", speakerId);
+                await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+                while (await reader.ReadAsync(TestContext.Current.CancellationToken)) result.Add(reader.GetString(0));
+                return result;
+            }, TestContext.Current.CancellationToken);
+
+            Assert.Equal(["english", "japanese"], languages);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task BuiltSameLanguageOfficialReferenceSupersedesExistingDesignedAssignment()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "resonance-reference-builder-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var path = Path.Combine(root, "voices.sqlite3");
+        try
+        {
+            using var database = new Database(path);
+            var registry = new VoiceRegistry(database);
+            var speaker = await registry.ResolveSpeakerAsync("npc:official-over-designed", 20,
+                "Official Over Designed", 1, "english", TestContext.Current.CancellationToken);
+            var designed = await registry.SaveAndAssignAsync(speaker.Id,
+                VoiceRegistry.CreateProfile(VoiceProfileKind.Designed, "english", "model", 1,
+                    "designed", 1, new VoiceReference([0.2f], [2], 1, 1, "designed")),
+                TestContext.Current.CancellationToken);
+            StoredVoiceProfile? built = null;
+            await using var builder = NewBuilder(database, registry, root);
+            builder.ProfileBuilt += (_, profile) => built = profile;
+
+            await builder.AddPcmAsync(speaker.Id, "official-source-1", "Official one", "english",
+                Pcm(), TestContext.Current.CancellationToken);
+            await builder.AddPcmAsync(speaker.Id, "official-source-2", "Official two", "english",
+                Pcm(), TestContext.Current.CancellationToken);
+            await builder.AddPcmAsync(speaker.Id, "official-source-3", "Official three", "english",
+                Pcm(), TestContext.Current.CancellationToken);
+
+            Assert.NotNull(built);
+            var official = built!;
+            Assert.Equal(VoiceProfileKind.Official, official.Kind);
+            Assert.Equal("english", official.Language);
+            Assert.NotEqual(designed.Id, official.Id);
+            Assert.Equal(official.Id, (await registry.GetBestVoiceAsync(speaker.Id, "english",
+                TestContext.Current.CancellationToken))?.Id);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    private static OfficialReferenceBuilder NewBuilder(Database database, VoiceRegistry registry, string root) =>
+        new(database, registry, new ReferenceRuntime(), new ScdExtractor(), root, "model");
+
+    private static float[] Pcm() => Enumerable.Repeat(0.1f, 24000).ToArray();
+
+    private static Task<long> SpeakerIdAsync(Database database) => database.ReadAsync(async connection =>
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT id FROM speaker ORDER BY id LIMIT 1";
+        return Convert.ToInt64(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+    }, TestContext.Current.CancellationToken);
+
+    private sealed class ReferenceRuntime : ITtsRuntime
+    {
+        public RuntimeCapabilities Capabilities { get; } = new(false, false, false, true, []);
+
+        public ValueTask<VoiceReference> ExtractReferenceAsync(ReadOnlyMemory<float> monoPcm24Khz,
+            string transcript, CancellationToken token) =>
+            ValueTask.FromResult(new VoiceReference([0.1f], [1], 1, 1, transcript));
+
+        public Task SynthesizeAsync(SynthesisRequest request, StreamingAudioBuffer sink, CancellationToken token) =>
+            Task.CompletedTask;
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+}

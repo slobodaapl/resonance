@@ -1,0 +1,260 @@
+name: build
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install Vulkan SDK
+        uses: humbletim/install-vulkan-sdk@v1.2
+        with:
+          version: 1.4.313.0
+          cache: true
+
+      - name: Verify Vulkan SDK installation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          Set-StrictMode -Version Latest
+          $vulkanHeader = Join-Path $env:VULKAN_SDK 'Include/vulkan/vulkan.h'
+          $vulkanLibrary = Join-Path $env:VULKAN_SDK 'Lib/vulkan-1.lib'
+          $vulkanCompiler = Join-Path $env:VULKAN_SDK 'Bin/glslc.exe'
+          if (-not (Test-Path $vulkanHeader) -or -not (Test-Path $vulkanLibrary) -or -not (Test-Path $vulkanCompiler)) {
+            $installer = Join-Path $env:GITHUB_WORKSPACE 'vulkan_sdk.exe'
+            if (-not (Test-Path $installer)) { throw "Vulkan SDK incomplete and installer not found: $installer" }
+            $repairedSdk = Join-Path $env:RUNNER_TEMP 'VulkanSDK'
+            & $installer --root $repairedSdk --accept-licenses --default-answer --confirm-command install
+            $env:VULKAN_SDK = $repairedSdk
+            "VULKAN_SDK=$repairedSdk" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            $vulkanHeader = Join-Path $env:VULKAN_SDK 'Include/vulkan/vulkan.h'
+            $vulkanLibrary = Join-Path $env:VULKAN_SDK 'Lib/vulkan-1.lib'
+            $vulkanCompiler = Join-Path $env:VULKAN_SDK 'Bin/glslc.exe'
+          }
+          if (-not (Test-Path $vulkanHeader)) { throw "Vulkan header not found: $vulkanHeader" }
+          if (-not (Test-Path $vulkanLibrary)) { throw "Vulkan loader library not found: $vulkanLibrary" }
+          if (-not (Test-Path $vulkanCompiler)) { throw "Vulkan shader compiler not found: $vulkanCompiler" }
+
+      - name: Install CUDA build toolkit
+        uses: Jimver/cuda-toolkit@v0.2.35
+        with:
+          cuda: '12.8.1'
+          method: network
+          sub-packages: '["nvcc", "cudart", "cublas", "cublas_dev", "visual_studio_integration"]'
+
+      - name: Clone pinned native sources
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          Set-StrictMode -Version Latest
+          git -c core.autocrlf=false clone https://github.com/ServeurpersoCom/qwentts.cpp.git native/qwentts-ci
+          git -C native/qwentts-ci checkout a8a7716b530e49fed537c57711247c12fbbb903c
+          git -c core.autocrlf=false clone https://github.com/ServeurpersoCom/ggml.git native/qwentts-ci/ggml
+          git -C native/qwentts-ci/ggml checkout c044c6f03892f9d5e98213b05f8afea1f8b0d3c9
+          if ((git -C native/qwentts-ci rev-parse HEAD) -ne 'a8a7716b530e49fed537c57711247c12fbbb903c') { throw 'Unexpected qwentts revision' }
+          if ((git -C native/qwentts-ci/ggml rev-parse HEAD) -ne 'c044c6f03892f9d5e98213b05f8afea1f8b0d3c9') { throw 'Unexpected ggml revision' }
+          git -c core.autocrlf=false apply --check --directory=native/qwentts-ci native/patches/qwentts-resonance.patch
+          git -c core.autocrlf=false apply --directory=native/qwentts-ci native/patches/qwentts-resonance.patch
+
+      - name: Build CPU and Vulkan core
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          Set-StrictMode -Version Latest
+          cmake -S native/qwentts-ci -B native/qwentts-ci/build-core -A x64 -DQWEN_SHARED=ON -DGGML_NATIVE=OFF -DGGML_CPU_ALL_VARIANTS=ON -DGGML_VULKAN=ON -DGGML_CUDA=OFF -DGGML_BACKEND_DL=ON
+          cmake --build native/qwentts-ci/build-core --config Release --parallel
+          $abiTest = Get-ChildItem native/qwentts-ci/build-core -Recurse -Filter test-abi-c.exe | Select-Object -First 1
+          if (-not $abiTest) { throw 'Native ABI test executable not found' }
+          & $abiTest.FullName
+          New-Item -ItemType Directory -Force native/runtime/win-x64 | Out-Null
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          Get-ChildItem native/qwentts-ci/build-core -Recurse -File | Where-Object { $_.Extension -eq '.dll' -and $_.Name -match '^(qwen|ggml)' } | Copy-Item -Destination native/runtime/win-x64 -Force
+          if (-not (Test-Path native/runtime/win-x64/qwen.dll)) { throw 'qwen.dll was not produced' }
+          if (-not (Get-ChildItem native/runtime/win-x64 -Filter 'ggml-vulkan*.dll')) { throw 'Vulkan backend was not produced' }
+          Compress-Archive -Path native/runtime/win-x64/*.dll -DestinationPath artifacts/Resonance-Core.zip
+
+      - name: Build private CUDA backend pack
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          Set-StrictMode -Version Latest
+          cmake -S native/qwentts-ci -B native/qwentts-ci/build-cuda -A x64 -DQWEN_SHARED=ON -DGGML_NATIVE=OFF -DGGML_CPU_ALL_VARIANTS=OFF -DGGML_VULKAN=OFF -DGGML_CUDA=ON -DGGML_BACKEND_DL=ON
+          cmake --build native/qwentts-ci/build-cuda --config Release --parallel
+          New-Item -ItemType Directory -Force artifacts/cuda | Out-Null
+          $cudaBackend = Get-ChildItem native/qwentts-ci/build-cuda -Recurse -Filter 'ggml-cuda*.dll' | Select-Object -First 1
+          if (-not $cudaBackend) { throw 'CUDA backend was not produced' }
+          Copy-Item $cudaBackend.FullName artifacts/cuda/
+          Get-ChildItem "$env:CUDA_PATH/bin" -File | Where-Object { $_.Name -match '^(cublas|cublasLt|cudart)64_.*\.dll$' } | Copy-Item -Destination artifacts/cuda
+          if (-not (Get-ChildItem artifacts/cuda -Filter 'cudart64_*.dll')) { throw 'CUDA runtime DLL was not found' }
+          if (-not (Get-ChildItem artifacts/cuda -Filter 'cublas64_*.dll')) { throw 'cuBLAS DLL was not found' }
+          if (-not (Get-ChildItem artifacts/cuda -Filter 'cublasLt64_*.dll')) { throw 'cuBLASLt DLL was not found' }
+          Compress-Archive -Path artifacts/cuda/*.dll -DestinationPath artifacts/Resonance-CUDA.zip
+
+      - name: Generate runtime manifest
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $corePack = Get-Item artifacts/Resonance-Core.zip
+          $coreSha = (Get-FileHash $corePack.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $coreFiles = @(Get-ChildItem native/runtime/win-x64 -Filter '*.dll' | ForEach-Object Name | Sort-Object)
+          $cudaPack = Get-Item artifacts/Resonance-CUDA.zip
+          $cudaSha = (Get-FileHash $cudaPack.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $cudaFiles = @(Get-ChildItem artifacts/cuda -Filter '*.dll' | ForEach-Object Name | Sort-Object)
+          $runtimeArtifacts = @()
+          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            $runtimeArtifacts += [ordered]@{
+              id = 'core'
+              url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:GITHUB_REF_NAME/Resonance-Core.zip"
+              size = $corePack.Length
+              sha256 = $coreSha
+              matchDescriptionContains = @()
+              files = $coreFiles
+            }
+            $runtimeArtifacts += [ordered]@{
+              id = 'cuda'
+              url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:GITHUB_REF_NAME/Resonance-CUDA.zip"
+              size = $cudaPack.Length
+              sha256 = $cudaSha
+              matchDescriptionContains = @('NVIDIA')
+              files = $cudaFiles
+            }
+          }
+          [ordered]@{ schemaVersion = 1; abi = 6; artifacts = $runtimeArtifacts } | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 assets/runtimes.json
+
+      - name: Download Dalamud API 15 runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/latest.zip -OutFile latest.zip
+          Expand-Archive -Force latest.zip "$env:AppData\XIVLauncher\addon\Hooks\dev"
+
+      - name: Build, test, and publish managed plugin
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          Set-StrictMode -Version Latest
+          dotnet build Resonance.csproj --configuration Release
+          dotnet test tests/Resonance.Tests/Resonance.Tests.csproj --configuration Release
+          dotnet publish Resonance.csproj --configuration Release --runtime win-x64 --self-contained false --output artifacts/plugin
+          if (-not (Test-Path artifacts/plugin/Resonance.json)) { throw 'Dalamud manifest missing from plugin publish output' }
+          if (Test-Path artifacts/plugin/qwen.dll) { throw 'Native runtime must remain in separately downloaded packs' }
+          $version = (Get-Content Resonance.json | ConvertFrom-Json).AssemblyVersion
+          $publishedVersion = [Reflection.AssemblyName]::GetAssemblyName((Resolve-Path artifacts/plugin/Resonance.dll)).Version.ToString()
+          if ($publishedVersion -ne $version) { throw "Manifest version $version does not match assembly $publishedVersion" }
+          $assemblyVersion = [Version]$version
+          if ($assemblyVersion.Revision -ne 0) { throw "Release assembly revision must be zero for SemVer tag mapping: $version" }
+          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            $expectedTag = "v$($assemblyVersion.Major).$($assemblyVersion.Minor).$($assemblyVersion.Build)"
+            if ($env:GITHUB_REF_NAME -ne $expectedTag) { throw "Tag $env:GITHUB_REF_NAME does not match assembly version $version; expected $expectedTag" }
+          }
+          Compress-Archive -Path artifacts/plugin/* -DestinationPath "artifacts/Resonance-$version.zip"
+
+      - name: Generate Dalamud custom repository JSON
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $manifest = Get-Content Resonance.json | ConvertFrom-Json
+          $version = $manifest.AssemblyVersion
+          $url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:GITHUB_REF_NAME/Resonance-$version.zip"
+          @([ordered]@{
+            Author = $manifest.Author
+            Name = $manifest.Name
+            Punchline = $manifest.Punchline
+            Description = $manifest.Description
+            InternalName = $manifest.InternalName
+            AssemblyVersion = $version
+            TestingAssemblyVersion = $version
+            DalamudApiLevel = $manifest.DalamudApiLevel
+            ApplicableVersion = $manifest.ApplicableVersion
+            Tags = $manifest.Tags
+            DownloadLinkInstall = $url
+            DownloadLinkUpdate = $url
+            DownloadLinkTesting = $url
+          }) | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 artifacts/repo.json
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Resonance
+          path: |
+            artifacts/Resonance-*.zip
+            artifacts/repo.json
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v5
+        with:
+          name: Resonance
+          path: release
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/Resonance-*.zip
+            release/repo.json
+          generate_release_notes: true
+
+  publish-repository:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, release]
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download release metadata
+        uses: actions/download-artifact@v5
+        with:
+          name: Resonance
+          path: release
+
+      - name: Prepare custom repository site
+        run: |
+          mkdir site
+          cp release/repo.json site/repo.json
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+      - name: Publish custom repository JSON
+        id: deployment
+        uses: actions/deploy-pages@v4
