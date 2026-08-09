@@ -3,13 +3,14 @@ using Resonance.Audio;
 using Resonance.Data;
 using Resonance.Scheduling;
 using Resonance.Tts;
+using Directory = Resonance.Tests.TestDirectory;
 
 namespace Resonance.Tests;
 
 public sealed class DubSchedulerStreamingTests
 {
     [Fact]
-    public async Task ActualLineIsAuthorizedBeforeProducerCompletes()
+    public async Task ActualLineStreamsBeforeCompletionWhenBufferCoversEstimatedRemainder()
     {
         var root = Path.Combine(Path.GetTempPath(), "resonance-scheduler-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -40,7 +41,7 @@ public sealed class DubSchedulerStreamingTests
 
             Assert.Same(line, authorized);
             Assert.False(runtime.Completed.Task.IsCompleted);
-            Assert.True(line.Audio.TotalSamplesWritten >= 8400);
+            Assert.True(line.Audio.TotalSamplesWritten >= 12_000);
             runtime.Release.TrySetResult();
             await runtime.Completed.Task.WaitAsync(TimeSpan.FromSeconds(3), TestContext.Current.CancellationToken);
         }
@@ -141,7 +142,7 @@ public sealed class DubSchedulerStreamingTests
             CancellationToken token) => ValueTask.FromResult(new VoiceReference([], [], 0, 0, transcript));
         public async Task SynthesizeAsync(SynthesisRequest request, StreamingAudioBuffer sink, CancellationToken token)
         {
-            sink.TryWrite(new float[8400]);
+            sink.TryWrite(new float[12_000]);
             await Release.Task.WaitAsync(token);
             sink.TryWrite(new float[100]);
             sink.Complete();

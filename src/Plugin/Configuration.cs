@@ -31,6 +31,7 @@ public sealed class Configuration : IPluginConfiguration
     public float Volume { get; set; } = 1f;
     public int AudioOutputDeviceNumber { get; set; } = -1;
     public bool BackgroundCasting { get; set; } = true;
+    public bool AutoAdvanceDubbedCutsceneDialogue { get; set; }
     public int ReadyMasculineVoices { get; set; } = 5;
     public int ReadyFeminineVoices { get; set; } = 5;
     public long CacheLimitBytes { get; set; } = 2L * 1024 * 1024 * 1024;

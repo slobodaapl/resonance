@@ -20,8 +20,10 @@ public sealed class DubScheduler : IAsyncDisposable
     private double meanTimeToFirstAudioSeconds = 0.35;
     private double meanRealTimeFactor = 0.8;
     private double meanCharactersPerSecond = 14;
+    private bool hasRuntimeMeasurement;
 
     public event Action<DubLine>? LineBuffered;
+    public event Action<DubLine>? PredictionStreamable;
     public event Action<DubLine, Exception>? LineFailed;
     public bool HasUrgentWork
     {
@@ -232,6 +234,7 @@ public sealed class DubScheduler : IAsyncDisposable
         {
             meanTimeToFirstAudioSeconds = Ewma(meanTimeToFirstAudioSeconds, ttfa);
             meanRealTimeFactor = Ewma(meanRealTimeFactor, rtf);
+            hasRuntimeMeasurement = true;
             if (charactersPerSecond > 0) meanCharactersPerSecond = Ewma(meanCharactersPerSecond, charactersPerSecond);
         }
     }
@@ -240,13 +243,43 @@ public sealed class DubScheduler : IAsyncDisposable
 
     private async Task<bool> AuthorizeStreamingAsync(DubLine line, Task phase, bool alreadyAuthorized)
     {
-        if (alreadyAuthorized || line.ActualStatus != ActualStatus.Actual) return alreadyAuthorized;
-        while (!phase.IsCompleted && line.Audio.TotalSamplesWritten < 8400)
+        if (alreadyAuthorized) return true;
+        while (!line.IsTerminal)
+        {
+            var bufferedSeconds = line.Audio.BufferedSamples / 24000d;
+            double rtf;
+            bool measured;
+            lock (gate)
+            {
+                rtf = meanRealTimeFactor;
+                measured = hasRuntimeMeasurement;
+            }
+            var remainingAudioSeconds = Math.Max(0, line.PredictedAudioDurationSeconds - bufferedSeconds);
+            var remainingGenerationSeconds = remainingAudioSeconds * rtf;
+            var canStart = StreamingStartPolicy.ShouldStart(
+                    phase.IsCompleted || line.Audio.ProducerCompleted,
+                    bufferedSeconds,
+                    remainingGenerationSeconds,
+                    measured ? rtf : Double.PositiveInfinity,
+                    (DateTimeOffset.UtcNow - line.PlaybackDeadline).TotalSeconds);
+            if (canStart && line.ActualStatus == ActualStatus.Predicted)
+            {
+                if (!line.CanStartStreaming)
+                {
+                    line.CanStartStreaming = true;
+                    PredictionStreamable?.Invoke(line);
+                }
+            }
+            else if (canStart && line.ActualStatus == ActualStatus.Actual)
+            {
+                line.State = DubLineState.Buffered;
+                LineBuffered?.Invoke(line);
+                return true;
+            }
+            if (phase.IsCompleted) return false;
             await Task.Delay(10, line.Token).ConfigureAwait(false);
-        if (line.IsTerminal || line.Audio.TotalSamplesWritten < 8400) return false;
-        line.State = DubLineState.Buffered;
-        LineBuffered?.Invoke(line);
-        return true;
+        }
+        return false;
     }
 
     private void RebuildQueue(DateTimeOffset now)

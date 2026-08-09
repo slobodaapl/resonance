@@ -116,15 +116,19 @@ public sealed class BootstrapService : IAsyncDisposable
 
     private async Task EnsureOptionalRuntimesAsync(RuntimeManager manager, CancellationToken token)
     {
-        CudaDriverAvailable = CudaDriverProbe.IsAvailable();
         try
         {
+            CudaDriverAvailable = CudaDriverProbe.IsAvailable();
             await runtimePacks.EnsureMatchingAsync(runtimeManifestPath, manager.DetectedBackends, token,
                 CudaDriverAvailable.Value).ConfigureAwait(false);
             await manager.RefreshBackendsAsync(token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
-        catch (Exception error) { OptionalRuntimeFailed?.Invoke(error); }
+        catch (Exception error)
+        {
+            CudaDriverAvailable ??= false;
+            OptionalRuntimeFailed?.Invoke(error);
+        }
     }
 
     private void SetState(BootstrapState state)

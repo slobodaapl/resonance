@@ -40,4 +40,14 @@ public sealed class StreamingAudioBufferTests
         Assert.Equal(playback, cached);
         Assert.False(buffer.TryWrite([4f]));
     }
+
+    [Fact]
+    public void BufferedSamplesExcludePlaybackConsumption()
+    {
+        using var buffer = new StreamingAudioBuffer();
+        Assert.True(buffer.TryWrite(new float[24_000]));
+        buffer.ReportConsumed(6_000);
+
+        Assert.Equal(18_000, buffer.BufferedSamples);
+    }
 }

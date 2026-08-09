@@ -101,8 +101,20 @@ public sealed class CutsceneSession : IDisposable
             .FirstOrDefault(line => line.SpeakerName.Equals(speakerName, StringComparison.OrdinalIgnoreCase)
                 && line.Text == normalizedText);
         if (line is null) return null;
+        var resolvedLanguage = resolvedSpeaker?.Language ?? language;
+        var preservePreparedAudio = resolvedSpeaker is not null
+            && line.VoiceProfileId is not null
+            && line.SpeakerKey == resolvedSpeaker.SpeakerKey
+            && String.Equals(line.Language, resolvedLanguage, StringComparison.Ordinal);
+        if (!preservePreparedAudio && line.State != DubLineState.Predicted)
+        {
+            lines.Remove(line.Sequence);
+            line.Cancel(DubLineState.Invalidated);
+            line.Dispose();
+            return null;
+        }
         line.Text = normalizedText;
-        if (resolvedSpeaker is not null) line.ApplyResolvedSpeaker(resolvedSpeaker);
+        if (resolvedSpeaker is not null) line.ApplyResolvedSpeaker(resolvedSpeaker, preservePreparedAudio);
         else if (!String.IsNullOrWhiteSpace(language)) line.Language = language;
         line.ActualStatus = ActualStatus.Actual;
         line.PlaybackDeadline = DateTimeOffset.UtcNow;

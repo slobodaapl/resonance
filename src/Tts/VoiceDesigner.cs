@@ -17,12 +17,14 @@ public sealed class VoiceDesigner : IAsyncDisposable
     private readonly string codecPath;
     private readonly SemaphoreSlim gate = new(1, 1);
     private QwenCppRuntime? designRuntime;
+    private string backendName;
 
     public VoiceDesigner(ITtsRuntime baseRuntime, string designPath, string codecPath, string backendName)
     {
         this.baseRuntime = baseRuntime;
         this.designPath = designPath;
         this.codecPath = codecPath;
+        this.backendName = backendName;
         designRuntime = new QwenCppRuntime(designPath, codecPath, backendName);
     }
 
@@ -88,9 +90,11 @@ public sealed class VoiceDesigner : IAsyncDisposable
         await gate.WaitAsync(token).ConfigureAwait(false);
         try
         {
+            if (String.Equals(this.backendName, backendName, StringComparison.Ordinal)) return;
             var replacement = new QwenCppRuntime(designPath, codecPath, backendName);
             var previous = designRuntime;
             designRuntime = replacement;
+            this.backendName = backendName;
             if (previous is not null) await previous.DisposeAsync().ConfigureAwait(false);
         }
         finally { gate.Release(); }

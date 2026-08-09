@@ -29,6 +29,7 @@ public sealed class StreamingAudioBuffer : IDisposable
         new UnboundedChannelOptions { SingleReader = true, SingleWriter = false, AllowSynchronousContinuations = false });
     private int completed;
     private long totalSamplesWritten;
+    private long totalSamplesConsumed;
     private long firstWriteTimestamp;
     private int consumerStarted;
     private StreamingAudioBuffer? capture;
@@ -36,6 +37,8 @@ public sealed class StreamingAudioBuffer : IDisposable
     public bool ProducerCompleted => Volatile.Read(ref completed) != 0;
     public ChannelReader<AudioChunk> Reader => chunks.Reader;
     public long TotalSamplesWritten => Interlocked.Read(ref totalSamplesWritten);
+    public long BufferedSamples => Math.Max(0,
+        Interlocked.Read(ref totalSamplesWritten) - Interlocked.Read(ref totalSamplesConsumed));
     public long FirstWriteTimestamp => Interlocked.Read(ref firstWriteTimestamp);
     public bool ConsumerStarted => Volatile.Read(ref consumerStarted) != 0;
 
@@ -96,11 +99,17 @@ public sealed class StreamingAudioBuffer : IDisposable
     {
         while (chunks.Reader.TryRead(out var chunk)) chunk.Dispose();
         Interlocked.Exchange(ref totalSamplesWritten, 0);
+        Interlocked.Exchange(ref totalSamplesConsumed, 0);
         Interlocked.Exchange(ref firstWriteTimestamp, 0);
         Volatile.Read(ref capture)?.DiscardBuffered();
     }
 
     public void MarkConsumerStarted() => Interlocked.Exchange(ref consumerStarted, 1);
+
+    public void ReportConsumed(int sampleCount)
+    {
+        if (sampleCount > 0) Interlocked.Add(ref totalSamplesConsumed, sampleCount);
+    }
 
     public void Dispose()
     {

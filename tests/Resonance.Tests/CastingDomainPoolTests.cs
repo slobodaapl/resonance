@@ -1,5 +1,6 @@
 using Resonance.Data;
 using Resonance.Tts;
+using Directory = Resonance.Tests.TestDirectory;
 
 namespace Resonance.Tests;
 

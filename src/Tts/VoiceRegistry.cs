@@ -131,6 +131,8 @@ public sealed record StoredVoiceProfile(
     public string? VariantTraitsJson => TraitsJson;
 }
 
+public sealed record NamedVoiceProfile(string DisplayName, StoredVoiceProfile Profile);
+
 public sealed class VoiceRegistry(Database database)
 {
     public Task<SpeakerIdentity> ResolveSpeakerAsync(
@@ -187,6 +189,51 @@ public sealed class VoiceRegistry(Database database)
 
     public Task<StoredVoiceProfile?> GetBestVoiceAsync(long speakerId, string language, CancellationToken token) =>
         database.ReadAsync(connection => GetBestVoiceCore(connection, speakerId, language, token), token);
+
+    public Task<StoredVoiceProfile?> GetBestVoiceByStableKeyAsync(
+        string stableKey,
+        string language,
+        CancellationToken token) => database.ReadAsync(async connection =>
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT id FROM speaker WHERE stable_key=$key";
+        command.Parameters.AddWithValue("$key", stableKey);
+        var speakerId = await command.ExecuteScalarAsync(token).ConfigureAwait(false);
+        return speakerId is long id
+            ? await GetBestVoiceCore(connection, id, language, token).ConfigureAwait(false)
+            : null;
+    }, token);
+
+    public Task<IReadOnlyList<NamedVoiceProfile>> GetOfficialVoiceProfilesAsync(
+        string language,
+        CancellationToken token) => database.ReadAsync(async connection =>
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT s.display_name,
+                   p.id,p.kind,p.language,p.model_hash,p.palette_version,p.design_instruction,p.seed,
+                   p.ref_text,p.speaker_embedding,p.rvq_codes,p.rvq_length,p.codebooks,
+                   p.domain_id,p.catalog_version,p.traits_json,p.variant_traits_json,
+                   p.source_metadata,p.profile_hash,p.created_utc
+            FROM speaker_voice sv
+            JOIN speaker s ON s.id=sv.speaker_id
+            JOIN voice_profile p ON p.id=sv.profile_id
+            WHERE p.kind=$kind AND p.language=$language
+            ORDER BY s.display_name COLLATE NOCASE,p.created_utc DESC,p.id DESC
+            """;
+        command.Parameters.AddWithValue("$kind", (int)VoiceProfileKind.Official);
+        command.Parameters.AddWithValue("$language", language);
+        var result = new List<NamedVoiceProfile>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
+        while (await reader.ReadAsync(token).ConfigureAwait(false))
+        {
+            var displayName = reader.GetString(0);
+            if (!seen.Add(displayName)) continue;
+            result.Add(new(displayName, ReadProfile(reader, 1)));
+        }
+        return (IReadOnlyList<NamedVoiceProfile>)result;
+    }, token);
 
     public async Task<StoredVoiceProfile?> GetBestVoiceAsync(long speakerId, CancellationToken token)
     {
@@ -1145,22 +1192,27 @@ public sealed class VoiceRegistry(Database database)
         foreach (var pair in source) target[pair.Key] = pair.Value;
     }
 
-    private static StoredVoiceProfile ReadProfile(SqliteDataReader reader)
+    private static StoredVoiceProfile ReadProfile(SqliteDataReader reader, int offset = 0)
     {
-        var embeddingBytes = (byte[])reader[8];
-        var codeBytes = (byte[])reader[9];
+        var embeddingBytes = (byte[])reader[offset + 8];
+        var codeBytes = (byte[])reader[offset + 9];
         var embedding = new float[embeddingBytes.Length / sizeof(float)];
         var codes = new int[codeBytes.Length / sizeof(int)];
         Buffer.BlockCopy(embeddingBytes, 0, embedding, 0, embeddingBytes.Length);
         Buffer.BlockCopy(codeBytes, 0, codes, 0, codeBytes.Length);
-        var reference = new VoiceReference(embedding, codes, reader.GetInt32(10), reader.GetInt32(11), reader.GetString(7));
+        var reference = new VoiceReference(embedding, codes, reader.GetInt32(offset + 10), reader.GetInt32(offset + 11),
+            reader.GetString(offset + 7));
         return new(
-            reader.GetString(0), (VoiceProfileKind)reader.GetInt32(1), reader.GetString(2), reader.GetString(3),
-            reader.IsDBNull(4) ? null : reader.GetInt32(4), reader.IsDBNull(5) ? null : reader.GetString(5),
-            reader.IsDBNull(6) ? null : reader.GetInt64(6), reference, reader.GetString(17),
-            reader.IsDBNull(16) ? null : reader.GetString(16), reader.IsDBNull(12) ? null : reader.GetString(12),
-            reader.IsDBNull(13) ? null : reader.GetInt32(13),
-            reader.IsDBNull(14) ? (reader.IsDBNull(15) ? null : reader.GetString(15)) : reader.GetString(14));
+            reader.GetString(offset), (VoiceProfileKind)reader.GetInt32(offset + 1), reader.GetString(offset + 2),
+            reader.GetString(offset + 3), reader.IsDBNull(offset + 4) ? null : reader.GetInt32(offset + 4),
+            reader.IsDBNull(offset + 5) ? null : reader.GetString(offset + 5),
+            reader.IsDBNull(offset + 6) ? null : reader.GetInt64(offset + 6), reference, reader.GetString(offset + 17),
+            reader.IsDBNull(offset + 16) ? null : reader.GetString(offset + 16),
+            reader.IsDBNull(offset + 12) ? null : reader.GetString(offset + 12),
+            reader.IsDBNull(offset + 13) ? null : reader.GetInt32(offset + 13),
+            reader.IsDBNull(offset + 14)
+                ? (reader.IsDBNull(offset + 15) ? null : reader.GetString(offset + 15))
+                : reader.GetString(offset + 14));
     }
 
     private static async Task<StoredVoiceProfile?> GetProfileById(

@@ -45,7 +45,7 @@ public sealed unsafe class QwenCppRuntime : ITtsRuntime
         var directory = nativeRuntimeDirectory
             ?? throw new DllNotFoundException("Resonance native runtime directory has not been configured");
         var path = Path.Combine(directory, "qwen.dll");
-        return NativeLibrary.Load(path, assembly, searchPath);
+        return NativeLibrary.Load(path);
     }
 
     public QwenCppRuntime(string talkerPath, string codecPath, string? backendName)
@@ -68,8 +68,8 @@ public sealed unsafe class QwenCppRuntime : ITtsRuntime
     public static IReadOnlyList<BackendInfo> EnumerateBackends(string? additionalSearchPath = null)
     {
         ValidateAbi();
-        ConfigureBackendSearchPath(Path.GetDirectoryName(typeof(QwenCppRuntime).Assembly.Location)
-            ?? throw new InvalidOperationException("Cannot resolve the Resonance plugin directory"));
+        ConfigureBackendSearchPath(nativeRuntimeDirectory
+            ?? throw new InvalidOperationException("Resonance native runtime directory has not been configured"));
         if (additionalSearchPath is not null) ConfigureBackendSearchPath(additionalSearchPath);
         var result = new List<BackendInfo>();
         var count = QwenNative.BackendCount();

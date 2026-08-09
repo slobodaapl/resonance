@@ -17,6 +17,7 @@ public sealed partial class TalkObserver : IDisposable
     private string lastText = string.Empty;
     private bool visible;
     private long serial;
+    private nint addonAddress;
 
     public ActualTalkLine? Current { get; private set; }
     public event Action<ActualTalkLine>? LineChanged;
@@ -43,6 +44,7 @@ public sealed partial class TalkObserver : IDisposable
         }
 
         visible = true;
+        addonAddress = args.Addon.Address;
         var speaker = Normalize(addon->AtkTextNode220 == null
             ? string.Empty
             : new ReadOnlySeString(addon->AtkTextNode220->NodeText).ToString());
@@ -86,12 +88,33 @@ public sealed partial class TalkObserver : IDisposable
     private void Reset()
     {
         visible = false;
+        addonAddress = 0;
         Current = null;
         lastSpeaker = string.Empty;
         lastText = string.Empty;
     }
 
     private static string Normalize(string value) => Whitespace().Replace(value, " ").Trim();
+
+    public unsafe bool TryAdvance(long serial, string speaker, string text)
+    {
+        var current = Current;
+        var addon = (AddonTalk*)addonAddress;
+        if (!visible || addon == null || !addon->IsVisible || current is null
+            || current.Serial != serial || current.Speaker != speaker || current.Text != text) return false;
+
+        var eventValue = new AtkEvent
+        {
+            Listener = (AtkEventListener*)addon,
+            Target = &AtkStage.Instance()->AtkEventTarget,
+            State = new() { StateFlags = (AtkEventStateFlags)132 },
+        };
+        AtkEventData eventData = default;
+        addon->ReceiveEvent(AtkEventType.MouseDown, 0, &eventValue, &eventData);
+        addon->ReceiveEvent(AtkEventType.MouseClick, 0, &eventValue, &eventData);
+        addon->ReceiveEvent(AtkEventType.MouseUp, 0, &eventValue, &eventData);
+        return true;
+    }
 
     [GeneratedRegex(@"\s+")]
     private static partial Regex Whitespace();

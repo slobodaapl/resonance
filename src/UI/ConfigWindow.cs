@@ -26,11 +26,23 @@ public sealed class ConfigWindow : Window
     private readonly Func<(bool Available, string? Reason)> nativeVoiceStatus;
     private readonly Func<CancellationToken, Task> regenerateCurrentTerritory;
     private readonly Func<string, CancellationToken, Task> regenerateDomain;
+    private readonly Func<string, DebugInferenceSnapshot> debugSnapshot;
+    private readonly Func<string, CancellationToken, Task> refreshDebugBaseVoices;
+    private readonly Func<string, string, string, CancellationToken, Task> runVoiceDesignDebug;
+    private readonly Func<string, string, string, CancellationToken, Task> runBaseDebug;
+    private readonly Action cancelDebug;
     private string selectedDomain = "generic_world";
     private string selectedLanguage = "english";
     private string selectedSex = "masculine";
     private string instruction = string.Empty;
     private string? loadedKey;
+    private string debugLanguage = "english";
+    private string debugSentence = "The light of the crystal guides us through the dark.";
+    private string debugInstruction = "A clear, natural adult voice with measured pacing and restrained emotion.";
+    private string debugBaseVoice = "alphinaud";
+    private string? refreshedDebugLanguage;
+    private int debugRefreshInFlight;
+    private int benchmarkInFlight;
 
     public ConfigWindow(
         Configuration configuration,
@@ -44,6 +56,11 @@ public sealed class ConfigWindow : Window
         Func<(bool Available, string? Reason)> nativeVoiceStatus,
         Func<CancellationToken, Task> regenerateCurrentTerritory,
         Func<string, CancellationToken, Task> regenerateDomain,
+        Func<string, DebugInferenceSnapshot> debugSnapshot,
+        Func<string, CancellationToken, Task> refreshDebugBaseVoices,
+        Func<string, string, string, CancellationToken, Task> runVoiceDesignDebug,
+        Func<string, string, string, CancellationToken, Task> runBaseDebug,
+        Action cancelDebug,
         Action save,
         Action<Exception> reportError)
         : base("Resonance Settings###ResonanceSettings")
@@ -59,13 +76,35 @@ public sealed class ConfigWindow : Window
         this.nativeVoiceStatus = nativeVoiceStatus;
         this.regenerateCurrentTerritory = regenerateCurrentTerritory;
         this.regenerateDomain = regenerateDomain;
+        this.debugSnapshot = debugSnapshot;
+        this.refreshDebugBaseVoices = refreshDebugBaseVoices;
+        this.runVoiceDesignDebug = runVoiceDesignDebug;
+        this.runBaseDebug = runBaseDebug;
+        this.cancelDebug = cancelDebug;
         this.save = save;
         this.reportError = reportError;
+        debugLanguage = CurrentLanguageName();
         Size = new Vector2(560, 720);
         SizeCondition = ImGuiCond.FirstUseEver;
     }
 
     public override void Draw()
+    {
+        if (!ImGui.BeginTabBar("##ResonanceSettingsTabs")) return;
+        if (ImGui.BeginTabItem("Settings"))
+        {
+            DrawSettings();
+            ImGui.EndTabItem();
+        }
+        if (ImGui.BeginTabItem("Debug"))
+        {
+            DrawDebug();
+            ImGui.EndTabItem();
+        }
+        ImGui.EndTabBar();
+    }
+
+    private void DrawSettings()
     {
         var enabled = configuration.Enabled;
         if (ImGui.Checkbox("Enabled", ref enabled)) { configuration.Enabled = enabled; save(); }
@@ -98,6 +137,13 @@ public sealed class ConfigWindow : Window
             null => "probing...",
         };
         ImGui.TextUnformatted($"CUDA driver bridge: {cudaBridge}");
+        if (boot.CudaDriverAvailable == true
+            && manager is not null
+            && !manager.DetectedBackends.Any(candidate => candidate.Type == BackendType.Cuda))
+        {
+            ImGui.TextColored(new Vector4(1f, .75f, .25f, 1f),
+                "CUDA backend: not installed or not loadable; the driver bridge alone is insufficient");
+        }
         if (manager?.Selection?.IsTemporaryCpuFallback == true)
         {
             ImGui.TextColored(new Vector4(1f, .35f, .25f, 1f),
@@ -150,6 +196,12 @@ public sealed class ConfigWindow : Window
         }
         var casting = configuration.BackgroundCasting;
         if (ImGui.Checkbox("Background casting", ref casting)) { configuration.BackgroundCasting = casting; save(); }
+        var autoAdvance = configuration.AutoAdvanceDubbedCutsceneDialogue;
+        if (ImGui.Checkbox("Auto-advance prepared dubbed cutscene dialogue", ref autoAdvance))
+        {
+            configuration.AutoAdvanceDubbedCutsceneDialogue = autoAdvance;
+            save();
+        }
         var masculine = configuration.ReadyMasculineVoices;
         if (ImGui.SliderInt("Ready masculine / active domain", ref masculine, 0, 20))
         {
@@ -168,11 +220,16 @@ public sealed class ConfigWindow : Window
             configuration.CacheLimitBytes = (long)(cacheGiB * 1073741824d);
             save();
         }
-        if (ImGui.Button("Rebuild backend benchmark on next launch"))
-        {
-            configuration.BackendBenchmark = null;
-            save();
-        }
+        var canBenchmark = manager is not null
+            && boot.VoiceDesignPath is not null
+            && configuration.Compute != ComputePreference.Manual
+            && Volatile.Read(ref benchmarkInFlight) == 0;
+        ImGui.BeginDisabled(!canBenchmark);
+        if (ImGui.Button(Volatile.Read(ref benchmarkInFlight) == 0
+                ? "Rebuild backend benchmark now"
+                : "Benchmarking backends..."))
+            Run(RebuildBackendBenchmarkAsync(manager!, boot.VoiceDesignPath!));
+        ImGui.EndDisabled();
 
         ImGui.SameLine();
         if (ImGui.Button("Regenerate current territory domains"))
@@ -192,8 +249,6 @@ public sealed class ConfigWindow : Window
                 ImGui.BulletText($"{measurement.BackendName}: {result}");
             }
         }
-        ImGui.TextWrapped("Manual choices persist. Assigned NPC voices remain stable; regeneration removes only unassigned ready domain voices.");
-
         if (ImGui.CollapsingHeader("Diagnostics"))
         {
             var guard = nativeVoiceStatus();
@@ -273,6 +328,90 @@ public sealed class ConfigWindow : Window
             ImGui.TextWrapped($"Failure: {failure}");
     }
 
+    private void DrawDebug()
+    {
+        var manager = runtime();
+        var snapshot = debugSnapshot(debugLanguage);
+        ImGui.TextUnformatted("Inference smoke tests");
+        ImGui.TextWrapped("Runs real Base and VoiceDesign inference on the selected device and streams the result through Resonance's in-game audio output.");
+        ImGui.Separator();
+        ImGui.TextUnformatted($"Readiness: {snapshot.Readiness}");
+        ImGui.TextUnformatted($"Device: {snapshot.Device}");
+        ImGui.TextWrapped($"Status: {snapshot.Status}");
+
+        if (snapshot.Ready && Volatile.Read(ref refreshedDebugLanguage) != debugLanguage
+                           && Volatile.Read(ref debugRefreshInFlight) == 0)
+            RefreshDebugVoices();
+
+        var controlsDisabled = !snapshot.Ready || snapshot.Running;
+        ImGui.BeginDisabled(controlsDisabled);
+        if (manager is not null && manager.DetectedBackends.Count > 0)
+        {
+            var preview = manager.Selection?.Effective.Description ?? "Preparing...";
+            if (ImGui.BeginCombo("Test inference device", preview))
+            {
+                foreach (var backend in manager.DetectedBackends)
+                {
+                    var selected = manager.Selection?.Effective.Name == backend.Name;
+                    if (ImGui.Selectable($"{backend.Description} [{backend.Name}]", selected))
+                        Run(manager.SetDesiredAsync(backend, CancellationToken.None));
+                }
+                ImGui.EndCombo();
+            }
+        }
+
+        var languageIndex = Array.IndexOf(Languages, debugLanguage);
+        if (languageIndex < 0) languageIndex = 0;
+        if (ImGui.Combo("Test language", ref languageIndex, Languages, Languages.Length))
+        {
+            debugLanguage = Languages[languageIndex];
+            Volatile.Write(ref refreshedDebugLanguage, null);
+        }
+        ImGui.TextUnformatted("Sample sentence");
+        ImGui.InputTextMultiline("##DebugSampleSentence", ref debugSentence, 2048, new Vector2(-1, 90));
+        ImGui.TextUnformatted("VoiceDesign instruction");
+        ImGui.InputTextMultiline("##DebugVoiceDesignInstruction", ref debugInstruction, 4096, new Vector2(-1, 90));
+        if (ImGui.Button("Test VoiceDesign + playback"))
+            Run(runVoiceDesignDebug(debugSentence, debugInstruction, debugLanguage, CancellationToken.None));
+
+        ImGui.Separator();
+        ImGui.TextUnformatted("Base voice clone");
+        ImGui.TextWrapped("Uses verified official game resources. Curated sources build lazily; captured sources persist for later reuse.");
+        var voices = snapshot.BaseVoices;
+        var selectedVoice = voices.FirstOrDefault(value => value.Key == debugBaseVoice) ?? voices.First();
+        if (ImGui.BeginCombo("Official voice", $"{selectedVoice.Label} — {selectedVoice.SourceStatus}"))
+        {
+            foreach (var voice in voices)
+            {
+                var label = $"{voice.Label} — {voice.SourceStatus}";
+                if (!ImGui.Selectable(label, voice.Key == debugBaseVoice)) continue;
+                debugBaseVoice = voice.Key;
+            }
+            ImGui.EndCombo();
+        }
+        ImGui.BeginDisabled(!selectedVoice.Available);
+        if (ImGui.Button("Test Base clone + playback"))
+            Run(runBaseDebug(debugBaseVoice, debugSentence, debugLanguage, CancellationToken.None));
+        ImGui.EndDisabled();
+        ImGui.SameLine();
+        if (ImGui.Button("Refresh official sources")) RefreshDebugVoices();
+        ImGui.EndDisabled();
+
+        if (snapshot.Running && ImGui.Button("Stop debug playback")) cancelDebug();
+    }
+
+    private void RefreshDebugVoices()
+    {
+        if (Interlocked.Exchange(ref debugRefreshInFlight, 1) != 0) return;
+        var language = debugLanguage;
+        _ = refreshDebugBaseVoices(language, CancellationToken.None).ContinueWith(task =>
+        {
+            if (task.IsCompletedSuccessfully) Volatile.Write(ref refreshedDebugLanguage, language);
+            else if (task.IsFaulted) reportError(task.Exception!.GetBaseException());
+            Interlocked.Exchange(ref debugRefreshInFlight, 0);
+        }, TaskScheduler.Default);
+    }
+
     private void DrawCastingEditor()
     {
         if (!ImGui.CollapsingHeader("Domain prompt editor")) return;
@@ -341,6 +480,21 @@ public sealed class ConfigWindow : Window
     {
         var value = currentLanguage().Trim().ToLowerInvariant();
         return Languages.Contains(value, StringComparer.Ordinal) ? value : "english";
+    }
+
+    private async Task RebuildBackendBenchmarkAsync(RuntimeManager manager, string voiceDesignPath)
+    {
+        if (Interlocked.Exchange(ref benchmarkInFlight, 1) != 0) return;
+        try
+        {
+            configuration.BackendBenchmark = null;
+            save();
+            await manager.BenchmarkAndApplyAsync(voiceDesignPath, CancellationToken.None).ConfigureAwait(false);
+        }
+        finally
+        {
+            Volatile.Write(ref benchmarkInFlight, 0);
+        }
     }
 
     private void Run(Task task) => _ = task.ContinueWith(

@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Resonance.Data;
+using Directory = Resonance.Tests.TestDirectory;
 
 namespace Resonance.Tests;
 
@@ -64,7 +65,7 @@ public sealed class DatabaseMigrationTests
                     UnknownLanguageCount: reader.GetInt32(2));
             }, TestContext.Current.CancellationToken);
 
-            Assert.Equal(4, result.Version);
+            Assert.Equal(5, result.Version);
             Assert.Equal(2, result.Count);
             Assert.Equal(2, result.UnknownLanguageCount);
         }
@@ -252,7 +253,7 @@ public sealed class DatabaseMigrationTests
                         CastingRows: reader.GetInt32(6),
                         CastingDomain: reader.GetString(7));
                 }, TestContext.Current.CancellationToken);
-                Assert.Equal(4, state.Version);
+                Assert.Equal(5, state.Version);
                 Assert.Equal(0, state.Ready);
                 Assert.Equal(1, state.Assigned);
                 Assert.Equal(1, state.Cached);
@@ -269,7 +270,7 @@ public sealed class DatabaseMigrationTests
                 command.CommandText = "SELECT version FROM schema_version";
                 return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
             }, TestContext.Current.CancellationToken);
-            Assert.Equal(4, version);
+            Assert.Equal(5, version);
         }
         finally { Directory.Delete(root, true); }
     }
@@ -384,10 +385,22 @@ public sealed class DatabaseMigrationTests
             var stableClip = await reopened.ReadAsync(async connection =>
             {
                 await using var command = connection.CreateCommand();
-                command.CommandText = "SELECT language FROM official_reference_clip WHERE source_hash='interim-source'";
-                return (string?)await command.ExecuteScalarAsync(TestContext.Current.CancellationToken);
+                command.CommandText = """
+                    SELECT language,
+                           EXISTS(SELECT 1 FROM pragma_table_info('official_reference_clip') WHERE name='scd_path'),
+                           EXISTS(SELECT 1 FROM pragma_table_info('official_reference_clip') WHERE name='source_priority'),
+                           (SELECT version FROM schema_version)
+                    FROM official_reference_clip WHERE source_hash='interim-source'
+                    """;
+                await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+                Assert.True(await reader.ReadAsync(TestContext.Current.CancellationToken));
+                return (Language: reader.GetString(0), HasPath: reader.GetBoolean(1),
+                    HasPriority: reader.GetBoolean(2), Version: reader.GetInt32(3));
             }, TestContext.Current.CancellationToken);
-            Assert.Equal("und", stableClip);
+            Assert.Equal("und", stableClip.Language);
+            Assert.True(stableClip.HasPath);
+            Assert.True(stableClip.HasPriority);
+            Assert.Equal(5, stableClip.Version);
         }
         finally { Directory.Delete(root, true); }
     }

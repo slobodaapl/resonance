@@ -9,8 +9,9 @@ namespace Resonance.Game;
 
 public sealed class OfficialReferenceBuilder : IAsyncDisposable
 {
-    private const double RequiredSeconds = 3.0;
+    public const double RequiredSeconds = 10.0;
     private const double MaximumPackageSeconds = 12.0;
+    private const int BoundarySilenceSamples = 3600;
     private readonly Database database;
     private readonly VoiceRegistry voices;
     private readonly ITtsRuntime runtime;
@@ -43,7 +44,18 @@ public sealed class OfficialReferenceBuilder : IAsyncDisposable
         var sourceHash = Hash($"{scdPath.ToLowerInvariant()}\n{soundNumber}");
         if (await PrepareSourceAsync(speakerId, sourceHash, language, token).ConfigureAwait(false)) return;
         var pcm = await extractor.ExtractMono24KhzAsync(scdPath, soundNumber, token).ConfigureAwait(false);
-        await AddPcmAsync(speakerId, sourceHash, transcript, language, pcm, token).ConfigureAwait(false);
+        await AddPcmAsync(speakerId, sourceHash, transcript, language, pcm, token,
+            scdPath, soundNumber, "observed", null).ConfigureAwait(false);
+    }
+
+    public async Task AddCuratedAsync(long speakerId, OfficialVoiceSource source, string language,
+        int catalogVersion, CancellationToken token)
+    {
+        var sourceHash = Hash($"{source.ScdPath.ToLowerInvariant()}\n{source.SoundNumber}");
+        var pcm = await extractor.ExtractMono24KhzAsync(source.ScdPath, source.SoundNumber, token).ConfigureAwait(false);
+        await AddPcmAsync(speakerId, sourceHash, source.Transcript, language, pcm, token,
+            source.ScdPath, source.SoundNumber, "curated", catalogVersion, restoreExisting: true,
+            sourcePriority: source.Preferred ? 100 : 50).ConfigureAwait(false);
     }
 
     public async Task ProcessPendingAsync(string language, CancellationToken token)
@@ -62,9 +74,8 @@ public sealed class OfficialReferenceBuilder : IAsyncDisposable
                 command.CommandText = """
                     SELECT speaker_id,language FROM official_reference_clip
                     WHERE pcm_path IS NOT NULL AND language=$language
-                    GROUP BY speaker_id,language HAVING SUM(duration_seconds) >= $minimum
+                    GROUP BY speaker_id,language
                     """;
-                command.Parameters.AddWithValue("$minimum", RequiredSeconds);
                 command.Parameters.AddWithValue("$language", language);
                 await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
                 while (await reader.ReadAsync(token).ConfigureAwait(false))
@@ -77,8 +88,63 @@ public sealed class OfficialReferenceBuilder : IAsyncDisposable
         finally { gate.Release(); }
     }
 
+    public async Task<StoredVoiceProfile?> RebuildPersistedAsync(
+        long speakerId,
+        string language,
+        CancellationToken token)
+    {
+        language = NormalizeLanguage(language);
+        var sources = await database.ReadAsync(async connection =>
+        {
+            var result = new List<(string Hash, string Path, uint Sound, string Transcript, string Origin,
+                int Priority, int? Catalog)>();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT source_hash,scd_path,sound_number,transcript,source_origin,source_priority,catalog_version
+                FROM official_reference_clip
+                WHERE speaker_id=$speaker AND language=$language
+                  AND scd_path IS NOT NULL AND sound_number IS NOT NULL
+                ORDER BY source_priority DESC,created_utc,id
+                """;
+            command.Parameters.AddWithValue("$speaker", speakerId);
+            command.Parameters.AddWithValue("$language", language);
+            await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
+            while (await reader.ReadAsync(token).ConfigureAwait(false))
+                result.Add((reader.GetString(0), reader.GetString(1), checked((uint)reader.GetInt64(2)),
+                    reader.GetString(3), reader.GetString(4), reader.GetInt32(5),
+                    reader.IsDBNull(6) ? null : reader.GetInt32(6)));
+            return result;
+        }, token).ConfigureAwait(false);
+        foreach (var source in sources)
+        {
+            try
+            {
+                var pcm = await extractor.ExtractMono24KhzAsync(source.Path, source.Sound, token).ConfigureAwait(false);
+                await AddPcmCoreAsync(speakerId, source.Hash, source.Transcript, language, pcm, token,
+                    source.Path, source.Sound, source.Origin, source.Catalog, true, source.Priority).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+            catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException)
+            {
+                continue;
+            }
+            var profile = await voices.GetBestVoiceAsync(speakerId, language, token).ConfigureAwait(false);
+            if (profile is { Kind: VoiceProfileKind.Official }
+                && String.Equals(profile.ModelHash, modelHash, StringComparison.Ordinal)) return profile;
+        }
+        return null;
+    }
+
     internal async Task AddPcmAsync(long speakerId, string sourceHash, string transcript, string language,
-        float[] pcm, CancellationToken token)
+        float[] pcm, CancellationToken token, string? scdPath = null, uint? soundNumber = null,
+        string sourceOrigin = "legacy", int? catalogVersion = null, bool restoreExisting = false,
+        int sourcePriority = 0)
+        => await AddPcmCoreAsync(speakerId, sourceHash, transcript, language, pcm, token, scdPath,
+            soundNumber, sourceOrigin, catalogVersion, restoreExisting, sourcePriority).ConfigureAwait(false);
+
+    private async Task AddPcmCoreAsync(long speakerId, string sourceHash, string transcript, string language,
+        float[] pcm, CancellationToken token, string? scdPath, uint? soundNumber,
+        string sourceOrigin, int? catalogVersion, bool restoreExisting, int sourcePriority)
     {
         language = NormalizeLanguage(language);
         if (pcm.Length < 24000 / 3 || pcm.Length > 24000 * MaximumPackageSeconds
@@ -90,7 +156,8 @@ public sealed class OfficialReferenceBuilder : IAsyncDisposable
         await gate.WaitAsync(token).ConfigureAwait(false);
         try
         {
-            if (await PrepareSourceAsync(speakerId, sourceHash, language, token).ConfigureAwait(false)) return;
+            var exists = await PrepareSourceAsync(speakerId, sourceHash, language, token).ConfigureAwait(false);
+            if (exists && !restoreExisting) return;
             var path = Path.Combine(directory, $"{sourceHash}.{language}.f32");
             var temporary = path + ".part";
             var bytes = new byte[checked(pcm.Length * sizeof(float))];
@@ -102,10 +169,18 @@ public sealed class OfficialReferenceBuilder : IAsyncDisposable
                 await database.WriteAsync(async connection =>
                 {
                     await using var command = connection.CreateCommand();
-                    command.CommandText = """
+                    command.CommandText = exists ? """
+                        UPDATE official_reference_clip
+                        SET transcript=$text,pcm_path=$path,duration_seconds=$duration,
+                            scd_path=$scd,sound_number=$sound,source_origin=$origin,
+                            source_priority=$priority,catalog_version=$catalog,validated_utc=$validated
+                        WHERE speaker_id=$speaker AND source_hash=$source AND language=$language
+                        """ : """
                         INSERT OR IGNORE INTO official_reference_clip(
-                          speaker_id,source_hash,language,transcript,pcm_path,duration_seconds,created_utc)
-                        VALUES($speaker,$source,$language,$text,$path,$duration,$utc)
+                          speaker_id,source_hash,language,transcript,pcm_path,duration_seconds,
+                          scd_path,sound_number,source_origin,source_priority,catalog_version,validated_utc,created_utc)
+                        VALUES($speaker,$source,$language,$text,$path,$duration,
+                          $scd,$sound,$origin,$priority,$catalog,$validated,$utc)
                         """;
                     command.Parameters.AddWithValue("$speaker", speakerId);
                     command.Parameters.AddWithValue("$source", sourceHash);
@@ -113,6 +188,12 @@ public sealed class OfficialReferenceBuilder : IAsyncDisposable
                     command.Parameters.AddWithValue("$text", transcript);
                     command.Parameters.AddWithValue("$path", path);
                     command.Parameters.AddWithValue("$duration", pcm.Length / 24000d);
+                    command.Parameters.AddWithValue("$scd", (object?)scdPath ?? DBNull.Value);
+                    command.Parameters.AddWithValue("$sound", soundNumber is { } number ? number : DBNull.Value);
+                    command.Parameters.AddWithValue("$origin", sourceOrigin);
+                    command.Parameters.AddWithValue("$priority", sourcePriority);
+                    command.Parameters.AddWithValue("$catalog", (object?)catalogVersion ?? DBNull.Value);
+                    command.Parameters.AddWithValue("$validated", DateTimeOffset.UtcNow.ToString("O"));
                     command.Parameters.AddWithValue("$utc", DateTimeOffset.UtcNow.ToString("O"));
                     await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
                 }, token).ConfigureAwait(false);
@@ -132,12 +213,13 @@ public sealed class OfficialReferenceBuilder : IAsyncDisposable
     {
         language = NormalizeLanguage(language);
         var clips = await LoadPackageAsync(speakerId, language, token).ConfigureAwait(false);
-        if (clips.Sum(clip => clip.Duration) < RequiredSeconds) return;
+        if (clips.Count == 0) return;
         var samples = new List<float>();
         var transcripts = new List<string>();
         var sources = new List<string>();
         foreach (var clip in clips)
         {
+            if (samples.Count > 0) samples.AddRange(new float[BoundarySilenceSamples]);
             var clipBytes = await File.ReadAllBytesAsync(clip.Path, token).ConfigureAwait(false);
             if (clipBytes.Length == 0 || clipBytes.Length % sizeof(float) != 0)
                 throw new InvalidDataException("Temporary official PCM is corrupt");
@@ -145,7 +227,9 @@ public sealed class OfficialReferenceBuilder : IAsyncDisposable
             Buffer.BlockCopy(clipBytes, 0, clipPcm, 0, clipBytes.Length);
             samples.AddRange(clipPcm);
             transcripts.Add(clip.Transcript);
-            sources.Add(clip.SourceHash);
+            sources.Add(clip.ScdPath is null
+                ? clip.SourceHash
+                : $"{clip.ScdPath}#{clip.SoundNumber}");
         }
         var referenceText = string.Join(' ', transcripts);
         var reference = await runtime.ExtractReferenceAsync(samples.ToArray(), referenceText, token).ConfigureAwait(false);
@@ -199,10 +283,10 @@ public sealed class OfficialReferenceBuilder : IAsyncDisposable
 
     private Task<List<Clip>> LoadPackageAsync(long speakerId, string language, CancellationToken token) => database.ReadAsync(async connection =>
     {
-        var result = new List<Clip>();
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT id,source_hash,language,transcript,pcm_path,duration_seconds
+            SELECT id,source_hash,language,transcript,pcm_path,duration_seconds,
+                   scd_path,sound_number,source_origin,source_priority
             FROM official_reference_clip
             WHERE speaker_id=$speaker AND language=$language AND pcm_path IS NOT NULL
             ORDER BY created_utc,id
@@ -210,22 +294,60 @@ public sealed class OfficialReferenceBuilder : IAsyncDisposable
         command.Parameters.AddWithValue("$speaker", speakerId);
         command.Parameters.AddWithValue("$language", language);
         await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
-        var duration = 0d;
-        while (duration < MaximumPackageSeconds && await reader.ReadAsync(token).ConfigureAwait(false))
+        var candidates = new List<Clip>();
+        while (await reader.ReadAsync(token).ConfigureAwait(false))
         {
             var clip = new Clip(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
-                reader.GetString(4), reader.GetDouble(5));
-            if (clip.Duration > MaximumPackageSeconds) continue;
-            if (duration + clip.Duration > MaximumPackageSeconds)
-            {
-                if (duration >= RequiredSeconds) break;
-                result.Clear();
-                duration = 0;
-            }
-            result.Add(clip);
-            duration += clip.Duration;
+                reader.GetString(4), reader.GetDouble(5), reader.IsDBNull(6) ? null : reader.GetString(6),
+                reader.IsDBNull(7) ? null : checked((uint)reader.GetInt64(7)), reader.GetString(8), reader.GetInt32(9));
+            if (clip.Duration <= MaximumPackageSeconds) candidates.Add(clip);
         }
-        return result;
+        var single = candidates
+            .Where(clip => clip.Duration >= RequiredSeconds)
+            .OrderByDescending(clip => clip.Priority)
+            .ThenBy(clip => Math.Abs(clip.Duration - RequiredSeconds))
+            .ThenBy(clip => clip.Id)
+            .FirstOrDefault();
+        if (single is not null) return [single];
+        var states = new Dictionary<int, List<Clip>> { [0] = [] };
+        foreach (var clip in candidates.OrderBy(value => value.Id))
+        {
+            foreach (var package in states.Values.ToArray())
+            {
+                var next = package.Append(clip).ToList();
+                var seconds = next.Sum(value => value.Duration)
+                              + (next.Count - 1) * BoundarySilenceSamples / 24000d;
+                if (seconds > MaximumPackageSeconds) continue;
+                var bucket = (int)Math.Round(seconds * 100, MidpointRounding.AwayFromZero);
+                if (!states.TryGetValue(bucket, out var existing) || BetterSameDuration(next, existing))
+                    states[bucket] = next;
+            }
+        }
+        return states.Values
+                   .Where(package => PackageDuration(package) >= RequiredSeconds)
+                   .OrderBy(package => package.Count(value => value.Origin != "curated"))
+                   .ThenByDescending(package => package.Any(value => value.Priority >= 100))
+                   .ThenBy(package => package.Count)
+                   .ThenBy(package => Math.Abs(PackageDuration(package) - RequiredSeconds))
+                   .ThenBy(package => String.Join(',', package.Select(value => value.Id)))
+                   .FirstOrDefault()
+               ?? [];
+
+        static double PackageDuration(IReadOnlyList<Clip> package) =>
+            package.Sum(value => value.Duration) + Math.Max(0, package.Count - 1) * BoundarySilenceSamples / 24000d;
+
+        static bool BetterSameDuration(IReadOnlyList<Clip> candidate, IReadOnlyList<Clip> existing)
+        {
+            var candidateObserved = candidate.Count(value => value.Origin != "curated");
+            var existingObserved = existing.Count(value => value.Origin != "curated");
+            if (candidateObserved != existingObserved) return candidateObserved < existingObserved;
+            var candidatePreferred = candidate.Any(value => value.Priority >= 100);
+            var existingPreferred = existing.Any(value => value.Priority >= 100);
+            if (candidatePreferred != existingPreferred) return candidatePreferred;
+            if (candidate.Count != existing.Count) return candidate.Count < existing.Count;
+            return String.CompareOrdinal(String.Join(',', candidate.Select(value => value.Id)),
+                String.Join(',', existing.Select(value => value.Id))) < 0;
+        }
     }, token);
 
     private async Task ForgetPcmAsync(IReadOnlyList<Clip> clips, CancellationToken token)
@@ -279,7 +401,8 @@ public sealed class OfficialReferenceBuilder : IAsyncDisposable
     }
 
     private static string Hash(string value) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
-    private sealed record Clip(long Id, string SourceHash, string Language, string Transcript, string Path, double Duration);
+    private sealed record Clip(long Id, string SourceHash, string Language, string Transcript, string Path,
+        double Duration, string? ScdPath, uint? SoundNumber, string Origin, int Priority);
 
     public async ValueTask DisposeAsync()
     {

@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Resonance.Data;
 using Resonance.Tts;
+using Directory = Resonance.Tests.TestDirectory;
 
 namespace Resonance.Tests;
 
@@ -75,6 +76,41 @@ public sealed class VoiceRegistryTests
 
             Assert.Equal(official.Id, (await registry.GetBestVoiceAsync(speaker.Id, "japanese",
                 TestContext.Current.CancellationToken))?.Id);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task DebugBaseVoiceQueryReturnsLatestOfficialClonePerNameAndLanguage()
+    {
+        var root = CreateRoot();
+        try
+        {
+            using var database = new Database(Path.Combine(root, "voices.sqlite3"));
+            var registry = new VoiceRegistry(database);
+            var alphinaud = await registry.ResolveSpeakerAsync("npc:alphinaud", 1, "Alphinaud", 1, "english",
+                TestContext.Current.CancellationToken);
+            var thancred = await registry.ResolveSpeakerAsync("npc:thancred", 2, "Thancred", 1, "english",
+                TestContext.Current.CancellationToken);
+            await registry.SaveAndAssignAsync(alphinaud.Id, Profile(VoiceProfileKind.Designed, "designed"),
+                TestContext.Current.CancellationToken);
+            var older = await registry.SaveAndAssignAsync(alphinaud.Id, Profile(VoiceProfileKind.Official, "older"),
+                TestContext.Current.CancellationToken);
+            var latest = await registry.SaveAndAssignAsync(alphinaud.Id, Profile(VoiceProfileKind.Official, "latest"),
+                TestContext.Current.CancellationToken);
+            await registry.SaveAndAssignAsync(thancred.Id, Profile(VoiceProfileKind.Official, "japanese", "japanese"),
+                TestContext.Current.CancellationToken);
+
+            var english = await registry.GetOfficialVoiceProfilesAsync("english", TestContext.Current.CancellationToken);
+            var selected = Assert.Single(english);
+            Assert.Equal("Alphinaud", selected.DisplayName);
+            Assert.Equal(latest.Id, selected.Profile.Id);
+            Assert.NotEqual(older.Id, selected.Profile.Id);
+            Assert.Equal(VoiceProfileKind.Official, selected.Profile.Kind);
+
+            var japanese = Assert.Single(await registry.GetOfficialVoiceProfilesAsync(
+                "japanese", TestContext.Current.CancellationToken));
+            Assert.Equal("Thancred", japanese.DisplayName);
         }
         finally { Directory.Delete(root, true); }
     }

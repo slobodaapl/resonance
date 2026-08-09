@@ -103,10 +103,12 @@ public sealed class AudioEngine : IDisposable
         {
             if (Volatile.Read(ref cancelled) != 0) return Finish();
             var written = 0;
+            var consumed = 0;
             while (written < count)
             {
                 if (!EnsureChunk())
                 {
+                    Line.Audio.ReportConsumed(consumed);
                     if (Line.Audio.ProducerCompleted) return written == 0 ? Finish() : written;
                     Array.Clear(buffer, offset + written, count - written); // transient underrun; keep input alive
                     return count;
@@ -115,6 +117,7 @@ public sealed class AudioEngine : IDisposable
                 var source = chunk!.Samples.Span;
                 var sample = source[sourceIndex] * volume;
                 buffer[offset + written++] = sample;
+                consumed++;
                 sourceIndex++;
                 if (sourceIndex >= chunk.Count)
                 {
@@ -123,6 +126,7 @@ public sealed class AudioEngine : IDisposable
                     sourceIndex = 0;
                 }
             }
+            Line.Audio.ReportConsumed(consumed);
             return written;
         }
 

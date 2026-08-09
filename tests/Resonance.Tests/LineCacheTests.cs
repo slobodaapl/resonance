@@ -1,6 +1,7 @@
 using Resonance.Audio;
 using Resonance.Data;
 using Resonance.Scheduling;
+using Directory = Resonance.Tests.TestDirectory;
 
 namespace Resonance.Tests;
 

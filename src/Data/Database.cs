@@ -4,7 +4,7 @@ namespace Resonance.Data;
 
 public sealed class Database : IDisposable
 {
-    public const int CurrentSchemaVersion = 4;
+    public const int CurrentSchemaVersion = 5;
 
     private readonly SqliteConnection connection;
     private readonly SemaphoreSlim gate = new(1, 1);
@@ -32,7 +32,7 @@ public sealed class Database : IDisposable
         command.Transaction = transaction;
         command.CommandText = """
             CREATE TABLE IF NOT EXISTS schema_version(version INTEGER NOT NULL);
-            INSERT INTO schema_version(version) SELECT 4 WHERE NOT EXISTS(SELECT 1 FROM schema_version);
+            INSERT INTO schema_version(version) SELECT 5 WHERE NOT EXISTS(SELECT 1 FROM schema_version);
 
             CREATE TABLE IF NOT EXISTS speaker(
               id INTEGER PRIMARY KEY,
@@ -134,6 +134,12 @@ public sealed class Database : IDisposable
               transcript TEXT NOT NULL,
               pcm_path TEXT,
               duration_seconds REAL NOT NULL,
+              scd_path TEXT,
+              sound_number INTEGER,
+              source_origin TEXT NOT NULL DEFAULT 'legacy',
+              source_priority INTEGER NOT NULL DEFAULT 0,
+              catalog_version INTEGER,
+              validated_utc TEXT,
               created_utc TEXT NOT NULL,
               UNIQUE(speaker_id, source_hash, language)
             );
@@ -203,8 +209,18 @@ public sealed class Database : IDisposable
         {
             MigrateToV4(command);
         }
-
         EnsureOfficialReferenceClipV4(command);
+        AddColumnIfMissing(command, "official_reference_clip", "scd_path", "TEXT");
+        AddColumnIfMissing(command, "official_reference_clip", "sound_number", "INTEGER");
+        AddColumnIfMissing(command, "official_reference_clip", "source_origin", "TEXT NOT NULL DEFAULT 'legacy'");
+        AddColumnIfMissing(command, "official_reference_clip", "source_priority", "INTEGER NOT NULL DEFAULT 0");
+        AddColumnIfMissing(command, "official_reference_clip", "catalog_version", "INTEGER");
+        AddColumnIfMissing(command, "official_reference_clip", "validated_utc", "TEXT");
+        if (version < 5)
+        {
+            command.CommandText = "UPDATE schema_version SET version=5";
+            command.ExecuteNonQuery();
+        }
         EnsureV4Columns(command);
         EnsureSpeakerCastingV4(command);
         EnsurePoolReadyInvariant(command);

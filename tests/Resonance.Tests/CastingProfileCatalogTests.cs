@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Resonance.Tts;
 
 namespace Resonance.Tests;
@@ -67,7 +68,9 @@ public sealed class CastingProfileCatalogTests
         var nullEntries = ReplaceOnce(original, "\"identityGroups\": []", "\"identityGroups\": [null]");
         Assert.Contains(CastingProfileCatalog.ValidateJson(nullEntries), issue => issue.Code == "null-entry");
 
-        var nullSlot = ReplaceOnce(original, "\"slotTemplates\": [\n    {", "\"slotTemplates\": [\n    null,\n    {");
+        var nullSlotNode = JsonNode.Parse(original)!.AsObject();
+        nullSlotNode["slotTemplates"]!.AsArray().Insert(0, null);
+        var nullSlot = nullSlotNode.ToJsonString();
         Assert.Contains(CastingProfileCatalog.ValidateJson(nullSlot), issue => issue.Code == "null-entry");
 
         var nullCollection = ReplaceJsonCollectionWithNull(original, "rules");

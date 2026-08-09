@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "catalogVersion": 1,
+  "groups": [
+    {
+      "id": "alphinaud",
+      "label": "Alphinaud",
+      "npcBaseIds": [],
+      "aliases": { "english": ["Alphinaud"] },
+      "sources": {}
+    },
+    {
+      "id": "thancred",
+      "label": "Thancred",
+      "npcBaseIds": [],
+      "aliases": { "english": ["Thancred"] },
+      "sources": {}
+    },
+    {
+      "id": "graha-tia",
+      "label": "G'raha Tia",
+      "npcBaseIds": [],
+      "aliases": { "english": ["G'raha Tia", "G’raha Tia"] },
+      "sources": {}
+    }
+  ]
+}

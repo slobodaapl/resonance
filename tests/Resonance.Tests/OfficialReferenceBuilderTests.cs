@@ -2,6 +2,7 @@ using Resonance.Audio;
 using Resonance.Data;
 using Resonance.Game;
 using Resonance.Tts;
+using Directory = Resonance.Tests.TestDirectory;
 
 namespace Resonance.Tests;
 
@@ -194,10 +195,83 @@ public sealed class OfficialReferenceBuilderTests
         finally { Directory.Delete(root, true); }
     }
 
+    [Fact]
+    public async Task BuiltPackageDeletesTemporaryPcmButRetainsExactGameResourceCoordinates()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "resonance-reference-builder-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            using var database = new Database(Path.Combine(root, "voices.sqlite3"));
+            var registry = new VoiceRegistry(database);
+            var speaker = await registry.ResolveSpeakerAsync(
+                "official:test", null, "Test", 0, "english", TestContext.Current.CancellationToken);
+            await using var builder = NewBuilder(database, registry, root);
+
+            for (var index = 0; index < 3; index++)
+                await builder.AddPcmAsync(speaker.Id, $"source-{index}", $"Line {index}", "english", Pcm(),
+                    TestContext.Current.CancellationToken, $"cut/test/voice_{index}.scd", (uint)index,
+                    "curated", 7);
+
+            var sources = await database.ReadAsync(async connection =>
+            {
+                var result = new List<(string Path, long Sound, string Origin, int Catalog, bool HasPcm)>();
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    SELECT scd_path,sound_number,source_origin,catalog_version,pcm_path IS NOT NULL
+                    FROM official_reference_clip ORDER BY sound_number
+                    """;
+                await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+                while (await reader.ReadAsync(TestContext.Current.CancellationToken))
+                    result.Add((reader.GetString(0), reader.GetInt64(1), reader.GetString(2), reader.GetInt32(3),
+                        reader.GetBoolean(4)));
+                return result;
+            }, TestContext.Current.CancellationToken);
+
+            Assert.Equal(3, sources.Count);
+            Assert.All(sources, source =>
+            {
+                Assert.StartsWith("cut/test/voice_", source.Path);
+                Assert.Equal("curated", source.Origin);
+                Assert.Equal(7, source.Catalog);
+                Assert.False(source.HasPcm);
+            });
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task PackageSelectionFindsValidCombinationAndIncludesBoundarySilence()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "resonance-reference-builder-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            using var database = new Database(Path.Combine(root, "voices.sqlite3"));
+            var registry = new VoiceRegistry(database);
+            var runtime = new ReferenceRuntime();
+            var speaker = await registry.ResolveSpeakerAsync(
+                "official:combination", null, "Combination", 0, "english", TestContext.Current.CancellationToken);
+            await using var builder = new OfficialReferenceBuilder(
+                database, registry, runtime, new ScdExtractor(), root, "model");
+
+            await builder.AddPcmAsync(speaker.Id, "seven", "Seven", "english", Pcm(7),
+                TestContext.Current.CancellationToken);
+            await builder.AddPcmAsync(speaker.Id, "five", "Five", "english", Pcm(5),
+                TestContext.Current.CancellationToken);
+            await builder.AddPcmAsync(speaker.Id, "six", "Six", "english", Pcm(6),
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(267600, runtime.LastReferenceSamples);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     private static OfficialReferenceBuilder NewBuilder(Database database, VoiceRegistry registry, string root) =>
         new(database, registry, new ReferenceRuntime(), new ScdExtractor(), root, "model");
 
-    private static float[] Pcm() => Enumerable.Repeat(0.1f, 24000).ToArray();
+    private static float[] Pcm() => Enumerable.Repeat(0.1f, 79200).ToArray();
+    private static float[] Pcm(double seconds) => Enumerable.Repeat(0.1f, (int)(24000 * seconds)).ToArray();
 
     private static Task<long> SpeakerIdAsync(Database database) => database.ReadAsync(async connection =>
     {
@@ -208,11 +282,15 @@ public sealed class OfficialReferenceBuilderTests
 
     private sealed class ReferenceRuntime : ITtsRuntime
     {
+        public int LastReferenceSamples { get; private set; }
         public RuntimeCapabilities Capabilities { get; } = new(false, false, false, true, []);
 
         public ValueTask<VoiceReference> ExtractReferenceAsync(ReadOnlyMemory<float> monoPcm24Khz,
-            string transcript, CancellationToken token) =>
-            ValueTask.FromResult(new VoiceReference([0.1f], [1], 1, 1, transcript));
+            string transcript, CancellationToken token)
+        {
+            LastReferenceSamples = monoPcm24Khz.Length;
+            return ValueTask.FromResult(new VoiceReference([0.1f], [1], 1, 1, transcript));
+        }
 
         public Task SynthesizeAsync(SynthesisRequest request, StreamingAudioBuffer sink, CancellationToken token) =>
             Task.CompletedTask;

@@ -26,16 +26,20 @@
     <Compile Include="..\..\src\Bootstrap\AssetManager.cs" Link="Source\AssetManager.cs" />
     <Compile Include="..\..\src\Bootstrap\AssetManifest.cs" Link="Source\AssetManifest.cs" />
     <Compile Include="..\..\src\Bootstrap\BackendBenchmark.cs" Link="Source\BackendBenchmark.cs" />
+    <Compile Include="..\..\src\Bootstrap\CudaDriverProbe.cs" Link="Source\CudaDriverProbe.cs" />
     <Compile Include="..\..\src\Bootstrap\RuntimePackManager.cs" Link="Source\RuntimePackManager.cs" />
     <Compile Include="..\..\src\Bootstrap\RuntimeEnvironmentIdentity.cs" Link="Source\RuntimeEnvironmentIdentity.cs" />
     <Compile Include="..\..\src\Data\Database.cs" Link="Source\Database.cs" />
     <Compile Include="..\..\src\Data\LineCache.cs" Link="Source\LineCache.cs" />
     <Compile Include="..\..\src\Game\ScdExtractor.cs" Link="Source\ScdExtractor.cs" />
     <Compile Include="..\..\src\Game\OfficialReferenceBuilder.cs" Link="Source\OfficialReferenceBuilder.cs" />
+    <Compile Include="..\..\src\Game\OfficialVoiceCatalog.cs" Link="Source\OfficialVoiceCatalog.cs" />
     <Compile Include="..\..\src\Plugin\LegacyCastingMigration.cs" Link="Source\LegacyCastingMigration.cs" />
     <Compile Include="..\..\src\Scheduling\CutsceneSession.cs" Link="Source\CutsceneSession.cs" />
+    <Compile Include="..\..\src\Scheduling\AutoAdvancePolicy.cs" Link="Source\AutoAdvancePolicy.cs" />
     <Compile Include="..\..\src\Scheduling\DubLine.cs" Link="Source\DubLine.cs" />
     <Compile Include="..\..\src\Scheduling\DubScheduler.cs" Link="Source\DubScheduler.cs" />
+    <Compile Include="..\..\src\Scheduling\StreamingStartPolicy.cs" Link="Source\StreamingStartPolicy.cs" />
     <Compile Include="..\..\src\Tts\ITtsRuntime.cs" Link="Source\ITtsRuntime.cs" />
     <Compile Include="..\..\src\Tts\CastingProfileCatalog.cs" Link="Source\CastingProfileCatalog.cs" />
     <Compile Include="..\..\src\Tts\CastingPoolScheduler.cs" Link="Source\CastingPoolScheduler.cs" />
@@ -45,5 +49,6 @@
     <Compile Include="..\..\src\Tts\VoiceDesigner.cs" Link="Source\VoiceDesigner.cs" />
     <Compile Include="..\..\src\Tts\VoiceRegistry.cs" Link="Source\VoiceRegistry.cs" />
     <None Include="..\..\assets\dub-profiles.json" Link="assets\dub-profiles.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\official-voices.json" Link="assets\official-voices.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

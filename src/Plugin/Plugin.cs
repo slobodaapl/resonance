@@ -52,6 +52,8 @@ public sealed class Plugin : IDalamudPlugin
         var dataDirectory = PluginInterface.ConfigDirectory.FullName;
         catalog = CastingProfileCatalog.Load(Path.Combine(
             PluginInterface.AssemblyLocation.Directory!.FullName, "assets", "dub-profiles.json"));
+        var officialVoiceCatalog = OfficialVoiceCatalog.Load(Path.Combine(
+            PluginInterface.AssemblyLocation.Directory!.FullName, "assets", "official-voices.json"));
         Configuration.MigrateCastingV2(catalog, EnglishTerritoryName,
             message => Log.Information("Casting configuration: {Message}", message));
         PluginInterface.SavePluginConfig(Configuration);
@@ -65,13 +67,13 @@ public sealed class Plugin : IDalamudPlugin
             Configuration,
             SaveConfiguration);
         coordinator = new SessionCoordinator(
-            cutscenes, talk, ClientState, Condition,
+            cutscenes, talk, ClientState, Condition, Framework,
             new SpeakerResolver(ObjectTable, DataManager, catalog,
                 () => EnglishTerritoryName(ClientState.TerritoryType)),
             new QuestDialoguePrefetcher(DataManager, ClientState), nativeVoice, new LipSyncService(Framework, ObjectTable),
             database, bootstrap, new GameVolumeService(GameConfig), Path.Combine(dataDirectory, "line-cache"),
             new ScdExtractor(DataManager), Path.Combine(dataDirectory, "official-working"),
-            catalog, EnglishTerritoryName,
+            catalog, officialVoiceCatalog, EnglishTerritoryName,
             Configuration, Log);
         ipc = new IpcService(PluginInterface, bootstrap, coordinator);
 
@@ -84,6 +86,11 @@ public sealed class Plugin : IDalamudPlugin
             () => (nativeVoice.IsAvailable, nativeVoice.UnavailableReason),
             coordinator.RegenerateCurrentTerritoryVoicesAsync,
             coordinator.RegenerateDomainVoicesAsync,
+            coordinator.GetDebugInferenceSnapshot,
+            coordinator.RefreshDebugBaseVoicesAsync,
+            coordinator.RunVoiceDesignDebugAsync,
+            coordinator.RunBaseDebugAsync,
+            coordinator.CancelDebugInference,
             SaveConfiguration, ReportError);
         windows.AddWindow(configWindow);
         PluginInterface.UiBuilder.Draw += windows.Draw;

@@ -40,6 +40,7 @@ public sealed class DubLine : IDisposable
     public required string SpeakerKey { get; set; }
     public required string SpeakerName { get; set; }
     public required string Text { get; set; }
+    public long? ActualTalkSerial { get; set; }
     public ActualStatus ActualStatus { get; set; }
     public NativeVoiceStatus NativeVoiceStatus { get; set; }
     public DubLineState State { get; set; }
@@ -47,6 +48,7 @@ public sealed class DubLine : IDisposable
     public string? VoiceProfileHash { get; set; }
     public long? SpeakerId { get; set; }
     public bool DirectSynthesisCompleted { get; set; }
+    public bool CanStartStreaming { get; set; }
     public string VoiceArchetype { get; set; } = "neutral_adult";
     public string VoiceSex { get; set; } = "masculine";
     public string? Language { get; set; }
@@ -71,7 +73,7 @@ public sealed class DubLine : IDisposable
     public bool IsTerminal => State is DubLineState.Completed or DubLineState.NativeVoiced
         or DubLineState.Invalidated or DubLineState.Cancelled or DubLineState.Failed;
 
-    public void ApplyResolvedSpeaker(ResolvedLineSpeaker speaker)
+    public void ApplyResolvedSpeaker(ResolvedLineSpeaker speaker, bool preservePreparedAudio = false)
     {
         ArgumentNullException.ThrowIfNull(speaker);
         SpeakerKey = speaker.SpeakerKey;
@@ -84,10 +86,14 @@ public sealed class DubLine : IDisposable
         VoiceArchetype = speaker.VoiceArchetype;
         if (!String.IsNullOrWhiteSpace(speaker.Language)) Language = speaker.Language;
         ActorAddress = speaker.ActorAddress;
-        ReplaceAudio(new StreamingAudioBuffer());
-        VoiceProfileId = null;
-        VoiceProfileHash = null;
-        DirectSynthesisCompleted = false;
+        if (!preservePreparedAudio)
+        {
+            ReplaceAudio(new StreamingAudioBuffer());
+            VoiceProfileId = null;
+            VoiceProfileHash = null;
+            DirectSynthesisCompleted = false;
+            CanStartStreaming = false;
+        }
     }
 
     public void Cancel(DubLineState terminal = DubLineState.Cancelled)
