@@ -17,8 +17,14 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      previous_tag: ${{ steps.changes.outputs.previous_tag }}
+      core_changed: ${{ steps.changes.outputs.core_changed }}
+      cuda_changed: ${{ steps.changes.outputs.cuda_changed }}
+      managed_changed: ${{ steps.changes.outputs.managed_changed }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Validate release inputs
         id: version
@@ -60,7 +66,73 @@ jobs:
 
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
-  native-core:
+      - name: Detect component changes since latest release
+        id: changes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          previous_tag="$(gh release view --json tagName --jq '.tagName' 2>/dev/null || true)"
+          echo "previous_tag=$previous_tag" >> "$GITHUB_OUTPUT"
+
+          if [[ -z "$previous_tag" ]] || ! git rev-parse --verify --quiet "$previous_tag^{commit}" >/dev/null; then
+            echo 'No usable previous release; all components require building.'
+            echo 'core_changed=true' >> "$GITHUB_OUTPUT"
+            echo 'cuda_changed=true' >> "$GITHUB_OUTPUT"
+            echo 'managed_changed=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          release_assets="$(gh release view "$previous_tag" --json assets --jq '.assets | map(.name) | join("\n")')"
+          has_asset() {
+            [[ $'\n'"$release_assets"$'\n' == *$'\n'"$1"$'\n'* ]]
+          }
+
+          # Native build-command/toolchain changes must also update
+          # native/qwentts.version so they participate in this comparison.
+          core_inputs=(
+            native/qwentts.version
+            native/patches/qwentts-resonance.patch
+            src/Tts/QwenNative.cs
+            tools/ReferenceExtractor/ReferenceExtractorNative.cs
+          )
+          cuda_inputs=(
+            native/qwentts.version
+            native/patches/qwentts-resonance.patch
+            src/Tts/QwenNative.cs
+            tools/ReferenceExtractor/ReferenceExtractorNative.cs
+          )
+          managed_inputs=(
+            Resonance.csproj
+            Resonance.json
+            packages.lock.json
+            assets
+            src
+            tools/ReferenceExtractor
+          )
+
+          if git diff --quiet "$previous_tag" "$GITHUB_SHA" -- "${core_inputs[@]}" && has_asset 'Resonance-Core.zip'; then
+            echo 'core_changed=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'core_changed=true' >> "$GITHUB_OUTPUT"
+          fi
+
+          if git diff --quiet "$previous_tag" "$GITHUB_SHA" -- "${cuda_inputs[@]}" && has_asset 'Resonance-CUDA.zip'; then
+            echo 'cuda_changed=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'cuda_changed=true' >> "$GITHUB_OUTPUT"
+          fi
+
+          previous_version="${previous_tag#v}"
+          if git diff --quiet "$previous_tag" "$GITHUB_SHA" -- "${managed_inputs[@]}" && has_asset "Resonance-$previous_version.zip"; then
+            echo 'managed_changed=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'managed_changed=true' >> "$GITHUB_OUTPUT"
+          fi
+
+  build-core:
+    if: needs.preflight.outputs.core_changed == 'true'
     needs: preflight
     runs-on: windows-2022
     steps:
@@ -111,12 +183,6 @@ jobs:
           git -c core.autocrlf=false apply --check --directory=native/qwentts-ci native/patches/qwentts-resonance.patch
           git -c core.autocrlf=false apply --directory=native/qwentts-ci native/patches/qwentts-resonance.patch
 
-      - name: Restore CPU and Vulkan build cache
-        uses: actions/cache@v4
-        with:
-          path: native/qwentts-ci/build-core
-          key: qwentts-core-windows-2022-vulkan-1.4.313.0-${{ hashFiles('native/qwentts.version', 'native/patches/qwentts-resonance.patch') }}
-
       - name: Build CPU and Vulkan core
         shell: pwsh
         run: |
@@ -139,7 +205,31 @@ jobs:
           if-no-files-found: error
           overwrite: true
 
-  native-cuda:
+  reuse-core:
+    if: needs.preflight.outputs.core_changed == 'false'
+    needs: preflight
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download CPU and Vulkan component from previous release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIOUS_TAG: ${{ needs.preflight.outputs.previous_tag }}
+        run: |
+          set -euo pipefail
+          mkdir artifacts
+          gh release download "$PREVIOUS_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'Resonance-Core.zip' --dir artifacts
+          test -s artifacts/Resonance-Core.zip
+
+      - name: Upload CPU and Vulkan component
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-core
+          path: artifacts/Resonance-Core.zip
+          if-no-files-found: error
+          overwrite: true
+
+  build-cuda:
+    if: needs.preflight.outputs.cuda_changed == 'true'
     needs: preflight
     runs-on: windows-2022
     steps:
@@ -167,12 +257,6 @@ jobs:
           git -c core.autocrlf=false apply --check --directory=native/qwentts-ci native/patches/qwentts-resonance.patch
           git -c core.autocrlf=false apply --directory=native/qwentts-ci native/patches/qwentts-resonance.patch
 
-      - name: Restore CUDA build cache
-        uses: actions/cache@v4
-        with:
-          path: native/qwentts-ci/build-cuda
-          key: qwentts-cuda-windows-2022-12.8.1-${{ hashFiles('native/qwentts.version', 'native/patches/qwentts-resonance.patch') }}
-
       - name: Build CUDA backend pack
         shell: pwsh
         run: |
@@ -199,7 +283,31 @@ jobs:
           if-no-files-found: error
           overwrite: true
 
-  managed:
+  reuse-cuda:
+    if: needs.preflight.outputs.cuda_changed == 'false'
+    needs: preflight
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download CUDA component from previous release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIOUS_TAG: ${{ needs.preflight.outputs.previous_tag }}
+        run: |
+          set -euo pipefail
+          mkdir artifacts
+          gh release download "$PREVIOUS_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'Resonance-CUDA.zip' --dir artifacts
+          test -s artifacts/Resonance-CUDA.zip
+
+      - name: Upload CUDA component
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-cuda
+          path: artifacts/Resonance-CUDA.zip
+          if-no-files-found: error
+          overwrite: true
+
+  build-managed:
+    if: needs.preflight.outputs.managed_changed == 'true'
     needs: preflight
     runs-on: windows-2022
     steps:
@@ -243,8 +351,41 @@ jobs:
           include-hidden-files: true
           overwrite: true
 
+  reuse-managed:
+    if: needs.preflight.outputs.managed_changed == 'false'
+    needs: preflight
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download managed plugin from previous release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIOUS_TAG: ${{ needs.preflight.outputs.previous_tag }}
+        run: |
+          set -euo pipefail
+          version="${PREVIOUS_TAG#v}"
+          mkdir -p artifacts/plugin previous
+          gh release download "$PREVIOUS_TAG" --repo "$GITHUB_REPOSITORY" --pattern "Resonance-$version.zip" --dir previous
+          unzip -q "previous/Resonance-$version.zip" -d artifacts/plugin
+          test -s artifacts/plugin/Resonance.dll
+          test -s artifacts/plugin/Resonance.json
+
+      - name: Upload managed component
+        uses: actions/upload-artifact@v4
+        with:
+          name: managed-plugin
+          path: artifacts/plugin
+          if-no-files-found: error
+          include-hidden-files: true
+          overwrite: true
+
   package:
-    needs: [preflight, native-core, native-cuda, managed]
+    if: >-
+      always() &&
+      needs.preflight.result == 'success' &&
+      (needs.build-core.result == 'success' || needs.reuse-core.result == 'success') &&
+      (needs.build-cuda.result == 'success' || needs.reuse-cuda.result == 'success') &&
+      (needs.build-managed.result == 'success' || needs.reuse-managed.result == 'success')
+    needs: [preflight, build-core, reuse-core, build-cuda, reuse-cuda, build-managed, reuse-managed]
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v5
@@ -354,7 +495,7 @@ jobs:
           overwrite: true
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: always() && needs.package.result == 'success' && startsWith(github.ref, 'refs/tags/v')
     needs: package
     runs-on: ubuntu-latest
     permissions:
@@ -375,7 +516,11 @@ jobs:
           generate_release_notes: true
 
   publish-repository:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: >-
+      always() &&
+      needs.package.result == 'success' &&
+      needs.release.result == 'success' &&
+      startsWith(github.ref, 'refs/tags/v')
     needs: [package, release]
     runs-on: ubuntu-latest
     concurrency:

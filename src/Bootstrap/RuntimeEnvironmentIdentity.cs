@@ -4,8 +4,8 @@ namespace Resonance.Bootstrap;
 
 internal static class RuntimeEnvironmentIdentity
 {
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private delegate nint WineGetVersion();
+    [DllImport("ntdll.dll", EntryPoint = "wine_get_version", CallingConvention = CallingConvention.Cdecl)]
+    private static extern nint WineGetVersion();
 
     public static string Get()
     {
@@ -16,16 +16,13 @@ internal static class RuntimeEnvironmentIdentity
 
     private static string? TryGetWineVersion()
     {
-        if (!NativeLibrary.TryLoad("ntdll.dll", out var module)) return null;
         try
         {
-            if (!NativeLibrary.TryGetExport(module, "wine_get_version", out var export)) return null;
-            var pointer = Marshal.GetDelegateForFunctionPointer<WineGetVersion>(export)();
+            var pointer = WineGetVersion();
             return pointer == 0 ? null : Marshal.PtrToStringUTF8(pointer);
         }
-        finally
-        {
-            NativeLibrary.Free(module);
-        }
+        catch (DllNotFoundException) { return null; }
+        catch (EntryPointNotFoundException) { return null; }
+        catch (BadImageFormatException) { return null; }
     }
 }
