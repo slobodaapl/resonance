@@ -330,7 +330,17 @@ jobs:
               DownloadLinkInstall = $url
               DownloadLinkUpdate = $url
               DownloadLinkTesting = $url
-            }) | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 artifacts/repo.json
+            }) | ConvertTo-Json -Depth 5 -AsArray | Set-Content -Encoding utf8 artifacts/repo.json
+
+            $repositoryJson = Get-Content artifacts/repo.json -Raw
+            $repositoryDocument = [System.Text.Json.JsonDocument]::Parse($repositoryJson)
+            try {
+              if ($repositoryDocument.RootElement.ValueKind -ne [System.Text.Json.JsonValueKind]::Array) { throw 'Dalamud repository JSON must be a top-level array' }
+              if ($repositoryDocument.RootElement.GetArrayLength() -ne 1) { throw 'Dalamud repository JSON must contain exactly one plugin entry' }
+            }
+            finally {
+              $repositoryDocument.Dispose()
+            }
           }
 
       - name: Upload packaged artifacts
@@ -368,6 +378,9 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [package, release]
     runs-on: ubuntu-latest
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
     permissions:
       pages: write
       id-token: write
