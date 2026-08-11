@@ -22,8 +22,11 @@ public sealed class CastingDomainPool : IAsyncDisposable
     private readonly CastingProfileCatalog catalog;
     private readonly Func<VoiceDesigner?> designer;
     private readonly Func<bool> canWork;
+    private readonly Func<CancellationToken, Task<bool>>? canWorkAsync;
     private readonly Func<string?> territoryPlaceName;
+    private readonly Func<CancellationToken, Task<string?>>? territoryPlaceNameAsync;
     private readonly Func<string> language;
+    private readonly Func<CancellationToken, Task<string>>? languageAsync;
     private readonly Func<(int Masculine, int Feminine)> targets;
     private readonly Func<string, string, string, string?>? promptOverride;
     private readonly Func<bool> backgroundEnabled;
@@ -35,6 +38,7 @@ public sealed class CastingDomainPool : IAsyncDisposable
     private readonly object gate = new();
     private readonly SemaphoreSlim operations = new(1, 1);
     private readonly SemaphoreSlim wake = new(0);
+    private readonly object disposeGate = new();
     private readonly HashSet<string> activeDomains = new(StringComparer.Ordinal);
     private readonly HashSet<string> encounteredDomains = new(StringComparer.Ordinal);
     private readonly HashSet<string> manualDomains = new(StringComparer.Ordinal);
@@ -44,9 +48,15 @@ public sealed class CastingDomainPool : IAsyncDisposable
     private readonly Queue<string> failures = new();
     private CancellationTokenSource? active;
     private string? currentGeneration;
+    private string? activeTerritory;
+    private bool activationInitialized;
     private string? lastDomain;
     private string? lastSex = "feminine";
     private readonly Task worker;
+    private Task? disposeTask;
+    private TaskCompletionSource? operationsDrained;
+    private int operationUsers;
+    private int disposed;
 
     private sealed record PendingResolution(
         string DomainId,
@@ -66,9 +76,13 @@ public sealed class CastingDomainPool : IAsyncDisposable
         Func<(int Masculine, int Feminine)> targets,
         string modelHash,
         Func<string, string, string, string?>? promptOverride = null,
-        Func<bool>? backgroundEnabled = null)
+        Func<bool>? backgroundEnabled = null,
+        Func<CancellationToken, Task<bool>>? canWorkAsync = null,
+        Func<CancellationToken, Task<string?>>? territoryPlaceNameAsync = null,
+        Func<CancellationToken, Task<string>>? languageAsync = null)
         : this(registry, catalog, designer, canWork, territoryPlaceName, language, targets, modelHash,
-            promptOverride, backgroundEnabled, null, true, null, null)
+            promptOverride, backgroundEnabled, canWorkAsync, territoryPlaceNameAsync,
+            languageAsync, null, true, null, null)
     {
     }
 
@@ -83,6 +97,9 @@ public sealed class CastingDomainPool : IAsyncDisposable
         string modelHash,
         Func<string, string, string, string?>? promptOverride,
         Func<bool>? backgroundEnabled,
+        Func<CancellationToken, Task<bool>>? canWorkAsync,
+        Func<CancellationToken, Task<string?>>? territoryPlaceNameAsync,
+        Func<CancellationToken, Task<string>>? languageAsync,
         Func<string, long, string, CancellationToken, Task<VoiceReference>>? designReference,
         bool startWorker,
         Func<TimeSpan, CancellationToken, Task>? waitForCadence,
@@ -92,8 +109,11 @@ public sealed class CastingDomainPool : IAsyncDisposable
         this.catalog = catalog;
         this.designer = designer;
         this.canWork = canWork;
+        this.canWorkAsync = canWorkAsync;
         this.territoryPlaceName = territoryPlaceName;
+        this.territoryPlaceNameAsync = territoryPlaceNameAsync;
         this.language = language;
+        this.languageAsync = languageAsync;
         this.targets = targets;
         this.modelHash = modelHash;
         this.promptOverride = promptOverride;
@@ -122,7 +142,8 @@ public sealed class CastingDomainPool : IAsyncDisposable
         Action? signalCadence = null,
         bool startWorker = false) =>
         new(registry, catalog, () => null, canWork, territoryPlaceName, language, targets, modelHash,
-            promptOverride, backgroundEnabled, designReference, startWorker, waitForCadence, signalCadence);
+            promptOverride, backgroundEnabled, null, null, null, designReference, startWorker,
+            waitForCadence, signalCadence);
 
     public CastingPoolSnapshot Snapshot
     {
@@ -131,7 +152,7 @@ public sealed class CastingDomainPool : IAsyncDisposable
             lock (gate)
             {
                 return new(
-                    territoryPlaceName(),
+                    activeTerritory,
                     new ReadOnlyCollection<string>(activeDomains.OrderBy(value => value, StringComparer.Ordinal).ToArray()),
                     new ReadOnlyDictionary<string, int>(new Dictionary<string, int>(readyCounts, StringComparer.Ordinal)),
                     new ReadOnlyDictionary<string, int>(new Dictionary<string, int>(targetCounts, StringComparer.Ordinal)),
@@ -143,12 +164,25 @@ public sealed class CastingDomainPool : IAsyncDisposable
 
     public void ActivateTerritory(string? placeName, SpeakerCastingEvidence? evidence = null)
     {
+        if (Volatile.Read(ref disposed) != 0) return;
         var candidates = catalog.GetCandidateDomains(placeName, evidence);
         var territoryDomains = placeName is null
             ? Array.Empty<string>()
             : catalog.GetTerritoryPriors(placeName).Select(prior => prior.DomainId).ToArray();
         lock (gate)
         {
+            if (Volatile.Read(ref disposed) != 0) return;
+            if (activationInitialized
+                && !String.Equals(activeTerritory, placeName, StringComparison.Ordinal))
+            {
+                activeTerritory = placeName;
+                activeDomains.Clear();
+                encounteredDomains.Clear();
+                lastDomain = null;
+                lastSex = "feminine";
+            }
+            activeTerritory = placeName;
+            activationInitialized = true;
             pendingResolutions.RemoveAll(request =>
                 !request.Context.FollowsSpeaker
                 && !String.Equals(request.Context.TerritoryPlaceName, placeName, StringComparison.Ordinal));
@@ -159,11 +193,29 @@ public sealed class CastingDomainPool : IAsyncDisposable
         }
     }
 
+    public void ResetActivation()
+    {
+        lock (gate)
+        {
+            if (Volatile.Read(ref disposed) != 0) return;
+            activeDomains.Clear();
+            encounteredDomains.Clear();
+            manualDomains.Clear();
+            pendingResolutions.Clear();
+            activeTerritory = null;
+            activationInitialized = false;
+            lastDomain = null;
+            lastSex = "feminine";
+        }
+    }
+
     public void ActivateResolution(CastingResolution resolution)
     {
         ArgumentNullException.ThrowIfNull(resolution);
+        if (Volatile.Read(ref disposed) != 0) return;
         lock (gate)
         {
+            if (Volatile.Read(ref disposed) != 0) return;
             activeDomains.Add(resolution.DomainId);
             encounteredDomains.Add(resolution.DomainId);
         }
@@ -176,13 +228,15 @@ public sealed class CastingDomainPool : IAsyncDisposable
         bool followsSpeaker = false)
     {
         ArgumentNullException.ThrowIfNull(resolution);
+        if (Volatile.Read(ref disposed) != 0) return;
         var context = new CastingPoolRequestContext(
             resolution.CatalogVersion,
-            resolution.TerritoryPlaceName ?? territoryPlaceName(),
+            resolution.TerritoryPlaceName ?? ActiveTerritory(),
             Array.AsReadOnly(resolution.ModifierIds.ToArray()),
             followsSpeaker);
         lock (gate)
         {
+            if (Volatile.Read(ref disposed) != 0) return;
             activeDomains.Add(resolution.DomainId);
             encounteredDomains.Add(resolution.DomainId);
             var pending = new PendingResolution(
@@ -205,11 +259,24 @@ public sealed class CastingDomainPool : IAsyncDisposable
         }
     }
 
+    public async Task WaitForIdleAsync(CancellationToken token)
+    {
+        if (Volatile.Read(ref disposed) != 0) return;
+        await AcquireOperationAsync(token).ConfigureAwait(false);
+        ReleaseOperation();
+    }
+
     public Task RegenerateReadyAsync(CancellationToken token)
     {
-        var placeName = territoryPlaceName();
-        var domains = ReachableTerritoryDomains(placeName);
-        return RegenerateDomainsAsync(domains, token);
+        if (Volatile.Read(ref disposed) != 0)
+            return Task.FromException(new ObjectDisposedException(nameof(CastingDomainPool)));
+        return RegenerateReadyCoreAsync(token);
+    }
+
+    private async Task RegenerateReadyCoreAsync(CancellationToken token)
+    {
+        var placeName = await TerritoryPlaceNameAsync(token).ConfigureAwait(false);
+        await RegenerateDomainsAsync(ReachableTerritoryDomains(placeName), token).ConfigureAwait(false);
     }
 
     public Task RegenerateCurrentTerritoryAsync(CancellationToken token) => RegenerateReadyAsync(token);
@@ -220,12 +287,14 @@ public sealed class CastingDomainPool : IAsyncDisposable
     public async Task RegenerateDomainsAsync(IEnumerable<string> domainIds, CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(domainIds);
+        if (Volatile.Read(ref disposed) != 0)
+            throw new ObjectDisposedException(nameof(CastingDomainPool));
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, shutdown.Token);
         Pause();
-        await operations.WaitAsync(linked.Token).ConfigureAwait(false);
+        await AcquireOperationAsync(linked.Token).ConfigureAwait(false);
         try
         {
-            var languageName = language();
+            var languageName = await LanguageAsync(linked.Token).ConfigureAwait(false);
             var domains = domainIds.Where(value => !String.IsNullOrWhiteSpace(value))
                 .Distinct(StringComparer.Ordinal).ToArray();
             await registry.ClearReadySelectedDomainsAsync(domains, languageName, linked.Token).ConfigureAwait(false);
@@ -242,7 +311,7 @@ public sealed class CastingDomainPool : IAsyncDisposable
             }
             if (domains.Length > 0) SignalWorker();
         }
-        finally { operations.Release(); }
+        finally { ReleaseOperation(); }
     }
 
     private async Task RunAsync()
@@ -257,20 +326,29 @@ public sealed class CastingDomainPool : IAsyncDisposable
 
     internal async Task<bool> ExecuteOneWorkAsync(CancellationToken token)
     {
+        if (Volatile.Read(ref disposed) != 0) return false;
         var currentDesigner = designer();
         var manualRequest = HasManualRequests();
+        bool safeToWork;
+        try { safeToWork = await CanWorkAsync(token).ConfigureAwait(false); }
+        catch (OperationCanceledException) { return false; }
+        catch (Exception error)
+        {
+            Failed?.Invoke(error);
+            return false;
+        }
         if ((currentDesigner is null && designReference is null)
-            || !CastingPoolScheduler.ShouldRun(manualRequest, backgroundEnabled(), canWork())) return false;
+            || !CastingPoolScheduler.ShouldRun(manualRequest, backgroundEnabled(), safeToWork)) return false;
         using var job = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token, token);
         lock (gate) active = job;
         var acquired = false;
         try
         {
-            await operations.WaitAsync(job.Token).ConfigureAwait(false);
+            await AcquireOperationAsync(job.Token).ConfigureAwait(false);
             acquired = true;
-            var placeName = territoryPlaceName();
+            var placeName = await TerritoryPlaceNameAsync(job.Token).ConfigureAwait(false);
             ActivateTerritory(placeName);
-            var currentLanguage = language();
+            var currentLanguage = await LanguageAsync(job.Token).ConfigureAwait(false);
             var configuredTargets = targets();
             var activeNow = ActiveDomains();
             var requested = ManualDomains()
@@ -325,7 +403,7 @@ public sealed class CastingDomainPool : IAsyncDisposable
         }
         finally
         {
-            if (acquired) operations.Release();
+            if (acquired) ReleaseOperation();
             lock (gate)
             {
                 if (ReferenceEquals(active, job)) active = null;
@@ -358,7 +436,8 @@ public sealed class CastingDomainPool : IAsyncDisposable
             ? await designReference(instruction, seed, work.Language, token).ConfigureAwait(false)
             : await (currentDesigner ?? throw new InvalidOperationException("VoiceDesign is unavailable"))
                 .DesignReferenceAsync(instruction, seed, work.Language, token).ConfigureAwait(false);
-        if (!CastingPoolScheduler.ShouldPersistGeneratedVoice(job.IsCancellationRequested, canWork()))
+        if (!CastingPoolScheduler.ShouldPersistGeneratedVoice(job.IsCancellationRequested,
+                await CanWorkAsync(token).ConfigureAwait(false)))
         {
             job.Cancel();
             token.ThrowIfCancellationRequested();
@@ -478,6 +557,11 @@ public sealed class CastingDomainPool : IAsyncDisposable
         lock (gate) return manualDomains.OrderBy(value => value, StringComparer.Ordinal).ToArray();
     }
 
+    private string? ActiveTerritory()
+    {
+        lock (gate) return activeTerritory;
+    }
+
     private bool HasManualRequests()
     {
         lock (gate) return manualDomains.Count > 0;
@@ -528,8 +612,21 @@ public sealed class CastingDomainPool : IAsyncDisposable
         return domains.Length == 0 ? [catalog.DefaultDomainId] : domains;
     }
 
+    private Task<bool> CanWorkAsync(CancellationToken token) => canWorkAsync is null
+        ? Task.FromResult(canWork())
+        : canWorkAsync(token);
+
+    private Task<string?> TerritoryPlaceNameAsync(CancellationToken token) => territoryPlaceNameAsync is null
+        ? Task.FromResult(territoryPlaceName())
+        : territoryPlaceNameAsync(token);
+
+    private Task<string> LanguageAsync(CancellationToken token) => languageAsync is null
+        ? Task.FromResult(language())
+        : languageAsync(token);
+
     private void SignalWorker()
     {
+        if (Volatile.Read(ref disposed) != 0) return;
         try { wake.Release(); }
         catch (ObjectDisposedException) { }
         signalCadence?.Invoke();
@@ -544,15 +641,78 @@ public sealed class CastingDomainPool : IAsyncDisposable
         return unchecked((long)hash);
     }
 
-    public async ValueTask DisposeAsync()
+    private async Task AcquireOperationAsync(CancellationToken token)
     {
-        shutdown.Cancel();
-        Pause();
-        SignalWorker();
+        lock (gate)
+        {
+            if (Volatile.Read(ref disposed) != 0)
+                throw new ObjectDisposedException(nameof(CastingDomainPool));
+            operationUsers++;
+        }
+        try { await operations.WaitAsync(token).ConfigureAwait(false); }
+        catch
+        {
+            ReleaseOperationAdmission();
+            throw;
+        }
+    }
+
+    private void ReleaseOperation()
+    {
+        operations.Release();
+        ReleaseOperationAdmission();
+    }
+
+    private void ReleaseOperationAdmission()
+    {
+        TaskCompletionSource? drained = null;
+        lock (gate)
+        {
+            if (operationUsers > 0) operationUsers--;
+            if (operationUsers == 0)
+            {
+                drained = operationsDrained;
+                operationsDrained = null;
+            }
+        }
+        drained?.TrySetResult();
+    }
+
+    private Task WaitForOperationsAsync()
+    {
+        lock (gate)
+        {
+            if (operationUsers == 0) return Task.CompletedTask;
+            return (operationsDrained ??= new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously)).Task;
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        lock (disposeGate)
+        {
+            if (disposeTask is not null) return new ValueTask(disposeTask);
+            Interlocked.Exchange(ref disposed, 1);
+            disposeTask = DisposeCoreAsync();
+            return new ValueTask(disposeTask);
+        }
+    }
+
+    private async Task DisposeCoreAsync()
+    {
+        try { shutdown.Cancel(); }
+        catch (ObjectDisposedException) { }
+        lock (gate)
+        {
+            try { active?.Cancel(); }
+            catch (ObjectDisposedException) { }
+        }
+        try { wake.Release(); }
+        catch (ObjectDisposedException) { }
         try { await worker.ConfigureAwait(false); }
         catch (OperationCanceledException) { }
-        await operations.WaitAsync().ConfigureAwait(false);
-        operations.Release();
+        await WaitForOperationsAsync().ConfigureAwait(false);
         lock (gate) active?.Dispose();
         operations.Dispose();
         wake.Dispose();

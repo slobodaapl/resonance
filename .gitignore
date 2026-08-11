@@ -2,6 +2,7 @@
 /native/qwentts/
 /native/qwentts-ci/
 /native/runtime/
+/reference-extractor/
 
 # .NET / IDE outputs
 **/bin/

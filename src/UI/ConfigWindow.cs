@@ -8,7 +8,7 @@ using NAudio.Wave;
 
 namespace Resonance.UI;
 
-public sealed class ConfigWindow : Window
+public sealed class ConfigWindow : Window, IAsyncDisposable
 {
     private static readonly string[] Languages = ["english", "japanese", "german", "french"];
     private static readonly string[] Sexes = ["masculine", "feminine"];
@@ -30,6 +30,8 @@ public sealed class ConfigWindow : Window
     private readonly Func<string, CancellationToken, Task> refreshDebugBaseVoices;
     private readonly Func<string, string, string, CancellationToken, Task> runVoiceDesignDebug;
     private readonly Func<string, string, string, CancellationToken, Task> runBaseDebug;
+    private readonly Func<BackendInfo, CancellationToken, Task>? setBackend;
+    private readonly Func<CancellationToken, Task>? rebuildBackendBenchmark;
     private readonly Action cancelDebug;
     private string selectedDomain = "generic_world";
     private string selectedLanguage = "english";
@@ -43,6 +45,11 @@ public sealed class ConfigWindow : Window
     private string? refreshedDebugLanguage;
     private int debugRefreshInFlight;
     private int benchmarkInFlight;
+    private readonly object taskGate = new();
+    private readonly HashSet<Task> activeTasks = [];
+    private readonly CancellationTokenSource shutdown = new();
+    private int disposed;
+    private Task? disposeTask;
 
     public ConfigWindow(
         Configuration configuration,
@@ -62,7 +69,9 @@ public sealed class ConfigWindow : Window
         Func<string, string, string, CancellationToken, Task> runBaseDebug,
         Action cancelDebug,
         Action save,
-        Action<Exception> reportError)
+        Action<Exception> reportError,
+        Func<BackendInfo, CancellationToken, Task>? setBackend = null,
+        Func<CancellationToken, Task>? rebuildBackendBenchmark = null)
         : base("Resonance Settings###ResonanceSettings")
     {
         this.configuration = configuration;
@@ -80,6 +89,8 @@ public sealed class ConfigWindow : Window
         this.refreshDebugBaseVoices = refreshDebugBaseVoices;
         this.runVoiceDesignDebug = runVoiceDesignDebug;
         this.runBaseDebug = runBaseDebug;
+        this.setBackend = setBackend;
+        this.rebuildBackendBenchmark = rebuildBackendBenchmark;
         this.cancelDebug = cancelDebug;
         this.save = save;
         this.reportError = reportError;
@@ -120,6 +131,15 @@ public sealed class ConfigWindow : Window
 
         var manager = runtime();
         var boot = bootstrap();
+        var keepBaseModelLoaded = configuration.KeepBaseModelLoaded;
+        if (ImGui.Checkbox("Keep Base voice-clone model loaded", ref keepBaseModelLoaded))
+        {
+            configuration.KeepBaseModelLoaded = keepBaseModelLoaded;
+            save();
+            if (manager is not null)
+                Run(() => manager.SetBaseHotLoadEnabledAsync(keepBaseModelLoaded, shutdown.Token));
+        }
+        ImGui.TextWrapped("Keeps the Base voice-clone model loaded on the selected CPU/GPU between uses. Uses more memory; does not affect VoiceDesign.");
         ImGui.TextUnformatted($"Runtime state: {boot.State}");
         if (boot.CurrentProgress is { } progress && boot.State is BootstrapState.DownloadingRuntime
                 or BootstrapState.DownloadingBase or BootstrapState.DownloadingVoiceDesign)
@@ -165,9 +185,9 @@ public sealed class ConfigWindow : Window
                         && configuration.DesiredBackendName == backend.Name;
                     var label = $"{backend.Description} [{backend.Name}]";
                     if (ImGui.Selectable(label, selected))
-                        _ = manager.SetDesiredAsync(backend, CancellationToken.None).ContinueWith(
-                            task => reportError(task.Exception!.GetBaseException()),
-                            TaskContinuationOptions.OnlyOnFaulted);
+                        Run(() => setBackend is null
+                            ? manager.SetDesiredAsync(backend, shutdown.Token)
+                            : setBackend(backend, shutdown.Token));
                 }
                 ImGui.EndCombo();
             }
@@ -202,6 +222,20 @@ public sealed class ConfigWindow : Window
             configuration.AutoAdvanceDubbedCutsceneDialogue = autoAdvance;
             save();
         }
+        var voiceLearningDiagnostics = configuration.VoiceLearningDiagnostics;
+        if (ImGui.Checkbox("Voice-learning diagnostics", ref voiceLearningDiagnostics))
+        {
+            configuration.VoiceLearningDiagnostics = voiceLearningDiagnostics;
+            save();
+        }
+        ImGui.TextWrapped("Logs official voice observations and profile-building decisions to the Dalamud plugin log; can be noisy.");
+        var autoAdvanceDiagnostics = configuration.AutoAdvanceDiagnostics;
+        if (ImGui.Checkbox("Auto-advance diagnostics", ref autoAdvanceDiagnostics))
+        {
+            configuration.AutoAdvanceDiagnostics = autoAdvanceDiagnostics;
+            save();
+        }
+        ImGui.TextWrapped("Temporarily logs bounded Talk timer/input and native-auto UI state diagnostics to the Dalamud plugin log; off by default and can be noisy.");
         var masculine = configuration.ReadyMasculineVoices;
         if (ImGui.SliderInt("Ready masculine / active domain", ref masculine, 0, 20))
         {
@@ -228,12 +262,12 @@ public sealed class ConfigWindow : Window
         if (ImGui.Button(Volatile.Read(ref benchmarkInFlight) == 0
                 ? "Rebuild backend benchmark now"
                 : "Benchmarking backends..."))
-            Run(RebuildBackendBenchmarkAsync(manager!, boot.VoiceDesignPath!));
+            Run(() => RebuildBackendBenchmarkAsync(manager!, boot.VoiceDesignPath!, shutdown.Token));
         ImGui.EndDisabled();
 
         ImGui.SameLine();
         if (ImGui.Button("Regenerate current territory domains"))
-            Run(regenerateCurrentTerritory(CancellationToken.None));
+            Run(() => regenerateCurrentTerritory(shutdown.Token));
 
         DrawCastingDiagnostics();
         DrawCastingEditor();
@@ -244,8 +278,10 @@ public sealed class ConfigWindow : Window
             foreach (var measurement in benchmark.Measurements)
             {
                 var result = measurement.Successful
-                    ? $"TTFA {measurement.TimeToFirstAudioSeconds:F2}s, RTF {measurement.RealTimeFactor:F2}"
-                    : $"failed: {measurement.Error}";
+                    && measurement.TimeToFirstAudioSeconds is { } ttfa
+                    && measurement.RealTimeFactor is { } realtime
+                    ? $"TTFA {ttfa:F2}s, RTF {realtime:F2}"
+                    : $"failed: {measurement.Error ?? "unknown"}";
                 ImGui.BulletText($"{measurement.BackendName}: {result}");
             }
         }
@@ -354,7 +390,9 @@ public sealed class ConfigWindow : Window
                 {
                     var selected = manager.Selection?.Effective.Name == backend.Name;
                     if (ImGui.Selectable($"{backend.Description} [{backend.Name}]", selected))
-                        Run(manager.SetDesiredAsync(backend, CancellationToken.None));
+                        Run(() => setBackend is null
+                            ? manager.SetDesiredAsync(backend, shutdown.Token)
+                            : setBackend(backend, shutdown.Token));
                 }
                 ImGui.EndCombo();
             }
@@ -372,7 +410,7 @@ public sealed class ConfigWindow : Window
         ImGui.TextUnformatted("VoiceDesign instruction");
         ImGui.InputTextMultiline("##DebugVoiceDesignInstruction", ref debugInstruction, 4096, new Vector2(-1, 90));
         if (ImGui.Button("Test VoiceDesign + playback"))
-            Run(runVoiceDesignDebug(debugSentence, debugInstruction, debugLanguage, CancellationToken.None));
+            Run(() => runVoiceDesignDebug(debugSentence, debugInstruction, debugLanguage, shutdown.Token));
 
         ImGui.Separator();
         ImGui.TextUnformatted("Base voice clone");
@@ -391,7 +429,7 @@ public sealed class ConfigWindow : Window
         }
         ImGui.BeginDisabled(!selectedVoice.Available);
         if (ImGui.Button("Test Base clone + playback"))
-            Run(runBaseDebug(debugBaseVoice, debugSentence, debugLanguage, CancellationToken.None));
+            Run(() => runBaseDebug(debugBaseVoice, debugSentence, debugLanguage, shutdown.Token));
         ImGui.EndDisabled();
         ImGui.SameLine();
         if (ImGui.Button("Refresh official sources")) RefreshDebugVoices();
@@ -404,12 +442,17 @@ public sealed class ConfigWindow : Window
     {
         if (Interlocked.Exchange(ref debugRefreshInFlight, 1) != 0) return;
         var language = debugLanguage;
-        _ = refreshDebugBaseVoices(language, CancellationToken.None).ContinueWith(task =>
+        Run(() => RefreshDebugVoicesAsync(language));
+    }
+
+    private async Task RefreshDebugVoicesAsync(string language)
+    {
+        try
         {
-            if (task.IsCompletedSuccessfully) Volatile.Write(ref refreshedDebugLanguage, language);
-            else if (task.IsFaulted) reportError(task.Exception!.GetBaseException());
-            Interlocked.Exchange(ref debugRefreshInFlight, 0);
-        }, TaskScheduler.Default);
+            await refreshDebugBaseVoices(language, shutdown.Token).ConfigureAwait(false);
+            Volatile.Write(ref refreshedDebugLanguage, language);
+        }
+        finally { Interlocked.Exchange(ref debugRefreshInFlight, 0); }
     }
 
     private void DrawCastingEditor()
@@ -473,7 +516,7 @@ public sealed class ConfigWindow : Window
         }
         ImGui.SameLine();
         if (ImGui.Button("Regenerate selected domain"))
-            Run(regenerateDomain(selectedDomain, CancellationToken.None));
+            Run(() => regenerateDomain(selectedDomain, shutdown.Token));
     }
 
     private string CurrentLanguageName()
@@ -482,14 +525,18 @@ public sealed class ConfigWindow : Window
         return Languages.Contains(value, StringComparer.Ordinal) ? value : "english";
     }
 
-    private async Task RebuildBackendBenchmarkAsync(RuntimeManager manager, string voiceDesignPath)
+    private async Task RebuildBackendBenchmarkAsync(
+        RuntimeManager manager, string voiceDesignPath, CancellationToken token)
     {
         if (Interlocked.Exchange(ref benchmarkInFlight, 1) != 0) return;
         try
         {
             configuration.BackendBenchmark = null;
             save();
-            await manager.BenchmarkAndApplyAsync(voiceDesignPath, CancellationToken.None).ConfigureAwait(false);
+            if (rebuildBackendBenchmark is not null)
+                await rebuildBackendBenchmark(token).ConfigureAwait(false);
+            else
+                await manager.BenchmarkAndApplyAsync(voiceDesignPath, token).ConfigureAwait(false);
         }
         finally
         {
@@ -497,7 +544,69 @@ public sealed class ConfigWindow : Window
         }
     }
 
-    private void Run(Task task) => _ = task.ContinueWith(
-        completed => reportError(completed.Exception!.GetBaseException()),
-        TaskContinuationOptions.OnlyOnFaulted);
+    private void Run(Func<Task> operation)
+    {
+        lock (taskGate)
+        {
+            if (Volatile.Read(ref disposed) != 0) return;
+            Task task;
+            try { task = operation(); }
+            catch (Exception error)
+            {
+                reportError(error);
+                return;
+            }
+            activeTasks.Add(task);
+            _ = ObserveTaskAsync(task);
+        }
+    }
+
+    private async Task ObserveTaskAsync(Task task)
+    {
+        try
+        {
+            await task.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (shutdown.IsCancellationRequested) { }
+        catch (Exception error) { reportError(error); }
+        finally
+        {
+            lock (taskGate) activeTasks.Remove(task);
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        Task task;
+        var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (taskGate)
+        {
+            if (disposeTask is not null) return new ValueTask(disposeTask);
+            Volatile.Write(ref disposed, 1);
+            disposeTask = DisposeCoreAsync(activeTasks.ToArray(), start.Task);
+            task = disposeTask;
+        }
+
+        // Do not invoke cancellation callbacks while taskGate is held.  Some
+        // callbacks remove their task from that gate or re-enter disposal.
+        try { shutdown.Cancel(); }
+        catch (ObjectDisposedException) { }
+        finally { start.TrySetResult(); }
+        return new ValueTask(task);
+    }
+
+    private async Task DisposeCoreAsync(Task[] tasks, Task start)
+    {
+        await start.ConfigureAwait(false);
+        foreach (var task in tasks)
+        {
+            try { await task.ConfigureAwait(false); }
+            catch (OperationCanceledException) { }
+            // ObserveTaskAsync owns reporting. Waiting here only drains the
+            // task before dependent runtime/database disposal; reporting a
+            // second time would duplicate the same UI failure.
+            catch (Exception) { }
+        }
+        shutdown.Dispose();
+    }
 }

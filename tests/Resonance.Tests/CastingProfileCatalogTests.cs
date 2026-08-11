@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using Resonance.Tts;
 
@@ -14,7 +13,6 @@ public sealed class CastingProfileCatalogTests
         Assert.Equal(1, catalog.Version);
         Assert.Equal("generic_world", catalog.DefaultDomainId);
         Assert.Empty(catalog.Validate());
-        Assert.Empty(catalog.IdentityGroups);
         Assert.Equal(5, catalog.GetDomain("ishgardian").MasculineSlots.Count);
         Assert.Equal(5, catalog.GetDomain("ishgardian").FeminineSlots.Count);
         Assert.Equal(["lominsan"], catalog.GetTerritoryPriors("Mist").Select(prior => prior.DomainId));
@@ -26,46 +24,79 @@ public sealed class CastingProfileCatalogTests
     {
         var original = File.ReadAllText(ProjectPath("assets", "dub-profiles.json"));
 
-        var duplicate = ReplaceOnce(original, "\"id\": \"kojin\", \"confidence\": \"B\"",
-            "\"id\": \"generic_world\", \"confidence\": \"B\"");
+        var duplicateNode = ParseFixture(original);
+        FindFixtureObject(duplicateNode, "domains", "id", "kojin")["id"] = "generic_world";
+        var duplicate = duplicateNode.ToJsonString();
         Assert.Contains(CastingProfileCatalog.ValidateJson(duplicate), issue => issue.Code == "duplicate-id");
 
-        var missingReference = ReplaceOnce(original, "\"domainId\": \"lominsan\"", "\"domainId\": \"missing_domain\"");
+        var missingReferenceNode = ParseFixture(original);
+        var missingReferencePrior = FindFixtureObject(missingReferenceNode, "territories", "placeName",
+            "Limsa Lominsa Upper Decks")["priors"]!.AsArray()[0]!.AsObject();
+        missingReferencePrior["domainId"] = "missing_domain";
+        var missingReference = missingReferenceNode.ToJsonString();
         Assert.Contains(CastingProfileCatalog.ValidateJson(missingReference), issue => issue.Code == "missing-reference");
 
-        var badWeight = ReplaceOnce(original, "\"weight\": 1", "\"weight\": 0");
+        var badWeightNode = ParseFixture(original);
+        var badWeightPrior = FindFixtureObject(badWeightNode, "territories", "placeName",
+            "Limsa Lominsa Upper Decks")["priors"]!.AsArray()[0]!.AsObject();
+        badWeightPrior["weight"] = 0;
+        var badWeight = badWeightNode.ToJsonString();
         Assert.Contains(CastingProfileCatalog.ValidateJson(badWeight), issue => issue.Code == "invalid-weight");
         var exception = Assert.Throws<CastingProfileCatalogException>(() => CastingProfileCatalog.Parse(badWeight));
         Assert.Contains(exception.Issues, issue => issue.Code == "invalid-weight");
 
-        var badConfidence = ReplaceOnce(original, "\"confidence\": \"B\"", "\"confidence\": \"X\"");
+        var badConfidenceNode = ParseFixture(original);
+        FindFixtureObject(badConfidenceNode, "domains", "id", "lominsan")["confidence"] = "X";
+        var badConfidence = badConfidenceNode.ToJsonString();
         Assert.Contains(CastingProfileCatalog.ValidateJson(badConfidence), issue => issue.Code == "invalid-confidence");
 
-        var geographicPriorOnNoDomain = ReplaceOnce(original,
-            "\"placeName\": \"Wolves' Den Pier\", \"confidence\": \"Ø\", \"priors\": []",
-            "\"placeName\": \"Wolves' Den Pier\", \"confidence\": \"Ø\", \"priors\": [{ \"domainId\": \"lominsan\", \"weight\": 1 }]");
+        var geographicPriorOnNoDomainNode = ParseFixture(original);
+        var geographicPriorOnNoDomainTerritory = FindFixtureObject(geographicPriorOnNoDomainNode, "territories",
+            "placeName", "Wolves' Den Pier");
+        geographicPriorOnNoDomainTerritory["priors"] = new JsonArray
+        {
+            new JsonObject
+            {
+                ["domainId"] = "lominsan",
+                ["weight"] = 1
+            }
+        };
+        var geographicPriorOnNoDomain = geographicPriorOnNoDomainNode.ToJsonString();
         Assert.Contains(CastingProfileCatalog.ValidateJson(geographicPriorOnNoDomain), issue =>
             issue.Code == "forbidden-geographic-prior");
         var geographicException = Assert.Throws<CastingProfileCatalogException>(
             () => CastingProfileCatalog.Parse(geographicPriorOnNoDomain));
         Assert.Contains(geographicException.Issues, issue => issue.Code == "forbidden-geographic-prior");
 
-        var duplicateTerritory = ReplaceOnce(original, "\"placeName\": \"Limsa Lominsa Lower Decks\"",
-            "\"placeName\": \"Limsa Lominsa Upper Decks\"");
+        var duplicateTerritoryNode = ParseFixture(original);
+        FindFixtureObject(duplicateTerritoryNode, "territories", "placeName",
+            "Limsa Lominsa Lower Decks")["placeName"] = "Limsa Lominsa Upper Decks";
+        var duplicateTerritory = duplicateTerritoryNode.ToJsonString();
         Assert.Contains(CastingProfileCatalog.ValidateJson(duplicateTerritory), issue => issue.Code == "duplicate-territory");
 
-        var missingSlot = ReplaceOnce(original,
-            "\"masculine\": [\"m_young_light\", \"m_adult_grounded\", \"m_adult_resonant\", \"m_elder_measured\", \"m_adult_formal\"]",
-            "\"masculine\": [\"m_young_light\", \"m_adult_grounded\", \"m_adult_resonant\", \"m_elder_measured\"]");
+        var missingSlotNode = ParseFixture(original);
+        var masculineSlots = FindFixtureObject(missingSlotNode, "domains", "id", "generic_world")
+            ["slotTemplates"]!.AsObject()["masculine"]!.AsArray();
+        var formalSlotIndexes = Enumerable.Range(0, masculineSlots.Count)
+            .Where(index => masculineSlots[index] is JsonValue value &&
+                value.TryGetValue<string>(out var slotId) &&
+                string.Equals(slotId, "m_adult_formal", StringComparison.Ordinal))
+            .ToArray();
+        Assert.True(formalSlotIndexes.Length == 1,
+            $"Fixture slot value 'm_adult_formal' expected exactly once; found {formalSlotIndexes.Length}");
+        masculineSlots.RemoveAt(formalSlotIndexes[0]);
+        var missingSlot = missingSlotNode.ToJsonString();
         Assert.Contains(CastingProfileCatalog.ValidateJson(missingSlot), issue => issue.Code == "invalid-slot-count");
 
-        var cycle = ReplaceOnce(original, "\"id\": \"generic_world\", \"confidence\": \"C\"",
-            "\"id\": \"generic_world\", \"inherits\": \"kojin\", \"confidence\": \"C\"");
-        cycle = ReplaceOnce(cycle, "\"id\": \"kojin\", \"confidence\": \"B\"",
-            "\"id\": \"kojin\", \"inherits\": \"generic_world\", \"confidence\": \"B\"");
+        var cycleNode = ParseFixture(original);
+        FindFixtureObject(cycleNode, "domains", "id", "generic_world")["inherits"] = "kojin";
+        FindFixtureObject(cycleNode, "domains", "id", "kojin")["inherits"] = "generic_world";
+        var cycle = cycleNode.ToJsonString();
         Assert.Contains(CastingProfileCatalog.ValidateJson(cycle), issue => issue.Code == "reference-cycle");
 
-        var nullEntries = ReplaceOnce(original, "\"identityGroups\": []", "\"identityGroups\": [null]");
+        var nullEntriesNode = ParseFixture(original);
+        nullEntriesNode["identityGroups"]!.AsArray().Insert(0, null);
+        var nullEntries = nullEntriesNode.ToJsonString();
         Assert.Contains(CastingProfileCatalog.ValidateJson(nullEntries), issue => issue.Code == "null-entry");
 
         var nullSlotNode = JsonNode.Parse(original)!.AsObject();
@@ -73,15 +104,20 @@ public sealed class CastingProfileCatalogTests
         var nullSlot = nullSlotNode.ToJsonString();
         Assert.Contains(CastingProfileCatalog.ValidateJson(nullSlot), issue => issue.Code == "null-entry");
 
-        var nullCollection = ReplaceJsonCollectionWithNull(original, "rules");
+        var nullCollectionNode = ParseFixture(original);
+        nullCollectionNode["rules"] = null;
+        var nullCollection = nullCollectionNode.ToJsonString();
         Assert.Contains(CastingProfileCatalog.ValidateJson(nullCollection), issue => issue.Code == "missing-rules");
 
         var malformedJson = CastingProfileCatalog.ValidateJson("{");
         Assert.Contains(malformedJson, issue => issue.Code == "malformed-schema");
 
-        var speciesWithoutCategory = ReplaceOnce(original,
-            ", \"speakerCategory\": \"non_humanoid\", \"priority\": 110, \"confidence\": \"B\" },\n    { \"id\": \"rule_species_moblin\"",
-            ", \"priority\": 110, \"confidence\": \"B\" },\n    { \"id\": \"rule_species_moblin\"");
+        var speciesWithoutCategoryNode = ParseFixture(original);
+        var speciesWithoutCategoryRule = FindFixtureObject(speciesWithoutCategoryNode, "rules", "id",
+            "rule_species_loporrit");
+        Assert.True(speciesWithoutCategoryRule.Remove("speakerCategory"),
+            "Fixture property not found: rules[id=rule_species_loporrit].speakerCategory");
+        var speciesWithoutCategory = speciesWithoutCategoryNode.ToJsonString();
         Assert.Contains(CastingProfileCatalog.ValidateJson(speciesWithoutCategory), issue =>
             issue.Code == "malformed-rule" && issue.Path.Contains("speakerCategory", StringComparison.Ordinal));
     }
@@ -289,10 +325,21 @@ public sealed class CastingProfileCatalogTests
     [Fact]
     public void HumanoidCategoryRulesRemainUsableWhileSpeciesRulesStayFailClosed()
     {
-        var json = File.ReadAllText(ProjectPath("assets", "dub-profiles.json"));
-        json = ReplaceOnce(json, "\"rules\": [",
-            "\"rules\": [{ \"id\": \"culture_humanoid_test\", \"kind\": \"culture\", \"value\": \"Civic\", \"domainId\": \"sharlayan\", \"modifierIds\": [], \"speakerCategory\": \"humanoid\", \"priority\": 120, \"confidence\": \"B\" },");
-        var catalog = CastingProfileCatalog.Parse(json);
+        var root = ParseFixture(File.ReadAllText(ProjectPath("assets", "dub-profiles.json")));
+        var rules = root["rules"]?.AsArray()
+            ?? throw new InvalidOperationException("Fixture collection not found: rules");
+        rules.Insert(0, new JsonObject
+        {
+            ["id"] = "culture_humanoid_test",
+            ["kind"] = "culture",
+            ["value"] = "Civic",
+            ["domainId"] = "sharlayan",
+            ["modifierIds"] = new JsonArray(),
+            ["speakerCategory"] = "humanoid",
+            ["priority"] = 120,
+            ["confidence"] = "B",
+        });
+        var catalog = CastingProfileCatalog.Parse(root.ToJsonString());
 
         var humanoid = catalog.Resolve(new SpeakerCastingEvidence(
             "humanoid-rule:1", "The Fringes", Culture: "Civic", Category: "humanoid"));
@@ -415,31 +462,48 @@ public sealed class CastingProfileCatalogTests
         Assert.Equal(1, catalog.Version);
     }
 
-    private static string ReplaceOnce(string value, string oldValue, string newValue)
+    private static JsonObject ParseFixture(string json)
     {
-        var index = value.IndexOf(oldValue, StringComparison.Ordinal);
-        Assert.True(index >= 0, $"Fixture text not found: {oldValue}");
-        return value[..index] + newValue + value[(index + oldValue.Length)..];
+        return JsonNode.Parse(json) as JsonObject
+            ?? throw new InvalidOperationException("Casting-profile fixture root must be a JSON object");
     }
 
-    private static string ReplaceJsonCollectionWithNull(string json, string propertyName)
+    private static JsonObject FindFixtureObject(JsonObject root, string collectionName, string propertyName,
+        string expectedValue)
     {
-        using var document = JsonDocument.Parse(json);
-        var properties = document.RootElement.EnumerateObject()
-            .ToDictionary(property => property.Name, property => property.Value.Clone(), StringComparer.Ordinal);
-        Assert.True(properties.ContainsKey(propertyName), $"JSON property not found: {propertyName}");
+        var collection = root[collectionName] as JsonArray
+            ?? throw new InvalidOperationException($"Fixture collection not found: {collectionName}");
 
-        using var nullDocument = JsonDocument.Parse("null");
-        properties[propertyName] = nullDocument.RootElement.Clone();
-        return JsonSerializer.Serialize(properties);
+        foreach (var node in collection)
+        {
+            if (node is JsonObject item &&
+                string.Equals(item[propertyName]?.GetValue<string>(), expectedValue, StringComparison.Ordinal))
+            {
+                return item;
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Fixture object not found: {collectionName}[{propertyName}={expectedValue}]");
     }
 
     private static CastingProfileCatalog CatalogWithSyntheticIdentity(params uint[] npcBaseIds)
     {
         Assert.NotEmpty(npcBaseIds);
-        var json = File.ReadAllText(ProjectPath("assets", "dub-profiles.json"));
-        var identity = $"\"identityGroups\": [{{ \"id\": \"identity_test\", \"npcBaseIds\": [{string.Join(", ", npcBaseIds)}], \"domainId\": \"alexandrian\", \"modifierIds\": [], \"confidence\": \"A\" }}]";
-        return CastingProfileCatalog.Parse(ReplaceOnce(json, "\"identityGroups\": []", identity));
+        var root = ParseFixture(File.ReadAllText(ProjectPath("assets", "dub-profiles.json")));
+        var identities = root["identityGroups"]?.AsArray()
+            ?? throw new InvalidOperationException("Fixture collection not found: identityGroups");
+        var ids = new JsonArray();
+        foreach (var npcBaseId in npcBaseIds) ids.Add(JsonValue.Create(npcBaseId));
+        identities.Add(new JsonObject
+        {
+            ["id"] = "identity_test",
+            ["npcBaseIds"] = ids,
+            ["domainId"] = "alexandrian",
+            ["modifierIds"] = new JsonArray(),
+            ["confidence"] = "A",
+        });
+        return CastingProfileCatalog.Parse(root.ToJsonString());
     }
 
     private static string ProjectPath(params string[] parts)

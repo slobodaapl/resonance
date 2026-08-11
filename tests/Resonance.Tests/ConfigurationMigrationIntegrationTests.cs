@@ -6,6 +6,14 @@ namespace Resonance.Tests;
 public sealed class ConfigurationMigrationIntegrationTests
 {
     [Fact]
+    public void VoiceLearningDiagnosticsDefaultsOff()
+    {
+        Assert.False(new Configuration().VoiceLearningDiagnostics);
+        Assert.False(new Configuration().AutoAdvanceDiagnostics);
+        Assert.False(new Configuration().KeepBaseModelLoaded);
+    }
+
+    [Fact]
     public void UnknownAndNeutralLegacyArchetypesAreRetainedWithDiagnostics()
     {
         var configuration = new Configuration

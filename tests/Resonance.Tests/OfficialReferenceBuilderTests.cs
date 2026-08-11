@@ -267,6 +267,171 @@ public sealed class OfficialReferenceBuilderTests
         finally { Directory.Delete(root, true); }
     }
 
+    [Fact]
+    public async Task ObservedPackageCanPersistWithoutInferenceUntilSafeProcessing()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "resonance-reference-deferred-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            using var database = new Database(Path.Combine(root, "voices.sqlite3"));
+            var registry = new VoiceRegistry(database);
+            var runtime = new ReferenceRuntime();
+            var speaker = await registry.ResolveSpeakerAsync(
+                "official:deferred", null, "Deferred", 0, "english", TestContext.Current.CancellationToken);
+            await using var builder = new OfficialReferenceBuilder(
+                database, registry, runtime, new ScdExtractor(), root, "model");
+
+            for (var index = 0; index < 3; index++)
+                await builder.AddPcmAsync(speaker.Id, $"deferred-{index}", $"Line {index}", "english", Pcm(),
+                    TestContext.Current.CancellationToken, $"cut/test/deferred_{index}.scd", (uint)index,
+                    "observed", buildProfile: false);
+
+            Assert.Equal(0, runtime.LastReferenceSamples);
+            Assert.Null(await registry.GetBestVoiceAsync(
+                speaker.Id, "english", TestContext.Current.CancellationToken));
+
+            await builder.ProcessPendingAsync("english", TestContext.Current.CancellationToken);
+
+            Assert.True(runtime.LastReferenceSamples >= 240_000);
+            Assert.Equal(VoiceProfileKind.Official, (await registry.GetBestVoiceAsync(
+                speaker.Id, "english", TestContext.Current.CancellationToken))?.Kind);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task LaterObservedClipsDoNotSilentlyReplaceStableOfficialProfile()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "resonance-reference-stable-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            using var database = new Database(Path.Combine(root, "voices.sqlite3"));
+            var registry = new VoiceRegistry(database);
+            var runtime = new ReferenceRuntime();
+            var speaker = await registry.ResolveSpeakerAsync(
+                "official:stable", null, "Stable", 0, "english", TestContext.Current.CancellationToken);
+            await using var builder = new OfficialReferenceBuilder(
+                database, registry, runtime, new ScdExtractor(), root, "model");
+
+            for (var index = 0; index < 3; index++)
+                await builder.AddPcmAsync(speaker.Id, $"first-{index}", $"First {index}", "english", Pcm(),
+                    TestContext.Current.CancellationToken, buildProfile: false);
+            await builder.ProcessPendingAsync("english", TestContext.Current.CancellationToken);
+            var first = await registry.GetBestVoiceAsync(speaker.Id, "english", TestContext.Current.CancellationToken);
+
+            var observedAfterStable = await builder.ObserveAsync(
+                speaker.Id, "cut/test/stable-later.scd", 7, "Later observed", "english",
+                TestContext.Current.CancellationToken);
+            await builder.ProcessPendingAsync("english", TestContext.Current.CancellationToken);
+            var consumedStatus = await database.ReadAsync(async connection =>
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    SELECT decode_status FROM official_reference_clip
+                    WHERE speaker_id=$speaker AND scd_path='cut/test/stable-later.scd'
+                    """;
+                command.Parameters.AddWithValue("$speaker", speaker.Id);
+                return (string?)await command.ExecuteScalarAsync(TestContext.Current.CancellationToken);
+            }, TestContext.Current.CancellationToken);
+
+            for (var index = 0; index < 3; index++)
+                await builder.AddPcmAsync(speaker.Id, $"later-{index}", $"Later {index}", "english", Pcm(),
+                    TestContext.Current.CancellationToken, buildProfile: false);
+            await builder.ProcessPendingAsync("english", TestContext.Current.CancellationToken);
+            var later = await registry.GetBestVoiceAsync(speaker.Id, "english", TestContext.Current.CancellationToken);
+            var pendingPcm = await database.ReadAsync(async connection =>
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = "SELECT COUNT(*) FROM official_reference_clip WHERE speaker_id=$speaker AND language='english' AND pcm_path IS NOT NULL";
+                command.Parameters.AddWithValue("$speaker", speaker.Id);
+                return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+            }, TestContext.Current.CancellationToken);
+
+            Assert.NotNull(first);
+            Assert.Equal(VoiceProfileKind.Official, first!.Kind);
+            Assert.Equal(OfficialReferenceObservationStatus.Pending, observedAfterStable.Status);
+            Assert.Equal("consumed", consumedStatus);
+            Assert.Equal(first.Id, later?.Id);
+            Assert.Equal(0, pendingPcm);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task DuplicateSourceIsReportedWithoutAddingAnotherClip()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "resonance-reference-builder-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            using var database = new Database(Path.Combine(root, "voices.sqlite3"));
+            var registry = new VoiceRegistry(database);
+            var speaker = await registry.ResolveSpeakerAsync(
+                "official:duplicate", null, "Duplicate", 0, "english", TestContext.Current.CancellationToken);
+            await using var builder = NewBuilder(database, registry, root);
+
+            var stored = await builder.AddPcmAsync(speaker.Id, "same-source", "Line", "english", Pcm(),
+                TestContext.Current.CancellationToken, "cut/test/duplicate.scd", 1, "observed",
+                buildProfile: false);
+            var duplicate = await builder.AddPcmAsync(speaker.Id, "same-source", "Line", "english", Pcm(),
+                TestContext.Current.CancellationToken, "cut/test/duplicate.scd", 1, "observed",
+                buildProfile: false);
+            var count = await database.ReadAsync(async connection =>
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = "SELECT COUNT(*) FROM official_reference_clip WHERE speaker_id=$speaker";
+                command.Parameters.AddWithValue("$speaker", speaker.Id);
+                return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+            }, TestContext.Current.CancellationToken);
+
+            Assert.True(stored);
+            Assert.False(duplicate);
+            Assert.Equal(1, count);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task ObservationPersistsSourceMetadataBeforeSafeIdleDecode()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "resonance-reference-observation-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            using var database = new Database(Path.Combine(root, "voices.sqlite3"));
+            var registry = new VoiceRegistry(database);
+            var speaker = await registry.ResolveSpeakerAsync("official:observed", null, "Observed", 0,
+                "english", TestContext.Current.CancellationToken);
+            await using var builder = NewBuilder(database, registry, root);
+
+            var result = await builder.ObserveAsync(speaker.Id, "cut/test/observed.scd", 42,
+                "Observed line", "english", TestContext.Current.CancellationToken);
+            var row = await database.ReadAsync(async connection =>
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    SELECT scd_path,sound_number,transcript,pcm_path,decode_status
+                    FROM official_reference_clip WHERE speaker_id=$speaker
+                    """;
+                command.Parameters.AddWithValue("$speaker", speaker.Id);
+                await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+                Assert.True(await reader.ReadAsync(TestContext.Current.CancellationToken));
+                return (reader.GetString(0), reader.GetInt64(1), reader.GetString(2),
+                    reader.IsDBNull(3) ? null : reader.GetString(3), reader.GetString(4));
+            }, TestContext.Current.CancellationToken);
+
+            Assert.Equal(OfficialReferenceObservationStatus.Pending, result.Status);
+            Assert.Equal("cut/test/observed.scd", row.Item1);
+            Assert.Equal(42, row.Item2);
+            Assert.Equal("Observed line", row.Item3);
+            Assert.Null(row.Item4);
+            Assert.Equal("pending", row.Item5);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     private static OfficialReferenceBuilder NewBuilder(Database database, VoiceRegistry registry, string root) =>
         new(database, registry, new ReferenceRuntime(), new ScdExtractor(), root, "model");
 

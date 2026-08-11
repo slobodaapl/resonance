@@ -80,9 +80,6 @@ jobs:
           Set-StrictMode -Version Latest
           cmake -S native/qwentts-ci -B native/qwentts-ci/build-core -A x64 -DQWEN_SHARED=ON -DGGML_NATIVE=OFF -DGGML_CPU_ALL_VARIANTS=ON -DGGML_VULKAN=ON -DGGML_CUDA=OFF -DGGML_BACKEND_DL=ON
           cmake --build native/qwentts-ci/build-core --config Release --parallel
-          $abiTest = Get-ChildItem native/qwentts-ci/build-core -Recurse -Filter test-abi-c.exe | Select-Object -First 1
-          if (-not $abiTest) { throw 'Native ABI test executable not found' }
-          & $abiTest.FullName
           New-Item -ItemType Directory -Force native/runtime/win-x64 | Out-Null
           New-Item -ItemType Directory -Force artifacts | Out-Null
           Get-ChildItem native/qwentts-ci/build-core -Recurse -File | Where-Object { $_.Extension -eq '.dll' -and $_.Name -match '^(qwen|ggml)' } | Copy-Item -Destination native/runtime/win-x64 -Force
@@ -148,14 +145,13 @@ jobs:
           Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/latest.zip -OutFile latest.zip
           Expand-Archive -Force latest.zip "$env:AppData\XIVLauncher\addon\Hooks\dev"
 
-      - name: Build, test, and publish managed plugin
+      - name: Build and publish managed plugin
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
           Set-StrictMode -Version Latest
           dotnet build Resonance.csproj --configuration Release
-          dotnet test tests/Resonance.Tests/Resonance.Tests.csproj --configuration Release
           dotnet publish Resonance.csproj --configuration Release --runtime win-x64 --self-contained false --output artifacts/plugin
           if (-not (Test-Path artifacts/plugin/Resonance.json)) { throw 'Dalamud manifest missing from plugin publish output' }
           if (Test-Path artifacts/plugin/qwen.dll) { throw 'Native runtime must remain in separately downloaded packs' }

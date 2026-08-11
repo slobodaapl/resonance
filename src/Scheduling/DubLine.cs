@@ -43,10 +43,11 @@ public sealed class DubLine : IDisposable
     public long? ActualTalkSerial { get; set; }
     public ActualStatus ActualStatus { get; set; }
     public NativeVoiceStatus NativeVoiceStatus { get; set; }
-    public DubLineState State { get; set; }
+    public DubLineState State { get; private set; }
     public string? VoiceProfileId { get; set; }
     public string? VoiceProfileHash { get; set; }
     public long? SpeakerId { get; set; }
+    public bool TransientSpeaker { get; set; }
     public bool DirectSynthesisCompleted { get; set; }
     public bool CanStartStreaming { get; set; }
     public string VoiceArchetype { get; set; } = "neutral_adult";
@@ -103,15 +104,86 @@ public sealed class DubLine : IDisposable
             if (disposed || IsTerminal) return;
             State = terminal;
             Cancellation.Cancel();
-            Audio.Complete();
+            Audio.Invalidate();
         }
     }
 
     public void ReplaceAudio(StreamingAudioBuffer replacement)
     {
-        var previous = Audio;
-        Audio = replacement;
-        previous.Dispose();
+        ArgumentNullException.ThrowIfNull(replacement);
+        lock (lifecycleGate)
+        {
+            if (disposed || IsTerminal)
+            {
+                replacement.Invalidate();
+                return;
+            }
+
+            var previous = Audio;
+            Audio = replacement;
+            previous.Dispose();
+        }
+    }
+
+    public bool TryTransition(DubLineState nextState, params DubLineState[] expectedStates)
+    {
+        lock (lifecycleGate)
+        {
+            if (disposed || !IsExpectedState(expectedStates)) return false;
+            State = nextState;
+            return true;
+        }
+    }
+
+    public bool TryMarkNativeVoiced(params DubLineState[] expectedStates)
+    {
+        lock (lifecycleGate)
+        {
+            if (disposed || !IsExpectedState(expectedStates)) return false;
+            NativeVoiceStatus = NativeVoiceStatus.NativeVoiced;
+            State = DubLineState.NativeVoiced;
+            Cancellation.Cancel();
+            Audio.Invalidate();
+            return true;
+        }
+    }
+
+    public bool TryMarkNotVoiced()
+    {
+        lock (lifecycleGate)
+        {
+            if (disposed || IsTerminal) return false;
+            NativeVoiceStatus = NativeVoiceStatus.NotVoiced;
+            return true;
+        }
+    }
+
+    public bool TryReplaceAudioAndTransition(
+        IReadOnlyCollection<DubLineState> expectedStates,
+        StreamingAudioBuffer replacement,
+        DubLineState nextState) =>
+        TryReplaceAudioAndTransition(replacement, nextState, expectedStates.ToArray());
+
+    public bool TryReplaceAudioAndTransition(
+        StreamingAudioBuffer replacement,
+        DubLineState nextState,
+        params DubLineState[] expectedStates)
+    {
+        ArgumentNullException.ThrowIfNull(replacement);
+        lock (lifecycleGate)
+        {
+            if (disposed || !IsExpectedState(expectedStates))
+            {
+                replacement.Invalidate();
+                return false;
+            }
+
+            var previous = Audio;
+            Audio = replacement;
+            State = nextState;
+            previous.Dispose();
+            return true;
+        }
     }
 
     public void Dispose()
@@ -124,10 +196,18 @@ public sealed class DubLine : IDisposable
             {
                 State = DubLineState.Cancelled;
                 Cancellation.Cancel();
-                Audio.Complete();
+                Audio.Invalidate();
             }
             Cancellation.Dispose();
             Audio.Dispose();
         }
+    }
+
+    private bool IsExpectedState(IReadOnlyCollection<DubLineState> expectedStates)
+    {
+        if (expectedStates.Count == 0 || IsTerminal) return false;
+        foreach (var expectedState in expectedStates)
+            if (State == expectedState) return true;
+        return false;
     }
 }

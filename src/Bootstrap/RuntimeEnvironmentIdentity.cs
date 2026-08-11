@@ -17,8 +17,15 @@ internal static class RuntimeEnvironmentIdentity
     private static string? TryGetWineVersion()
     {
         if (!NativeLibrary.TryLoad("ntdll.dll", out var module)) return null;
-        if (!NativeLibrary.TryGetExport(module, "wine_get_version", out var export)) return null;
-        var pointer = Marshal.GetDelegateForFunctionPointer<WineGetVersion>(export)();
-        return pointer == 0 ? null : Marshal.PtrToStringUTF8(pointer);
+        try
+        {
+            if (!NativeLibrary.TryGetExport(module, "wine_get_version", out var export)) return null;
+            var pointer = Marshal.GetDelegateForFunctionPointer<WineGetVersion>(export)();
+            return pointer == 0 ? null : Marshal.PtrToStringUTF8(pointer);
+        }
+        finally
+        {
+            NativeLibrary.Free(module);
+        }
     }
 }

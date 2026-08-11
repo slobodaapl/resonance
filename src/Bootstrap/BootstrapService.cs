@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using Resonance.Plugin;
 using Resonance.Tts;
 
@@ -15,12 +16,19 @@ public sealed class BootstrapService : IAsyncDisposable
     private readonly RuntimePackManager runtimePacks;
     private readonly string runtimeManifestPath;
     private readonly string runtimeDirectory;
+    private readonly string referenceExtractorPath;
+    private readonly string referenceExtractionDirectory;
+    private readonly object disposeGate = new();
+    private readonly IProcessLifetimeLease lifetimeLease;
     private Task? task;
     private Task? optionalRuntimeTask;
+    private Task? disposeTask;
+    private int disposed;
 
     public BootstrapState State { get; private set; } = BootstrapState.Starting;
     public RuntimeManager? RuntimeManager { get; private set; }
-    public bool IsReady => RuntimeManager is not null && State is not BootstrapState.Failed and not BootstrapState.Stopped;
+    public bool IsReady => RuntimeManager is { IsReady: true, HasNativeOwnershipFailure: false }
+                           && State is not BootstrapState.Failed and not BootstrapState.Stopped;
     public string? VoiceDesignPath { get; private set; }
     public Exception? Failure { get; private set; }
     public bool? CudaDriverAvailable { get; private set; }
@@ -32,12 +40,17 @@ public sealed class BootstrapService : IAsyncDisposable
     public event Action<Exception>? OptionalRuntimeFailed;
     public event Action<Exception>? OptionalPreparationFailed;
 
-    public BootstrapService(string pluginDirectory, string dataDirectory, Configuration configuration, Action saveConfiguration)
+    internal BootstrapService(string pluginDirectory, string dataDirectory, Configuration configuration, Action saveConfiguration,
+        IProcessLifetimeLease lifetimeLease)
     {
+        this.lifetimeLease = lifetimeLease ?? throw new ArgumentNullException(nameof(lifetimeLease));
         manifestPath = Path.Combine(pluginDirectory, "assets", "models.json");
         runtimeManifestPath = Path.Combine(pluginDirectory, "assets", "runtimes.json");
         assets = new AssetManager(Path.Combine(dataDirectory, "models"));
         runtimeDirectory = Path.Combine(dataDirectory, "runtimes");
+        referenceExtractorPath = Path.Combine(pluginDirectory, "reference-extractor",
+            OperatingSystem.IsWindows() ? "ReferenceExtractor.exe" : "ReferenceExtractor");
+        referenceExtractionDirectory = Path.Combine(dataDirectory, "reference-extraction");
         runtimePacks = new RuntimePackManager(runtimeDirectory, Path.Combine(dataDirectory, "runtime-downloads"));
         void ReportProgress(AssetProgress value)
         {
@@ -52,7 +65,7 @@ public sealed class BootstrapService : IAsyncDisposable
 
     public void Start()
     {
-        if (task is not null) return;
+        if (task is not null || Volatile.Read(ref disposed) != 0) return;
         task = Task.Run(() => RunAsync(shutdown.Token));
     }
 
@@ -82,9 +95,30 @@ public sealed class BootstrapService : IAsyncDisposable
             SetState(BootstrapState.InitializingRuntime);
             var runtimeVersion = typeof(BootstrapService).Assembly.GetName().Version?.ToString() ?? "0";
             var manager = new RuntimeManager(configuration, saveConfiguration, basePath, codecPath,
-                baseModel.Sha256, design.Sha256, runtimeVersion, runtimeDirectory);
-            await manager.InitializeAsync(token).ConfigureAwait(false);
+                baseModel.Sha256, design.Sha256, runtimeVersion, runtimeDirectory,
+                referenceExtractorPath, referenceExtractionDirectory,
+                nativeFailureReporter: lifetimeLease.Poison);
+            manager.SetPluginLifetimeLease(lifetimeLease);
             RuntimeManager = manager;
+            try
+            {
+                await manager.InitializeAsync(token).ConfigureAwait(false);
+            }
+            catch (Exception initializationError)
+            {
+                try
+                {
+                    await manager.DisposeAsync().ConfigureAwait(false);
+                }
+                catch (Exception cleanupError)
+                {
+                    lifetimeLease.Poison(new AggregateException(
+                        "Runtime initialization and cleanup both failed", initializationError, cleanupError));
+                    throw new AggregateException("Runtime initialization and cleanup both failed",
+                        initializationError, cleanupError);
+                }
+                throw;
+            }
             SetState(BootstrapState.Ready);
             Ready?.Invoke(manager);
             optionalRuntimeTask = EnsureOptionalRuntimesAsync(manager, token);
@@ -95,10 +129,21 @@ public sealed class BootstrapService : IAsyncDisposable
                 if (optionalRuntimeTask is not null) await optionalRuntimeTask.ConfigureAwait(false);
                 SetState(BootstrapState.BenchmarkingBackends);
                 await manager.BenchmarkAndApplyAsync(VoiceDesignPath, token).ConfigureAwait(false);
+                await manager.EnsureBaseHotLoadedWhenSafeAsync(token).ConfigureAwait(false);
                 VoiceDesignReady?.Invoke(VoiceDesignPath, codecPath);
                 SetState(BootstrapState.Ready);
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+            catch (BackendBenchmarkCleanupException error)
+            {
+                lifetimeLease.Poison(error);
+                throw;
+            }
+            catch (Exception error) when (manager.HasNativeOwnershipFailure)
+            {
+                throw new InvalidOperationException(
+                    "Native inference ownership is poisoned; restart is required", error);
+            }
             catch (Exception error)
             {
                 await optionalRuntimeTask.ConfigureAwait(false);
@@ -123,10 +168,14 @@ public sealed class BootstrapService : IAsyncDisposable
                 CudaDriverAvailable.Value).ConfigureAwait(false);
             await manager.RefreshBackendsAsync(token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (token.IsCancellationRequested
+                                                 && !manager.HasAbandonedReferenceProcess) { }
         catch (Exception error)
         {
             CudaDriverAvailable ??= false;
+            if (manager.HasNativeOwnershipFailure)
+                throw new InvalidOperationException(
+                    "Native inference ownership is poisoned; restart is required", error);
             OptionalRuntimeFailed?.Invoke(error);
         }
     }
@@ -137,14 +186,63 @@ public sealed class BootstrapService : IAsyncDisposable
         StateChanged?.Invoke(state);
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        shutdown.Cancel();
-        if (task is not null) await task.ConfigureAwait(false);
-        if (optionalRuntimeTask is not null) await optionalRuntimeTask.ConfigureAwait(false);
-        if (RuntimeManager is not null) await RuntimeManager.DisposeAsync().ConfigureAwait(false);
-        assets.Dispose();
-        runtimePacks.Dispose();
-        shutdown.Dispose();
+        lock (disposeGate)
+        {
+            if (disposeTask is not null) return new ValueTask(disposeTask);
+            Interlocked.Exchange(ref disposed, 1);
+            disposeTask = DisposeCoreAsync();
+            return new ValueTask(disposeTask);
+        }
+    }
+
+    private async Task DisposeCoreAsync()
+    {
+        ExceptionDispatchInfo? failure = null;
+
+        void Record(Exception error) => failure ??= ExceptionDispatchInfo.Capture(error);
+
+        try { shutdown.Cancel(); }
+        catch (Exception error) { Record(error); }
+
+        async Task ObserveAsync(Task? pending)
+        {
+            if (pending is null) return;
+            try { await pending.ConfigureAwait(false); }
+            catch (Exception error) { Record(error); }
+        }
+
+        await ObserveAsync(task).ConfigureAwait(false);
+        await ObserveAsync(optionalRuntimeTask).ConfigureAwait(false);
+        try
+        {
+            if (RuntimeManager is not null)
+                await RuntimeManager.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception error) { Record(error); }
+        finally
+        {
+            // QwenCppRuntime refuses to free process-owned modules while any
+            // runtime lease remains.  This is deliberately in finally so a
+            // manager failure cannot skip the safety check.
+            try { QwenCppRuntime.ReleaseNativeLibraries(); }
+            catch (Exception error) { Record(error); }
+
+            try { assets.Dispose(); }
+            catch (Exception error) { Record(error); }
+            try { runtimePacks.Dispose(); }
+            catch (Exception error) { Record(error); }
+            try { shutdown.Dispose(); }
+            catch (Exception error) { Record(error); }
+        }
+
+        if (failure is not null)
+        {
+            try { lifetimeLease.Poison(failure.SourceException); }
+            catch (Exception error) { Record(error); }
+        }
+
+        failure?.Throw();
     }
 }

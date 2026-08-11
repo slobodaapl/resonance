@@ -1,6 +1,6 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <Version>1.0.1.0</Version>
+    <Version>1.1.1.0</Version>
     <AssemblyName>Resonance</AssemblyName>
     <RootNamespace>Resonance</RootNamespace>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
@@ -27,7 +27,44 @@
     <Content Include="LICENSE" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="THIRD_PARTY_NOTICES.md" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="assets\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Remove="tools\ReferenceExtractor\**\*.cs" />
     <Compile Remove="tests\**\*.cs" />
     <Compile Remove=".references\**\*.cs" />
   </ItemGroup>
+
+  <PropertyGroup>
+    <ReferenceExtractorProject>$(MSBuildProjectDirectory)\tools\ReferenceExtractor\ReferenceExtractor.csproj</ReferenceExtractorProject>
+    <ReferenceExtractorBuildDirectory>$(MSBuildProjectDirectory)\tools\ReferenceExtractor\bin\$(Configuration)\net10.0\win-x64</ReferenceExtractorBuildDirectory>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(ReferenceExtractorProject)"
+                      ReferenceOutputAssembly="false"
+                      Private="false"
+                      PrivateAssets="all"
+                      CopyToOutputDirectory="Never"
+                      CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
+  <Target Name="BuildReferenceExtractor" AfterTargets="Build"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <PropertyGroup>
+      <ReferenceExtractorOutputDirectory>$(TargetDir)reference-extractor</ReferenceExtractorOutputDirectory>
+    </PropertyGroup>
+    <RemoveDir Directories="$(ReferenceExtractorOutputDirectory)" />
+    <MakeDir Directories="$(ReferenceExtractorOutputDirectory)" />
+    <ItemGroup>
+      <ReferenceExtractorBuildFiles Include="$(ReferenceExtractorBuildDirectory)\**\*"
+          Exclude="$(ReferenceExtractorBuildDirectory)\**\ggml*.dll;$(ReferenceExtractorBuildDirectory)\**\qwen*.dll;$(ReferenceExtractorBuildDirectory)\**\*.so;$(ReferenceExtractorBuildDirectory)\**\*.dylib" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ReferenceExtractorBuildFiles)"
+          DestinationFiles="@(ReferenceExtractorBuildFiles->'$(ReferenceExtractorOutputDirectory)\%(RecursiveDir)%(Filename)%(Extension)')" />
+  </Target>
+
+  <Target Name="PublishReferenceExtractor" AfterTargets="Publish">
+    <RemoveDir Directories="$(PublishDir)reference-extractor" />
+    <MSBuild Projects="$(ReferenceExtractorProject)" Targets="Publish"
+             Properties="Configuration=$(Configuration);RuntimeIdentifier=win-x64;SelfContained=false;PublishDir=$(PublishDir)reference-extractor\" />
+    <Delete Files="$(PublishDir)ReferenceExtractor.exe;$(PublishDir)ReferenceExtractor.dll;$(PublishDir)ReferenceExtractor.pdb;$(PublishDir)ReferenceExtractor.deps.json;$(PublishDir)ReferenceExtractor.runtimeconfig.json" />
+  </Target>
 </Project>

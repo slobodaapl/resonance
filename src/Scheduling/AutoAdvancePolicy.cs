@@ -9,7 +9,7 @@ public static class AutoAdvancePolicy
                                 && candidate.Sequence > completedSequence)
             .OrderBy(candidate => candidate.Sequence)
             .FirstOrDefault();
-        return next is not null && (next.CanStartStreaming
+        return next is not null && !next.IsTerminal && (next.CanStartStreaming
             || next.State == DubLineState.Buffered && next.Audio.ProducerCompleted);
     }
 }

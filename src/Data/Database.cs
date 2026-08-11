@@ -4,7 +4,7 @@ namespace Resonance.Data;
 
 public sealed class Database : IDisposable
 {
-    public const int CurrentSchemaVersion = 5;
+    public const int CurrentSchemaVersion = 6;
 
     private readonly SqliteConnection connection;
     private readonly SemaphoreSlim gate = new(1, 1);
@@ -32,7 +32,7 @@ public sealed class Database : IDisposable
         command.Transaction = transaction;
         command.CommandText = """
             CREATE TABLE IF NOT EXISTS schema_version(version INTEGER NOT NULL);
-            INSERT INTO schema_version(version) SELECT 5 WHERE NOT EXISTS(SELECT 1 FROM schema_version);
+            INSERT INTO schema_version(version) SELECT 6 WHERE NOT EXISTS(SELECT 1 FROM schema_version);
 
             CREATE TABLE IF NOT EXISTS speaker(
               id INTEGER PRIMARY KEY,
@@ -140,6 +140,9 @@ public sealed class Database : IDisposable
               source_priority INTEGER NOT NULL DEFAULT 0,
               catalog_version INTEGER,
               validated_utc TEXT,
+              decode_status TEXT NOT NULL DEFAULT 'pending',
+              decode_error TEXT,
+              decode_attempted_utc TEXT,
               created_utc TEXT NOT NULL,
               UNIQUE(speaker_id, source_hash, language)
             );
@@ -216,9 +219,21 @@ public sealed class Database : IDisposable
         AddColumnIfMissing(command, "official_reference_clip", "source_priority", "INTEGER NOT NULL DEFAULT 0");
         AddColumnIfMissing(command, "official_reference_clip", "catalog_version", "INTEGER");
         AddColumnIfMissing(command, "official_reference_clip", "validated_utc", "TEXT");
-        if (version < 5)
+        AddColumnIfMissing(command, "official_reference_clip", "decode_status", "TEXT NOT NULL DEFAULT 'pending'");
+        AddColumnIfMissing(command, "official_reference_clip", "decode_error", "TEXT");
+        AddColumnIfMissing(command, "official_reference_clip", "decode_attempted_utc", "TEXT");
+        command.CommandText = """
+            UPDATE official_reference_clip
+            SET decode_status='ready'
+            WHERE pcm_path IS NOT NULL AND (decode_status IS NULL OR decode_status='' OR decode_status<>'ready');
+            UPDATE official_reference_clip
+            SET decode_status='pending'
+            WHERE pcm_path IS NULL AND (decode_status IS NULL OR decode_status='');
+            """;
+        command.ExecuteNonQuery();
+        if (version < 6)
         {
-            command.CommandText = "UPDATE schema_version SET version=5";
+            command.CommandText = "UPDATE schema_version SET version=6";
             command.ExecuteNonQuery();
         }
         EnsureV4Columns(command);
@@ -232,6 +247,8 @@ public sealed class Database : IDisposable
               ON speaker_casting(domain_id);
             CREATE INDEX IF NOT EXISTS ix_voice_profile_language
               ON voice_profile(language, kind, created_utc);
+            CREATE INDEX IF NOT EXISTS ix_official_reference_pending
+              ON official_reference_clip(language, decode_status, speaker_id);
             """;
         command.ExecuteNonQuery();
         transaction.Commit();
@@ -326,6 +343,26 @@ public sealed class Database : IDisposable
         var languageExpression = hasLanguage
             ? "COALESCE(NULLIF(old.language,''),'und')"
             : "'und'";
+        var hasScdPath = HasColumn(command, "official_reference_clip", "scd_path");
+        var hasSoundNumber = HasColumn(command, "official_reference_clip", "sound_number");
+        var hasOrigin = HasColumn(command, "official_reference_clip", "source_origin");
+        var hasPriority = HasColumn(command, "official_reference_clip", "source_priority");
+        var hasCatalog = HasColumn(command, "official_reference_clip", "catalog_version");
+        var hasValidated = HasColumn(command, "official_reference_clip", "validated_utc");
+        var hasDecodeStatus = HasColumn(command, "official_reference_clip", "decode_status");
+        var hasDecodeError = HasColumn(command, "official_reference_clip", "decode_error");
+        var hasDecodeAttempted = HasColumn(command, "official_reference_clip", "decode_attempted_utc");
+        var scdExpression = hasScdPath ? "old.scd_path" : "NULL";
+        var soundExpression = hasSoundNumber ? "old.sound_number" : "NULL";
+        var originExpression = hasOrigin ? "COALESCE(NULLIF(old.source_origin,''),'legacy')" : "'legacy'";
+        var priorityExpression = hasPriority ? "COALESCE(old.source_priority,0)" : "0";
+        var catalogExpression = hasCatalog ? "old.catalog_version" : "NULL";
+        var validatedExpression = hasValidated ? "old.validated_utc" : "NULL";
+        var decodeStatusExpression = hasDecodeStatus
+            ? "CASE WHEN old.pcm_path IS NOT NULL THEN 'ready' ELSE COALESCE(NULLIF(old.decode_status,''),'pending') END"
+            : "CASE WHEN old.pcm_path IS NOT NULL THEN 'ready' ELSE 'pending' END";
+        var decodeErrorExpression = hasDecodeError ? "old.decode_error" : "NULL";
+        var decodeAttemptedExpression = hasDecodeAttempted ? "old.decode_attempted_utc" : "NULL";
         command.CommandText = "DROP TABLE IF EXISTS official_reference_clip_v4;";
         command.ExecuteNonQuery();
         command.CommandText = $"""
@@ -337,13 +374,26 @@ public sealed class Database : IDisposable
               transcript TEXT NOT NULL,
               pcm_path TEXT,
               duration_seconds REAL NOT NULL,
+              scd_path TEXT,
+              sound_number INTEGER,
+              source_origin TEXT NOT NULL DEFAULT 'legacy',
+              source_priority INTEGER NOT NULL DEFAULT 0,
+              catalog_version INTEGER,
+              validated_utc TEXT,
+              decode_status TEXT NOT NULL DEFAULT 'pending',
+              decode_error TEXT,
+              decode_attempted_utc TEXT,
               created_utc TEXT NOT NULL,
               UNIQUE(speaker_id, source_hash, language)
             );
             INSERT INTO official_reference_clip_v4(
-              id,speaker_id,source_hash,language,transcript,pcm_path,duration_seconds,created_utc)
+              id,speaker_id,source_hash,language,transcript,pcm_path,duration_seconds,
+              scd_path,sound_number,source_origin,source_priority,catalog_version,validated_utc,
+              decode_status,decode_error,decode_attempted_utc,created_utc)
             SELECT old.id,old.speaker_id,old.source_hash,{languageExpression},old.transcript,
-                   old.pcm_path,old.duration_seconds,old.created_utc
+                   old.pcm_path,old.duration_seconds,{scdExpression},{soundExpression},
+                   {originExpression},{priorityExpression},{catalogExpression},{validatedExpression},
+                   {decodeStatusExpression},{decodeErrorExpression},{decodeAttemptedExpression},old.created_utc
             FROM official_reference_clip old;
             DROP TABLE official_reference_clip;
             ALTER TABLE official_reference_clip_v4 RENAME TO official_reference_clip;

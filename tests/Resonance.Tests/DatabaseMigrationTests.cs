@@ -65,7 +65,7 @@ public sealed class DatabaseMigrationTests
                     UnknownLanguageCount: reader.GetInt32(2));
             }, TestContext.Current.CancellationToken);
 
-            Assert.Equal(5, result.Version);
+            Assert.Equal(6, result.Version);
             Assert.Equal(2, result.Count);
             Assert.Equal(2, result.UnknownLanguageCount);
         }
@@ -253,7 +253,7 @@ public sealed class DatabaseMigrationTests
                         CastingRows: reader.GetInt32(6),
                         CastingDomain: reader.GetString(7));
                 }, TestContext.Current.CancellationToken);
-                Assert.Equal(5, state.Version);
+                Assert.Equal(6, state.Version);
                 Assert.Equal(0, state.Ready);
                 Assert.Equal(1, state.Assigned);
                 Assert.Equal(1, state.Cached);
@@ -270,7 +270,7 @@ public sealed class DatabaseMigrationTests
                 command.CommandText = "SELECT version FROM schema_version";
                 return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
             }, TestContext.Current.CancellationToken);
-            Assert.Equal(5, version);
+            Assert.Equal(6, version);
         }
         finally { Directory.Delete(root, true); }
     }
@@ -400,7 +400,7 @@ public sealed class DatabaseMigrationTests
             Assert.Equal("und", stableClip.Language);
             Assert.True(stableClip.HasPath);
             Assert.True(stableClip.HasPriority);
-            Assert.Equal(5, stableClip.Version);
+            Assert.Equal(6, stableClip.Version);
         }
         finally { Directory.Delete(root, true); }
     }

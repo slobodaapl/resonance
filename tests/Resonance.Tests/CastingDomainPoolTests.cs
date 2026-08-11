@@ -118,6 +118,36 @@ public sealed class CastingDomainPoolTests
     }
 
     [Fact]
+    public async Task TerritoryAndSessionActivationResetPreserveGlobalReadyVoices()
+    {
+        var root = CreateRoot();
+        try
+        {
+            using var database = new Database(Path.Combine(root, "voices.sqlite3"));
+            var registry = new VoiceRegistry(database);
+            var catalog = CastingProfileCatalog.Load(ProjectPath("assets", "dub-profiles.json"));
+            await using var pool = CreatePool(database, registry, catalog, "Mist", backgroundEnabled: false);
+
+            await pool.RegenerateDomainAsync("ishgardian", TestContext.Current.CancellationToken);
+            Assert.True(await pool.ExecuteOneWorkAsync(TestContext.Current.CancellationToken));
+            Assert.Equal(1, await registry.CountReadyDomainPoolAsync(
+                "ishgardian", "english", "masculine", TestContext.Current.CancellationToken));
+
+            pool.ActivateTerritory("Radz-at-Han");
+            Assert.DoesNotContain("ishgardian", pool.Snapshot.ActiveDomains);
+            Assert.Equal(1, await registry.CountReadyDomainPoolAsync(
+                "ishgardian", "english", "masculine", TestContext.Current.CancellationToken));
+
+            pool.ResetActivation();
+            Assert.Empty(pool.Snapshot.ActiveDomains);
+            Assert.False(await pool.ExecuteOneWorkAsync(TestContext.Current.CancellationToken));
+            Assert.Equal(1, await registry.CountReadyDomainPoolAsync(
+                "ishgardian", "english", "masculine", TestContext.Current.CancellationToken));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public async Task TerritoryModifierContextDoesNotLeakAcrossTerritoryRegeneration()
     {
         var root = CreateRoot();

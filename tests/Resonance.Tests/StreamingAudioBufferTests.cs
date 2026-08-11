@@ -50,4 +50,60 @@ public sealed class StreamingAudioBufferTests
 
         Assert.Equal(18_000, buffer.BufferedSamples);
     }
+
+    [Fact]
+    public async Task AsyncWriterWaitsForCapacityAndInvalidationReleasesIt()
+    {
+        using var buffer = new StreamingAudioBuffer(maxBufferedSeconds: 1d / 24_000, maxBufferedBytes: sizeof(float));
+        Assert.True(buffer.TryWrite([1f]));
+
+        using var cancellation = new CancellationTokenSource();
+        var blocked = buffer.WriteAsync(new float[] { 2f }, cancellation.Token).AsTask();
+        Assert.False(blocked.IsCompleted);
+
+        buffer.Invalidate();
+        Assert.False(await blocked);
+    }
+
+    [Fact]
+    public async Task ConfiguredCaptureDoesNotSilentlyTruncateLongLine()
+    {
+        const int sampleCount = 31 * 24_000;
+        using var buffer = new StreamingAudioBuffer(
+            maxBufferedSeconds: 32,
+            maxBufferedBytes: sampleCount * sizeof(float) + 4096);
+        using var capture = buffer.CreateCapture(sampleCount * sizeof(float) + 4096);
+        Assert.True(buffer.TryWrite(new float[sampleCount]));
+        buffer.Complete();
+
+        var playback = await buffer.DrainAsync(TestContext.Current.CancellationToken);
+        var cached = await capture.DrainAsync(TestContext.Current.CancellationToken);
+
+        Assert.False(capture.Overflowed);
+        Assert.Equal(sampleCount, playback.Length);
+        Assert.Equal(playback.Length, cached.Length);
+    }
+
+    [Fact]
+    public void RejectedParentChunkMarksCaptureBeforeProducerCompletes()
+    {
+        using var buffer = new StreamingAudioBuffer(maxBufferedSeconds: 1d / 24_000, maxBufferedBytes: sizeof(float));
+        using var capture = buffer.CreateCapture(sizeof(float));
+        Assert.True(buffer.TryWrite([1f]));
+        Assert.False(buffer.TryWrite([2f]));
+        Assert.True(capture.Overflowed);
+        buffer.Complete();
+    }
+
+    [Fact]
+    public void DroppedParentChunkMarksCaptureOverflow()
+    {
+        using var buffer = new StreamingAudioBuffer(maxBufferedSeconds: 1d / 24_000, maxBufferedBytes: sizeof(float));
+        using var capture = buffer.CreateCapture(sizeof(float));
+        Assert.True(buffer.TryWrite([1f]));
+
+        buffer.Invalidate();
+
+        Assert.True(capture.Overflowed);
+    }
 }

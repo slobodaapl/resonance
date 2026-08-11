@@ -38,6 +38,15 @@ public sealed class AutoAdvancePolicyTests
         Assert.True(AutoAdvancePolicy.IsImmediateNextPredictionPlayable([next], 1));
     }
 
+    [Fact]
+    public void TerminalImmediatePredictionCannotAdvanceEvenIfMarkedStreamable()
+    {
+        using var next = Prediction(2, DubLineState.Completed, completed: true);
+        next.CanStartStreaming = true;
+
+        Assert.False(AutoAdvancePolicy.IsImmediateNextPredictionPlayable([next], 1));
+    }
+
     private static DubLine Prediction(long sequence, DubLineState state, bool completed)
     {
         var line = new DubLine
@@ -49,9 +58,9 @@ public sealed class AutoAdvancePolicyTests
             Text = "Line",
             ActualStatus = ActualStatus.Predicted,
             NativeVoiceStatus = NativeVoiceStatus.Unknown,
-            State = state,
             PlaybackDeadline = DateTimeOffset.UtcNow,
         };
+        Assert.True(line.TryTransition(state, DubLineState.Predicted));
         line.Audio.TryWrite([1f]);
         if (completed) line.Audio.Complete();
         return line;

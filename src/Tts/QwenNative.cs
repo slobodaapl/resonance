@@ -19,6 +19,16 @@ internal static unsafe partial class QwenNative
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    internal struct VoiceRef
+    {
+        internal float* SpeakerEmbedding;
+        internal int SpeakerDimension;
+        internal int* Codes;
+        internal int ReferenceLength;
+        internal int Codebooks;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     internal struct InitParams
     {
         internal int AbiVersion;
@@ -38,16 +48,6 @@ internal static unsafe partial class QwenNative
         internal int SampleCount;
         internal int SampleRate;
         internal int Channels;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct VoiceRef
-    {
-        internal float* SpeakerEmbedding;
-        internal int SpeakerDimension;
-        internal int* Codes;
-        internal int ReferenceLength;
-        internal int Codebooks;
     }
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
@@ -118,10 +118,6 @@ internal static unsafe partial class QwenNative
     internal static partial void Free(nint context);
     [LibraryImport(Library, EntryPoint = "qt_synthesize")]
     internal static partial int Synthesize(nint context, ref TtsParams parameters, out Audio audio);
-    [LibraryImport(Library, EntryPoint = "qt_extract_voice_ref")]
-    internal static partial int ExtractVoiceRef(nint context, float* samples, int sampleCount, out VoiceRef voiceRef);
-    [LibraryImport(Library, EntryPoint = "qt_voice_ref_free")]
-    internal static partial void VoiceRefFree(ref VoiceRef voiceRef);
     [LibraryImport(Library, EntryPoint = "qt_audio_free")]
     internal static partial void AudioFree(ref Audio audio);
     [LibraryImport(Library, EntryPoint = "qt_last_error")]

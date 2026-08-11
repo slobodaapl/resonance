@@ -1,8 +1,15 @@
 using System.Diagnostics;
+using Resonance.Audio;
 using Resonance.Data;
 using Resonance.Tts;
 
 namespace Resonance.Scheduling;
+
+public readonly record struct VoiceResolution(VoiceReference? Reference, bool Deferred)
+{
+    public static VoiceResolution Ready(VoiceReference? reference) => new(reference, false);
+    public static VoiceResolution DeferredPrediction => new(null, true);
+}
 
 public sealed class DubScheduler : IAsyncDisposable
 {
@@ -11,12 +18,16 @@ public sealed class DubScheduler : IAsyncDisposable
     private readonly SemaphoreSlim ready = new(0);
     private readonly CancellationTokenSource shutdown = new();
     private readonly ITtsRuntime runtime;
-    private readonly Func<DubLine, CancellationToken, ValueTask<VoiceReference?>> resolveVoice;
+    private readonly Func<DubLine, CancellationToken, ValueTask<VoiceResolution>> resolveVoice;
     private readonly LineCache lineCache;
     private readonly string modelHash;
     private readonly string defaultLanguage;
+    private readonly Func<long> cacheCaptureLimitBytes;
+    private readonly object disposeGate = new();
     private readonly Task worker;
     private DubLine? generating;
+    private int disposed;
+    private Task? disposeTask;
     private double meanTimeToFirstAudioSeconds = 0.35;
     private double meanRealTimeFactor = 0.8;
     private double meanCharactersPerSecond = 14;
@@ -25,24 +36,26 @@ public sealed class DubScheduler : IAsyncDisposable
     public event Action<DubLine>? LineBuffered;
     public event Action<DubLine>? PredictionStreamable;
     public event Action<DubLine, Exception>? LineFailed;
+    public event Action? BecameIdle;
     public bool HasUrgentWork
     {
         get
         {
             lock (gate)
-                return generating?.ActualStatus == ActualStatus.Actual
+                return generating is { ActualStatus: ActualStatus.Actual, IsTerminal: false }
                     || queue.UnorderedItems.Any(item => item.Element.ActualStatus == ActualStatus.Actual && !item.Element.IsTerminal);
         }
     }
 
-    public DubScheduler(ITtsRuntime runtime, Func<DubLine, CancellationToken, ValueTask<VoiceReference?>> resolveVoice,
-        LineCache lineCache, string modelHash, string language)
+    public DubScheduler(ITtsRuntime runtime, Func<DubLine, CancellationToken, ValueTask<VoiceResolution>> resolveVoice,
+        LineCache lineCache, string modelHash, string language, Func<long>? cacheCaptureLimitBytes = null)
     {
         this.runtime = runtime;
         this.resolveVoice = resolveVoice;
         this.lineCache = lineCache;
         this.modelHash = modelHash;
         defaultLanguage = language;
+        this.cacheCaptureLimitBytes = cacheCaptureLimitBytes ?? (() => 64L * 1024 * 1024);
         worker = Task.Run(WorkerAsync);
     }
 
@@ -50,19 +63,22 @@ public sealed class DubScheduler : IAsyncDisposable
     {
         lock (gate)
         {
-            if (line.IsTerminal) return;
+            if (Volatile.Read(ref disposed) != 0) return;
+            if (!line.TryTransition(DubLineState.Queued, DubLineState.Predicted,
+                    DubLineState.VoiceResolving, DubLineState.Queued, DubLineState.Buffered)) return;
             line.Language ??= defaultLanguage;
             Estimate(line, DateTimeOffset.UtcNow);
-            line.State = DubLineState.Queued;
             queue.Enqueue(line, Priority(line, DateTimeOffset.UtcNow));
+            try { ready.Release(); }
+            catch (ObjectDisposedException) { }
         }
-        ready.Release();
     }
 
     public void PromoteActual(long sessionEpoch, long sequence, DateTimeOffset deadline)
     {
         lock (gate)
         {
+            if (Volatile.Read(ref disposed) != 0) return;
             foreach (var item in queue.UnorderedItems)
             {
                 var line = item.Element;
@@ -71,14 +87,16 @@ public sealed class DubScheduler : IAsyncDisposable
                 line.PlaybackDeadline = deadline;
             }
             RebuildQueue(DateTimeOffset.UtcNow);
+            try { ready.Release(); }
+            catch (ObjectDisposedException) { }
         }
-        ready.Release();
     }
 
     public void InvalidateEpoch(long epoch)
     {
         lock (gate)
         {
+            if (Volatile.Read(ref disposed) != 0) return;
             foreach (var item in queue.UnorderedItems)
                 if (item.Element.SessionEpoch == epoch) item.Element.Cancel(DubLineState.Invalidated);
             if (generating?.SessionEpoch == epoch) generating.Cancel(DubLineState.Invalidated);
@@ -90,20 +108,27 @@ public sealed class DubScheduler : IAsyncDisposable
     {
         lock (gate)
         {
+            if (Volatile.Read(ref disposed) != 0) return;
             foreach (var item in queue.UnorderedItems)
             {
                 var line = item.Element;
                 if (line.SessionEpoch == epoch && line.Sequence == actualSequence)
-                {
-                    line.NativeVoiceStatus = NativeVoiceStatus.NativeVoiced;
-                    line.Cancel(DubLineState.NativeVoiced);
-                }
+                    line.TryMarkNativeVoiced(
+                        DubLineState.Predicted,
+                        DubLineState.VoiceResolving,
+                        DubLineState.Queued,
+                        DubLineState.Generating,
+                        DubLineState.Buffered,
+                        DubLineState.Active);
             }
             if (generating is { } active && active.SessionEpoch == epoch && active.Sequence == actualSequence)
-            {
-                active.NativeVoiceStatus = NativeVoiceStatus.NativeVoiced;
-                active.Cancel(DubLineState.NativeVoiced);
-            }
+                active.TryMarkNativeVoiced(
+                    DubLineState.Predicted,
+                    DubLineState.VoiceResolving,
+                    DubLineState.Queued,
+                    DubLineState.Generating,
+                    DubLineState.Buffered,
+                    DubLineState.Active);
             RebuildQueue(DateTimeOffset.UtcNow);
         }
     }
@@ -130,22 +155,36 @@ public sealed class DubScheduler : IAsyncDisposable
             {
                 var operationStarted = Stopwatch.GetTimestamp();
                 var language = line.Language ?? defaultLanguage;
-                using var capture = line.Audio.CreateCapture();
-                line.State = DubLineState.VoiceResolving;
+                if (!line.TryTransition(DubLineState.VoiceResolving, DubLineState.Queued)) continue;
                 var resolution = resolveVoice(line, line.Token).AsTask();
                 var playbackAuthorized = await AuthorizeStreamingAsync(line, resolution, false).ConfigureAwait(false);
-                var voice = await resolution.ConfigureAwait(false);
+                var voiceResolution = await resolution.ConfigureAwait(false);
+                // Resolution can finish after native playback, session
+                // invalidation, or scheduler shutdown.  Never replace audio or
+                // advance state for a line that became terminal while the
+                // deferred prediction was being resolved.
+                line.Token.ThrowIfCancellationRequested();
+                if (line.IsTerminal) continue;
+                if (voiceResolution.Deferred)
+                {
+                    line.TryReplaceAudioAndTransition(
+                        new StreamingAudioBuffer(),
+                        DubLineState.Predicted,
+                        DubLineState.VoiceResolving);
+                    continue;
+                }
+                var voice = voiceResolution.Reference;
                 var seed = StableSeed($"{line.SpeakerKey}\0{language}");
                 if (line.DirectSynthesisCompleted)
                 {
                     RecordMeasurement(line, operationStarted);
-                    var directSamples = await capture.DrainAsync(line.Token).ConfigureAwait(false);
-                    if (line.VoiceProfileId is not null && line.VoiceProfileHash is not null)
-                        await lineCache.StoreAsync(line, line.VoiceProfileId, line.VoiceProfileHash,
-                            modelHash, language, seed, directSamples, line.Token).ConfigureAwait(false);
-                    if (!line.IsTerminal && !playbackAuthorized)
+                    if (!playbackAuthorized && line.TryTransition(
+                            DubLineState.Buffered,
+                            DubLineState.VoiceResolving,
+                            DubLineState.Queued,
+                            DubLineState.Predicted,
+                            DubLineState.Generating))
                     {
-                        line.State = DubLineState.Buffered;
                         LineBuffered?.Invoke(line);
                     }
                     continue;
@@ -153,12 +192,25 @@ public sealed class DubScheduler : IAsyncDisposable
                 if (line.VoiceProfileId is not null && line.VoiceProfileHash is not null
                     && await lineCache.TryPopulateAsync(line, line.VoiceProfileHash, modelHash, language, seed, line.Token).ConfigureAwait(false))
                 {
-                    line.State = DubLineState.Buffered;
                     LineBuffered?.Invoke(line);
                     continue;
                 }
-                line.State = DubLineState.Generating;
+                if (!line.TryTransition(
+                        DubLineState.Generating,
+                        DubLineState.VoiceResolving,
+                        DubLineState.Queued,
+                        DubLineState.Predicted,
+                        DubLineState.Buffered)) continue;
                 operationStarted = Stopwatch.GetTimestamp();
+                // Only persistent profile synthesis is cacheable.  Transient
+                // predictions and direct first-line VoiceDesign streams must
+                // never attach a second unconsumed PCM channel merely for a
+                // cache path that cannot be used.
+                var captureLimitBytes = cacheCaptureLimitBytes();
+                using var capture = line.VoiceProfileId is not null && line.VoiceProfileHash is not null
+                    && captureLimitBytes > 0
+                    ? line.Audio.CreateCapture(captureLimitBytes)
+                    : null;
                 var synthesis = runtime.SynthesizeAsync(
                     new(line.Text, language, voice, null, seed),
                     line.Audio,
@@ -166,15 +218,19 @@ public sealed class DubScheduler : IAsyncDisposable
                 playbackAuthorized = await AuthorizeStreamingAsync(line, synthesis, playbackAuthorized).ConfigureAwait(false);
                 await synthesis.ConfigureAwait(false);
                 RecordMeasurement(line, operationStarted);
-                var capturedSamples = await capture.DrainAsync(line.Token).ConfigureAwait(false);
+                var capturedSamples = capture is null || capture.Overflowed
+                    ? null
+                    : await capture.DrainAsync(line.Token).ConfigureAwait(false);
                 if (!line.IsTerminal)
                 {
-                    if (line.VoiceProfileId is not null && line.VoiceProfileHash is not null)
+                    if (capturedSamples is not null && line.VoiceProfileId is not null
+                        && line.VoiceProfileHash is not null)
                         await lineCache.StoreAsync(line, line.VoiceProfileId, line.VoiceProfileHash,
                             modelHash, language, seed, capturedSamples, line.Token).ConfigureAwait(false);
-                    if (!playbackAuthorized)
+                    if (!playbackAuthorized && line.TryTransition(
+                            DubLineState.Buffered,
+                            DubLineState.Generating))
                     {
-                        line.State = DubLineState.Buffered;
                         LineBuffered?.Invoke(line);
                     }
                 }
@@ -182,13 +238,29 @@ public sealed class DubScheduler : IAsyncDisposable
             catch (OperationCanceledException) when (line.Token.IsCancellationRequested) { }
             catch (Exception error)
             {
-                line.State = DubLineState.Failed;
-                line.Audio.Complete(error);
-                LineFailed?.Invoke(line, error);
+                if (line.TryTransition(
+                        DubLineState.Failed,
+                        DubLineState.VoiceResolving,
+                        DubLineState.Generating,
+                        DubLineState.Queued,
+                        DubLineState.Buffered,
+                        DubLineState.Predicted))
+                {
+                    line.Audio.Complete(error);
+                    LineFailed?.Invoke(line, error);
+                }
             }
             finally
             {
-                lock (gate) if (ReferenceEquals(generating, line)) generating = null;
+                var idle = false;
+                lock (gate)
+                {
+                    if (ReferenceEquals(generating, line)) generating = null;
+                    idle = generating is null
+                        && !queue.UnorderedItems.Any(item => item.Element.ActualStatus == ActualStatus.Actual
+                            && !item.Element.IsTerminal);
+                }
+                if (idle && Volatile.Read(ref disposed) == 0) BecameIdle?.Invoke();
             }
         }
     }
@@ -272,9 +344,17 @@ public sealed class DubScheduler : IAsyncDisposable
             }
             else if (canStart && line.ActualStatus == ActualStatus.Actual)
             {
-                line.State = DubLineState.Buffered;
-                LineBuffered?.Invoke(line);
-                return true;
+                if (line.TryTransition(
+                        DubLineState.Buffered,
+                        DubLineState.VoiceResolving,
+                        DubLineState.Generating,
+                        DubLineState.Queued,
+                        DubLineState.Predicted))
+                {
+                    LineBuffered?.Invoke(line);
+                    return true;
+                }
+                return false;
             }
             if (phase.IsCompleted) return false;
             await Task.Delay(10, line.Token).ConfigureAwait(false);
@@ -298,17 +378,29 @@ public sealed class DubScheduler : IAsyncDisposable
         return unchecked((long)hash);
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        shutdown.Cancel();
-        ready.Release();
-        try { await worker.ConfigureAwait(false); } catch (OperationCanceledException) { }
+        lock (disposeGate)
+        {
+            if (disposeTask is not null) return new ValueTask(disposeTask);
+            disposeTask = DisposeCoreAsync().AsTask();
+            return new ValueTask(disposeTask);
+        }
+    }
+
+    private async ValueTask DisposeCoreAsync()
+    {
         lock (gate)
         {
+            if (Interlocked.Exchange(ref disposed, 1) != 0) return;
             generating?.Cancel();
             foreach (var item in queue.UnorderedItems) item.Element.Cancel();
             queue.Clear();
+            try { ready.Release(); }
+            catch (ObjectDisposedException) { }
         }
+        shutdown.Cancel();
+        try { await worker.ConfigureAwait(false); } catch (OperationCanceledException) { }
         ready.Dispose();
         shutdown.Dispose();
     }

@@ -90,4 +90,19 @@ public sealed class BackendSelectorTests
 
         Assert.Equal(Cuda, selected.Effective);
     }
+
+    [Fact]
+    public void FailedBenchmarkMeasurementsAreIgnoredAndAllFailedHaveNoWinner()
+    {
+        var measurements = new BackendBenchmarkMeasurement[]
+        {
+            new(Cpu.Name, false, null, null, null, "CPU benchmark failed"),
+            new(Cuda.Name, true, 0.2, 0.4, 0.7, null),
+        };
+
+        Assert.Equal(Cuda, BackendBenchmark.SelectWinner(
+            [Cpu, Cuda], measurements, ComputePreference.AutoPerformance));
+        Assert.Null(BackendBenchmark.SelectWinner(
+            [Cpu], [measurements[0]], ComputePreference.AutoPerformance));
+    }
 }

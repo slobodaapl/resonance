@@ -5,16 +5,20 @@ namespace Resonance.Tests;
 public sealed class OfficialVoiceCatalogTests
 {
     [Fact]
-    public void AssetIsStrictAndDoesNotFabricateNpcMappingsOrSources()
+    public void AssetIsStrictAndAcceptsCuratedEnrichment()
     {
         var catalog = OfficialVoiceCatalog.Load(ProjectPath("assets", "official-voices.json"));
 
         Assert.Equal(1, catalog.Version);
-        Assert.Equal(["alphinaud", "thancred", "graha-tia"], catalog.Groups.Select(value => value.Id));
+        Assert.NotEmpty(catalog.Groups);
+        Assert.Equal(catalog.Groups.Count, catalog.Groups.Select(value => value.Id).Distinct().Count());
         Assert.All(catalog.Groups, group =>
         {
-            Assert.Empty(group.NpcBaseIds);
-            Assert.Empty(group.Sources);
+            Assert.False(String.IsNullOrWhiteSpace(group.Id));
+            Assert.False(String.IsNullOrWhiteSpace(group.Label));
+            Assert.NotNull(group.NpcBaseIds);
+            Assert.NotNull(group.Aliases);
+            Assert.NotNull(group.Sources);
         });
     }
 

@@ -4,12 +4,14 @@ public sealed class CutsceneSession : IDisposable
 {
     private readonly Dictionary<long, DubLine> lines = [];
     private readonly object gate = new();
+    private readonly CancellationTokenSource lifetime = new();
     private long nextSequence;
     private long speculationEpoch;
     private bool disposed;
 
     public long Epoch { get; }
     public uint TerritoryId { get; }
+    public CancellationToken CancellationToken => lifetime.Token;
     public IReadOnlyCollection<DubLine> Lines { get { lock (gate) return lines.Values.ToArray(); } }
 
     public CutsceneSession(long epoch, uint territoryId)
@@ -34,9 +36,9 @@ public sealed class CutsceneSession : IDisposable
             Language = language,
             ActualStatus = ActualStatus.Actual,
             NativeVoiceStatus = NativeVoiceStatus.Unknown,
-            State = DubLineState.Queued,
             PlaybackDeadline = DateTimeOffset.UtcNow,
         };
+        line.TryTransition(DubLineState.Queued, DubLineState.Predicted);
         lines.Add(sequence, line);
         return line;
         }
@@ -76,7 +78,6 @@ public sealed class CutsceneSession : IDisposable
                 Language = language,
                 ActualStatus = ActualStatus.Predicted,
                 NativeVoiceStatus = NativeVoiceStatus.Unknown,
-                State = DubLineState.Predicted,
                 PlaybackDeadline = deadline,
             };
             lines.Add(sequence, line);
@@ -103,8 +104,8 @@ public sealed class CutsceneSession : IDisposable
         if (line is null) return null;
         var resolvedLanguage = resolvedSpeaker?.Language ?? language;
         var preservePreparedAudio = resolvedSpeaker is not null
-            && line.VoiceProfileId is not null
-            && line.SpeakerKey == resolvedSpeaker.SpeakerKey
+            && line.TransientSpeaker
+            && resolvedSpeaker.SpeakerId == 0
             && String.Equals(line.Language, resolvedLanguage, StringComparison.Ordinal);
         if (!preservePreparedAudio && line.State != DubLineState.Predicted)
         {
@@ -128,8 +129,10 @@ public sealed class CutsceneSession : IDisposable
         {
         if (disposed) return;
         disposed = true;
+        lifetime.Cancel();
         foreach (var line in lines.Values) line.Dispose();
         lines.Clear();
+        lifetime.Dispose();
         }
     }
 }
