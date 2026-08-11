@@ -8,17 +8,63 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: resonance-build-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
-  build:
-    runs-on: windows-2022
-    permissions:
-      contents: read
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: 10.0.x
+      - name: Validate release inputs
+        id: version
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          Set-StrictMode -Version Latest
+
+          $manifest = Get-Content Resonance.json | ConvertFrom-Json
+          $version = [string]$manifest.AssemblyVersion
+          if ([string]::IsNullOrWhiteSpace($version)) { throw 'Resonance.json AssemblyVersion is missing' }
+          [void][Version]$version
+
+          [xml]$project = Get-Content Resonance.csproj
+          $versionNode = Select-Xml -Xml $project -XPath '/Project/PropertyGroup/Version' | Select-Object -First 1
+          if (-not $versionNode) { throw 'Resonance.csproj Version is missing' }
+          $projectVersion = [string]$versionNode.Node.InnerText
+          if ($projectVersion -ne $version) { throw "Manifest version $version does not match project version $projectVersion" }
+
+          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            $expectedTag = "v$version"
+            if ($env:GITHUB_REF_NAME -ne $expectedTag) { throw "Tag $env:GITHUB_REF_NAME does not match version $version; expected $expectedTag" }
+          }
+
+          $requiredFiles = @(
+            'native/qwentts.version',
+            'native/patches/qwentts-resonance.patch',
+            'tools/ReferenceExtractor/ReferenceExtractor.csproj',
+            'assets/runtimes.json'
+          )
+          foreach ($requiredFile in $requiredFiles) {
+            if (-not (Test-Path $requiredFile -PathType Leaf)) { throw "Required file is missing: $requiredFile" }
+          }
+
+          $pins = Get-Content native/qwentts.version
+          if (-not ($pins -match '^qwentts=https://github\.com/ServeurpersoCom/qwentts\.cpp\.git@[0-9a-f]{40}$')) { throw 'Invalid qwentts pin' }
+          if (-not ($pins -match '^ggml=https://github\.com/ServeurpersoCom/ggml\.git@[0-9a-f]{40}$')) { throw 'Invalid ggml pin' }
+
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+  native-core:
+    needs: preflight
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v5
 
       - name: Install Vulkan SDK
         uses: humbletim/install-vulkan-sdk@v1.2
@@ -50,14 +96,7 @@ jobs:
           if (-not (Test-Path $vulkanLibrary)) { throw "Vulkan loader library not found: $vulkanLibrary" }
           if (-not (Test-Path $vulkanCompiler)) { throw "Vulkan shader compiler not found: $vulkanCompiler" }
 
-      - name: Install CUDA build toolkit
-        uses: Jimver/cuda-toolkit@v0.2.35
-        with:
-          cuda: '12.8.1'
-          method: network
-          sub-packages: '["nvcc", "cudart", "cublas", "cublas_dev", "visual_studio_integration"]'
-
-      - name: Clone pinned native sources
+      - name: Clone and patch pinned native sources
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -72,6 +111,12 @@ jobs:
           git -c core.autocrlf=false apply --check --directory=native/qwentts-ci native/patches/qwentts-resonance.patch
           git -c core.autocrlf=false apply --directory=native/qwentts-ci native/patches/qwentts-resonance.patch
 
+      - name: Restore CPU and Vulkan build cache
+        uses: actions/cache@v4
+        with:
+          path: native/qwentts-ci/build-core
+          key: qwentts-core-windows-2022-vulkan-1.4.313.0-${{ hashFiles('native/qwentts.version', 'native/patches/qwentts-resonance.patch') }}
+
       - name: Build CPU and Vulkan core
         shell: pwsh
         run: |
@@ -80,14 +125,55 @@ jobs:
           Set-StrictMode -Version Latest
           cmake -S native/qwentts-ci -B native/qwentts-ci/build-core -A x64 -DQWEN_SHARED=ON -DGGML_NATIVE=OFF -DGGML_CPU_ALL_VARIANTS=ON -DGGML_VULKAN=ON -DGGML_CUDA=OFF -DGGML_BACKEND_DL=ON
           cmake --build native/qwentts-ci/build-core --config Release --parallel
-          New-Item -ItemType Directory -Force native/runtime/win-x64 | Out-Null
-          New-Item -ItemType Directory -Force artifacts | Out-Null
-          Get-ChildItem native/qwentts-ci/build-core -Recurse -File | Where-Object { $_.Extension -eq '.dll' -and $_.Name -match '^(qwen|ggml)' } | Copy-Item -Destination native/runtime/win-x64 -Force
-          if (-not (Test-Path native/runtime/win-x64/qwen.dll)) { throw 'qwen.dll was not produced' }
-          if (-not (Get-ChildItem native/runtime/win-x64 -Filter 'ggml-vulkan*.dll')) { throw 'Vulkan backend was not produced' }
-          Compress-Archive -Path native/runtime/win-x64/*.dll -DestinationPath artifacts/Resonance-Core.zip
+          New-Item -ItemType Directory -Force artifacts/core | Out-Null
+          Get-ChildItem native/qwentts-ci/build-core -Recurse -File | Where-Object { $_.Extension -eq '.dll' -and $_.Name -match '^(qwen|ggml)' } | Copy-Item -Destination artifacts/core -Force
+          if (-not (Test-Path artifacts/core/qwen.dll)) { throw 'qwen.dll was not produced' }
+          if (-not (Get-ChildItem artifacts/core -Filter 'ggml-vulkan*.dll')) { throw 'Vulkan backend was not produced' }
+          Compress-Archive -Path artifacts/core/*.dll -DestinationPath artifacts/Resonance-Core.zip
 
-      - name: Build private CUDA backend pack
+      - name: Upload CPU and Vulkan component
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-core
+          path: artifacts/Resonance-Core.zip
+          if-no-files-found: error
+          overwrite: true
+
+  native-cuda:
+    needs: preflight
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install CUDA build toolkit
+        uses: Jimver/cuda-toolkit@v0.2.35
+        with:
+          cuda: '12.8.1'
+          method: network
+          sub-packages: '["nvcc", "cudart", "cublas", "cublas_dev", "visual_studio_integration"]'
+
+      - name: Clone and patch pinned native sources
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          Set-StrictMode -Version Latest
+          git -c core.autocrlf=false clone https://github.com/ServeurpersoCom/qwentts.cpp.git native/qwentts-ci
+          git -C native/qwentts-ci checkout a8a7716b530e49fed537c57711247c12fbbb903c
+          git -c core.autocrlf=false clone https://github.com/ServeurpersoCom/ggml.git native/qwentts-ci/ggml
+          git -C native/qwentts-ci/ggml checkout c044c6f03892f9d5e98213b05f8afea1f8b0d3c9
+          if ((git -C native/qwentts-ci rev-parse HEAD) -ne 'a8a7716b530e49fed537c57711247c12fbbb903c') { throw 'Unexpected qwentts revision' }
+          if ((git -C native/qwentts-ci/ggml rev-parse HEAD) -ne 'c044c6f03892f9d5e98213b05f8afea1f8b0d3c9') { throw 'Unexpected ggml revision' }
+          git -c core.autocrlf=false apply --check --directory=native/qwentts-ci native/patches/qwentts-resonance.patch
+          git -c core.autocrlf=false apply --directory=native/qwentts-ci native/patches/qwentts-resonance.patch
+
+      - name: Restore CUDA build cache
+        uses: actions/cache@v4
+        with:
+          path: native/qwentts-ci/build-cuda
+          key: qwentts-cuda-windows-2022-12.8.1-${{ hashFiles('native/qwentts.version', 'native/patches/qwentts-resonance.patch') }}
+
+      - name: Build CUDA backend pack
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -105,42 +191,29 @@ jobs:
           if (-not (Get-ChildItem artifacts/cuda -Filter 'cublasLt64_*.dll')) { throw 'cuBLASLt DLL was not found' }
           Compress-Archive -Path artifacts/cuda/*.dll -DestinationPath artifacts/Resonance-CUDA.zip
 
-      - name: Generate runtime manifest
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          Set-StrictMode -Version Latest
-          $corePack = Get-Item artifacts/Resonance-Core.zip
-          $coreSha = (Get-FileHash $corePack.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-          $coreFiles = @(Get-ChildItem native/runtime/win-x64 -Filter '*.dll' | ForEach-Object Name | Sort-Object)
-          $cudaPack = Get-Item artifacts/Resonance-CUDA.zip
-          $cudaSha = (Get-FileHash $cudaPack.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-          $cudaFiles = @(Get-ChildItem artifacts/cuda -Filter '*.dll' | ForEach-Object Name | Sort-Object)
-          $runtimeArtifacts = @()
-          if ($env:GITHUB_REF -like 'refs/tags/v*') {
-            $runtimeArtifacts += [ordered]@{
-              id = 'core'
-              url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:GITHUB_REF_NAME/Resonance-Core.zip"
-              size = $corePack.Length
-              sha256 = $coreSha
-              matchDescriptionContains = @()
-              files = $coreFiles
-            }
-            $runtimeArtifacts += [ordered]@{
-              id = 'cuda'
-              url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:GITHUB_REF_NAME/Resonance-CUDA.zip"
-              size = $cudaPack.Length
-              sha256 = $cudaSha
-              matchDescriptionContains = @('NVIDIA')
-              files = $cudaFiles
-            }
-          }
-          [ordered]@{ schemaVersion = 1; abi = 6; artifacts = $runtimeArtifacts } | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 assets/runtimes.json
+      - name: Upload CUDA component
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-cuda
+          path: artifacts/Resonance-CUDA.zip
+          if-no-files-found: error
+          overwrite: true
+
+  managed:
+    needs: preflight
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
 
       - name: Download Dalamud API 15 runtime
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           Set-StrictMode -Version Latest
           Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/latest.zip -OutFile latest.zip
           Expand-Archive -Force latest.zip "$env:AppData\XIVLauncher\addon\Hooks\dev"
@@ -154,44 +227,113 @@ jobs:
           dotnet build Resonance.csproj --configuration Release
           dotnet publish Resonance.csproj --configuration Release --runtime win-x64 --self-contained false --output artifacts/plugin
           if (-not (Test-Path artifacts/plugin/Resonance.json)) { throw 'Dalamud manifest missing from plugin publish output' }
-          if (Test-Path artifacts/plugin/qwen.dll) { throw 'Native runtime must remain in separately downloaded packs' }
+          if (-not (Test-Path artifacts/plugin/reference-extractor/ReferenceExtractor.dll)) { throw 'Reference extractor host missing from managed publish output' }
+          if (Get-ChildItem artifacts/plugin -File -Filter 'ReferenceExtractor*') { throw 'Reference extractor artifacts leaked into plugin root' }
+          if (Get-ChildItem artifacts/plugin -Recurse -File | Where-Object { $_.Name -match '^(qwen|ggml).*\.dll$' }) { throw 'Native runtime must remain in separately downloaded packs' }
           $version = (Get-Content Resonance.json | ConvertFrom-Json).AssemblyVersion
           $publishedVersion = [Reflection.AssemblyName]::GetAssemblyName((Resolve-Path artifacts/plugin/Resonance.dll)).Version.ToString()
           if ($publishedVersion -ne $version) { throw "Manifest version $version does not match assembly $publishedVersion" }
-          $assemblyVersion = [Version]$version
-          if ($assemblyVersion.Revision -ne 0) { throw "Release assembly revision must be zero for SemVer tag mapping: $version" }
-          if ($env:GITHUB_REF -like 'refs/tags/v*') {
-            $expectedTag = "v$($assemblyVersion.Major).$($assemblyVersion.Minor).$($assemblyVersion.Build)"
-            if ($env:GITHUB_REF_NAME -ne $expectedTag) { throw "Tag $env:GITHUB_REF_NAME does not match assembly version $version; expected $expectedTag" }
-          }
-          Compress-Archive -Path artifacts/plugin/* -DestinationPath "artifacts/Resonance-$version.zip"
 
-      - name: Generate Dalamud custom repository JSON
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Upload managed component
+        uses: actions/upload-artifact@v4
+        with:
+          name: managed-plugin
+          path: artifacts/plugin
+          if-no-files-found: error
+          include-hidden-files: true
+          overwrite: true
+
+  package:
+    needs: [preflight, native-core, native-cuda, managed]
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download CPU and Vulkan component
+        uses: actions/download-artifact@v5
+        with:
+          name: native-core
+          path: components/core
+
+      - name: Download CUDA component
+        uses: actions/download-artifact@v5
+        with:
+          name: native-cuda
+          path: components/cuda
+
+      - name: Download managed component
+        uses: actions/download-artifact@v5
+        with:
+          name: managed-plugin
+          path: components/plugin
+
+      - name: Assemble release artifacts
         shell: pwsh
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
         run: |
           $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           Set-StrictMode -Version Latest
-          $manifest = Get-Content Resonance.json | ConvertFrom-Json
-          $version = $manifest.AssemblyVersion
-          $url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:GITHUB_REF_NAME/Resonance-$version.zip"
-          @([ordered]@{
-            Author = $manifest.Author
-            Name = $manifest.Name
-            Punchline = $manifest.Punchline
-            Description = $manifest.Description
-            InternalName = $manifest.InternalName
-            AssemblyVersion = $version
-            TestingAssemblyVersion = $version
-            DalamudApiLevel = $manifest.DalamudApiLevel
-            ApplicableVersion = $manifest.ApplicableVersion
-            Tags = $manifest.Tags
-            DownloadLinkInstall = $url
-            DownloadLinkUpdate = $url
-            DownloadLinkTesting = $url
-          }) | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 artifacts/repo.json
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          $corePack = Get-Item components/core/Resonance-Core.zip
+          $cudaPack = Get-Item components/cuda/Resonance-CUDA.zip
+          Copy-Item $corePack.FullName artifacts/Resonance-Core.zip
+          Copy-Item $cudaPack.FullName artifacts/Resonance-CUDA.zip
 
-      - name: Upload build artifacts
+          $coreContents = Join-Path $env:RUNNER_TEMP 'resonance-core-contents'
+          $cudaContents = Join-Path $env:RUNNER_TEMP 'resonance-cuda-contents'
+          Expand-Archive -Force $corePack.FullName $coreContents
+          Expand-Archive -Force $cudaPack.FullName $cudaContents
+          $coreFiles = @(Get-ChildItem $coreContents -Recurse -File -Filter '*.dll' | ForEach-Object Name | Sort-Object -Unique)
+          $cudaFiles = @(Get-ChildItem $cudaContents -Recurse -File -Filter '*.dll' | ForEach-Object Name | Sort-Object -Unique)
+
+          $runtimeArtifacts = @()
+          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            $runtimeArtifacts += [ordered]@{
+              id = 'core'
+              url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:GITHUB_REF_NAME/Resonance-Core.zip"
+              size = $corePack.Length
+              sha256 = (Get-FileHash $corePack.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              matchDescriptionContains = @()
+              files = $coreFiles
+            }
+            $runtimeArtifacts += [ordered]@{
+              id = 'cuda'
+              url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:GITHUB_REF_NAME/Resonance-CUDA.zip"
+              size = $cudaPack.Length
+              sha256 = (Get-FileHash $cudaPack.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              matchDescriptionContains = @('NVIDIA')
+              files = $cudaFiles
+            }
+          }
+          $runtimeManifestPath = 'components/plugin/assets/runtimes.json'
+          if (-not (Test-Path (Split-Path $runtimeManifestPath -Parent))) { throw 'Managed plugin assets directory is missing' }
+          [ordered]@{ schemaVersion = 1; abi = 6; artifacts = $runtimeArtifacts } | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 $runtimeManifestPath
+
+          Compress-Archive -Path components/plugin/* -DestinationPath "artifacts/Resonance-$env:VERSION.zip"
+
+          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            $manifest = Get-Content Resonance.json | ConvertFrom-Json
+            $url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:GITHUB_REF_NAME/Resonance-$env:VERSION.zip"
+            @([ordered]@{
+              Author = $manifest.Author
+              Name = $manifest.Name
+              Punchline = $manifest.Punchline
+              Description = $manifest.Description
+              InternalName = $manifest.InternalName
+              AssemblyVersion = $env:VERSION
+              TestingAssemblyVersion = $env:VERSION
+              DalamudApiLevel = $manifest.DalamudApiLevel
+              ApplicableVersion = $manifest.ApplicableVersion
+              Tags = $manifest.Tags
+              DownloadLinkInstall = $url
+              DownloadLinkUpdate = $url
+              DownloadLinkTesting = $url
+            }) | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 artifacts/repo.json
+          }
+
+      - name: Upload packaged artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Resonance
@@ -199,15 +341,16 @@ jobs:
             artifacts/Resonance-*.zip
             artifacts/repo.json
           if-no-files-found: error
+          overwrite: true
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: package
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Download release artifacts
+      - name: Download packaged artifacts
         uses: actions/download-artifact@v5
         with:
           name: Resonance
@@ -223,7 +366,7 @@ jobs:
 
   publish-repository:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, release]
+    needs: [package, release]
     runs-on: ubuntu-latest
     permissions:
       pages: write
@@ -232,7 +375,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Download release metadata
+      - name: Download repository metadata
         uses: actions/download-artifact@v5
         with:
           name: Resonance
