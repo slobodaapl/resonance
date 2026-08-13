@@ -13,6 +13,18 @@ internal static class ScdAudioDecoder
     private const int AdpcmFormat = 0x0c;
     private const int HcaFormat = 0x1a;
 
+    internal static uint? ResolveSoleAudioEntry(byte[] scd)
+    {
+        using var stream = new MemoryStream(scd, false);
+        using var reader = new BinaryReader(stream, Encoding.UTF8, true);
+        if (scd.Length < 0x36 || Encoding.ASCII.GetString(scd, 0, 8) != "SEDBSSCF")
+            throw new InvalidDataException("Invalid SCD header");
+        stream.Position = 0x30;
+        ReadCount(reader);
+        ReadCount(reader);
+        return ReadCount(reader) == 1 ? 0u : null;
+    }
+
     internal static float[] Extract(byte[] scd, uint soundNumber, CancellationToken token)
     {
         using var stream = new MemoryStream(scd, false);

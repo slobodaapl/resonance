@@ -25,6 +25,8 @@ public sealed class QwenCppRuntime : ITtsRuntime
     private static nint ggmlBaseHandle;
     private static nint ggmlHandle;
     private static nint qwenHandle;
+    private static readonly List<(string Name, nint Handle)> BackendDependencyHandles = [];
+    private static string? cudaLoadError;
     private static int nativeLibrariesReleased;
     private static int nativeLibrariesReleasing;
     private static Exception? nativeReleaseTerminalFailure;
@@ -51,6 +53,10 @@ public sealed class QwenCppRuntime : ITtsRuntime
         {
             lock (ProcessLeaseGate) return nativeReleaseTerminalFailure is not null;
         }
+    }
+    public static string? CudaLoadError
+    {
+        get { lock (ProcessLeaseGate) return cudaLoadError; }
     }
 
     public static void ConfigureNativeRuntimeDirectory(string directory)
@@ -180,6 +186,23 @@ public sealed class QwenCppRuntime : ITtsRuntime
                     }
                 }
                 TryFreeHandle(ref ggmlBaseHandle, "ggml-base", failures);
+                if (ggmlBaseHandle == 0)
+                {
+                    for (var index = BackendDependencyHandles.Count - 1; index >= 0; index--)
+                    {
+                        var dependency = BackendDependencyHandles[index];
+                        try
+                        {
+                            NativeLibrary.Free(dependency.Handle);
+                            BackendDependencyHandles.RemoveAt(index);
+                        }
+                        catch (Exception error)
+                        {
+                            failures.Add(new InvalidOperationException(
+                                $"Native backend dependency '{dependency.Name}' could not be freed", error));
+                        }
+                    }
+                }
                 if (failures.Count > 0)
                 {
                     nativeLibrariesReleased = 0;
@@ -190,6 +213,7 @@ public sealed class QwenCppRuntime : ITtsRuntime
                 }
                 nativeReleaseTerminalFailure = null;
                 nativeRuntimeDirectory = null;
+                cudaLoadError = null;
                 ConfiguredBackendPaths.Clear();
                 nativeLibrariesReleased = 1;
             }
@@ -256,7 +280,8 @@ public sealed class QwenCppRuntime : ITtsRuntime
 
     internal static unsafe IReadOnlyList<BackendInfo> EnumerateBackends(
         string? additionalSearchPath = null, bool ownsProcessLease = true,
-        IProcessLifetimeLease? pluginLifetimeLease = null)
+        IProcessLifetimeLease? pluginLifetimeLease = null,
+        bool refreshSearchPaths = false)
     {
         if (!ownsProcessLease && pluginLifetimeLease is null)
             throw new InvalidOperationException(
@@ -269,8 +294,10 @@ public sealed class QwenCppRuntime : ITtsRuntime
         {
             ValidateAbi();
             ConfigureBackendSearchPath(nativeRuntimeDirectory
-                ?? throw new InvalidOperationException("Resonance native runtime directory has not been configured"));
-            if (additionalSearchPath is not null) ConfigureBackendSearchPath(additionalSearchPath);
+                ?? throw new InvalidOperationException("Resonance native runtime directory has not been configured"),
+                refreshSearchPaths);
+            if (additionalSearchPath is not null)
+                ConfigureBackendSearchPath(additionalSearchPath, refreshSearchPaths);
             var result = new List<BackendInfo>();
             var count = QwenNative.BackendCount();
             for (var index = 0; index < count; index++)
@@ -297,17 +324,52 @@ public sealed class QwenCppRuntime : ITtsRuntime
         finally { ReleaseProcessLeaseCore(ownsProcessLease); }
     }
 
-    private static void ConfigureBackendSearchPath(string directory)
+    private static void ConfigureBackendSearchPath(string directory, bool refresh)
     {
         lock (ProcessLeaseGate)
         lock (BackendPathGate)
         {
             var canonical = Path.GetFullPath(directory);
-            if (ConfiguredBackendPaths.Contains(canonical)) return;
+            if (!refresh && ConfiguredBackendPaths.Contains(canonical)) return;
             Directory.CreateDirectory(canonical);
+            PreloadCudaDependencies(canonical);
             var status = QwenNative.BackendLoadFromPath(canonical);
             if (status != 0) throw NativeFailure("qt_backend_load_from_path", status);
             ConfiguredBackendPaths.Add(canonical);
+        }
+    }
+
+    private static void PreloadCudaDependencies(string directory)
+    {
+        if (!OperatingSystem.IsWindows() || BackendDependencyHandles.Count != 0) return;
+        var names = new[] { "cudart64_12.dll", "cublasLt64_12.dll", "cublas64_12.dll" };
+        if (names.Any(name => !File.Exists(Path.Combine(directory, name)))) return;
+
+        try
+        {
+            BackendDependencyHandles.Add(("nvcuda.dll", WindowsNativeLibrary.LoadCudaDriver()));
+            foreach (var name in names)
+                BackendDependencyHandles.Add((name, NativeLibrary.Load(Path.Combine(directory, name))));
+            var backend = NativeLibrary.Load(Path.Combine(directory, "ggml-cuda.dll"));
+            NativeLibrary.Free(backend);
+            cudaLoadError = null;
+        }
+        catch (Exception loadError)
+        {
+            cudaLoadError = loadError.Message;
+            var cleanupFailures = new List<Exception>();
+            for (var index = BackendDependencyHandles.Count - 1; index >= 0; index--)
+            {
+                try
+                {
+                    NativeLibrary.Free(BackendDependencyHandles[index].Handle);
+                    BackendDependencyHandles.RemoveAt(index);
+                }
+                catch (Exception error) { cleanupFailures.Add(error); }
+            }
+            if (cleanupFailures.Count != 0)
+                throw new AggregateException("CUDA dependency preload rollback failed",
+                    new[] { loadError }.Concat(cleanupFailures));
         }
     }
 

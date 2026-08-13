@@ -445,6 +445,54 @@ public sealed class VoiceRegistryTests
         finally { Directory.Delete(root, true); }
     }
 
+    [Fact]
+    public async Task ExactNormalizedDisplayNameFindsExistingLanguageModelAssignment()
+    {
+        var root = CreateRoot();
+        try
+        {
+            using var database = new Database(Path.Combine(root, "voices.sqlite3"));
+            var registry = new VoiceRegistry(database);
+            var speaker = await registry.ResolveSpeakerAsync(
+                "npc:leih", 1, "Leih Aliapoh", 1, "english",
+                TestContext.Current.CancellationToken);
+            var profile = await registry.SaveAndAssignAsync(
+                speaker.Id, Profile(VoiceProfileKind.Designed, "leih"),
+                TestContext.Current.CancellationToken);
+
+            var match = await registry.GetBestVoiceByDisplayNameAsync(
+                "LEIHALIAPOH", "english", "model", TestContext.Current.CancellationToken);
+
+            Assert.NotNull(match);
+            Assert.Equal(speaker.StableKey, match.StableKey);
+            Assert.Equal(profile.Id, match.Profile.Id);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task AmbiguousNormalizedDisplayNameDoesNotGuessPersistentIdentity()
+    {
+        var root = CreateRoot();
+        try
+        {
+            using var database = new Database(Path.Combine(root, "voices.sqlite3"));
+            var registry = new VoiceRegistry(database);
+            foreach (var (key, name) in new[] { ("npc:a", "Same Name"), ("npc:b", "Same-Name") })
+            {
+                var speaker = await registry.ResolveSpeakerAsync(
+                    key, null, name, 1, "english", TestContext.Current.CancellationToken);
+                await registry.SaveAndAssignAsync(
+                    speaker.Id, Profile(VoiceProfileKind.Designed, key),
+                    TestContext.Current.CancellationToken);
+            }
+
+            Assert.Null(await registry.GetBestVoiceByDisplayNameAsync(
+                "SAMENAME", "english", "model", TestContext.Current.CancellationToken));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     private static StoredVoiceProfile Profile(VoiceProfileKind kind, string text, string language = "english") =>
         VoiceRegistry.CreateProfile(kind, language, "model", 1, text, 42,
             new VoiceReference([.25f], [1, 2], 1, 2, text));

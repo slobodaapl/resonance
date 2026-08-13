@@ -5,12 +5,33 @@ namespace Resonance.Tests;
 
 public sealed class CastingProfileCatalogTests
 {
+    [Theory]
+    [InlineData("il_mheg_nu_mou", "masculine", "young", "default")]
+    [InlineData("il_mheg_pixie", "feminine", "adult", "default")]
+    [InlineData("ananta", "masculine", "young", "feminine")]
+    [InlineData("loporrit", "masculine", "young", "default")]
+    [InlineData("loporrit", "feminine", "adult", "default")]
+    [InlineData("sylph", "masculine", "young", "default")]
+    [InlineData("sylph", "feminine", "adult", "default")]
+    [InlineData("thavnairian", "masculine", "young", "masculine_young")]
+    [InlineData("thavnairian", "feminine", "adult", "feminine_adult")]
+    public void FallbackDimensionsCollapseOnlyUnsupportedTraits(
+        string domainId, string sex, string age, string expected)
+    {
+        var catalog = CastingProfileCatalog.Load(ProjectPath("assets", "dub-profiles.json"));
+        var resolution = new CastingResolution(
+            domainId, [], CastingEvidenceSource.Species, null, null, catalog.Version,
+            false, false, [], [domainId], []);
+        Assert.Equal(expected, catalog.FallbackVariantId(resolution,
+            new SpeakerCastingEvidence("fallback-test", Sex: sex, Age: age)));
+    }
+
     [Fact]
     public void AssetUsesStrictSchemaAndCoversRepresentativeTerritories()
     {
         var catalog = CastingProfileCatalog.Load(ProjectPath("assets", "dub-profiles.json"));
 
-        Assert.Equal(1, catalog.Version);
+        Assert.Equal(4, catalog.Version);
         Assert.Equal("generic_world", catalog.DefaultDomainId);
         Assert.Empty(catalog.Validate());
         Assert.Equal(5, catalog.GetDomain("ishgardian").MasculineSlots.Count);
@@ -18,6 +39,116 @@ public sealed class CastingProfileCatalogTests
         Assert.Equal(["lominsan"], catalog.GetTerritoryPriors("Mist").Select(prior => prior.DomainId));
         Assert.Empty(catalog.GetTerritoryPriors("Sea of Clouds"));
     }
+
+    [Fact]
+    public void RawMetadataRulesResolveDetectableCulturesAndModelFamilies()
+    {
+        var catalog = CastingProfileCatalog.Load(ProjectPath("assets", "dub-profiles.json"));
+
+        var pelupelu = catalog.Resolve(new SpeakerCastingEvidence(
+            "npc:pelu", "Radz-at-Han", Category: "humanoid",
+            RaceId: 1, TribeId: 1, BodyTypeId: 4,
+            ModelHeadId: 74781, ModelHandsId: 66378, ModelLegsId: 66378, ModelFeetId: 66378));
+        Assert.Equal("pelupelu", pelupelu.DomainId);
+        Assert.Equal(CastingEvidenceSource.Culture, pelupelu.Source);
+
+        var sharlayanVisitor = catalog.Resolve(new SpeakerCastingEvidence(
+            "npc:gleaner", "Radz-at-Han", Category: "humanoid",
+            ModelBodyId: 74753, ModelHandsId: 74753, ModelLegsId: 74753, ModelFeetId: 74753));
+        Assert.Equal("sharlayan", sharlayanVisitor.DomainId);
+        Assert.Equal(CastingEvidenceSource.Faction, sharlayanVisitor.Source);
+        Assert.DoesNotContain("urban", sharlayanVisitor.ModifierIds);
+
+        var blessed = catalog.Resolve(new SpeakerCastingEvidence(
+            "npc:blessed", "Rak'tika Greatwood", Category: "humanoid",
+            ModelBodyId: 131691, ModelHandsId: 131691,
+            ModelLegsId: 393834, ModelFeetId: 393834));
+        Assert.Equal("rak_tika_night_blessed", blessed.DomainId);
+        Assert.Equal(CastingEvidenceSource.Faction, blessed.Source);
+
+        var clergy = catalog.Resolve(new SpeakerCastingEvidence(
+            "npc:clergy", "Radz-at-Han", Category: "humanoid",
+            ModelBodyId: 196784, ModelHandsId: 196784,
+            ModelLegsId: 196784, ModelFeetId: 196784));
+        Assert.Equal("ishgardian", clergy.DomainId);
+        Assert.Equal(CastingEvidenceSource.Faction, clergy.Source);
+        Assert.Contains("clergy", clergy.ModifierIds);
+
+        var bozjan = catalog.Resolve(new SpeakerCastingEvidence(
+            "npc:bozjan", "Gangos", Category: "humanoid",
+            ModelBodyId: 131489, ModelHandsId: 262560,
+            ModelLegsId: 262560, ModelFeetId: 262560));
+        Assert.Equal("bozjan", bozjan.DomainId);
+        Assert.Equal(CastingEvidenceSource.Faction, bozjan.Source);
+        Assert.Contains("military", bozjan.ModifierIds);
+
+        var resistance = catalog.Resolve(new SpeakerCastingEvidence(
+            "npc:resistance", "Rhalgr's Reach", Category: "humanoid",
+            ModelHeadId: 65812, ModelBodyId: 65951, ModelHandsId: 65952,
+            ModelLegsId: 65947, ModelFeetId: 65892));
+        Assert.Equal("ala_mhigan", resistance.DomainId);
+        Assert.Equal(CastingEvidenceSource.Faction, resistance.Source);
+        Assert.Contains("military", resistance.ModifierIds);
+
+        var ananta = catalog.Resolve(new SpeakerCastingEvidence(
+            "npc:ananta", "The Peaks", Category: "non_humanoid",
+            ModelFamilyId: 1029, ModelType: 2));
+        Assert.Equal("ananta", ananta.DomainId);
+        Assert.Equal(CastingEvidenceSource.Species, ananta.Source);
+
+        var ondo = catalog.Resolve(new SpeakerCastingEvidence(
+            "npc:ondo", "Tempest", Category: "non_humanoid",
+            ModelFamilyId: 1007, ModelType: 2, ModelVariant: 5));
+        Assert.Equal("ondo", ondo.DomainId);
+        Assert.Equal(CastingEvidenceSource.Species, ondo.Source);
+
+        var miilal = new SpeakerCastingEvidence(
+            "npc:miilal", Category: "non_humanoid", ModelCharaId: 4064,
+            ModelFamilyId: 1072, ModelHeadId: 65538, ModelBodyId: 196610);
+        Assert.Equal("mamool_ja_tural", catalog.Resolve(miilal).DomainId);
+        Assert.Equal("feminine", catalog.ResolveVoiceSex(miilal, "masculine"));
+    }
+
+    [Fact]
+    public void MetadataRulesAreConjunctiveAndTerritoryConditioned()
+    {
+        var catalog = CastingProfileCatalog.Load(ProjectPath("assets", "dub-profiles.json"));
+
+        var ordinaryChild = catalog.Resolve(new SpeakerCastingEvidence(
+            "npc:child", "Radz-at-Han", Category: "humanoid",
+            RaceId: 1, TribeId: 1, BodyTypeId: 4, ModelHeadId: 123));
+        Assert.Equal("thavnairian", ordinaryChild.DomainId);
+        Assert.Equal(CastingEvidenceSource.Territory, ordinaryChild.Source);
+
+        var hanuInClouds = catalog.Resolve(new SpeakerCastingEvidence(
+            "npc:bird", "Sea of Clouds", Category: "non_humanoid",
+            ModelFamilyId: 1001, ModelType: 2, ModelBase: 6));
+        Assert.Equal("vanu_vanu", hanuInClouds.DomainId);
+
+        var hanuInKozama = catalog.Resolve(new SpeakerCastingEvidence(
+            "npc:bird", "Kozama'uka", Category: "non_humanoid",
+            ModelFamilyId: 1001, ModelType: 2, ModelBase: 6));
+        Assert.Equal("hanuhanu", hanuInKozama.DomainId);
+
+        var vieraVisitor = catalog.Resolve(new SpeakerCastingEvidence(
+            "npc:viera", "Radz-at-Han", Category: "humanoid", RaceId: 8, TribeId: 16));
+        Assert.Equal("thavnairian", vieraVisitor.DomainId);
+        var viis = catalog.Resolve(new SpeakerCastingEvidence(
+            "npc:viera", "Rak'tika Greatwood", Category: "humanoid", RaceId: 8, TribeId: 16));
+        Assert.Equal("rak_tika_viis", viis.DomainId);
+    }
+
+    [Theory]
+    [InlineData(1, 255, "young")]
+    [InlineData(4, 255, "young")]
+    [InlineData(4, 1, "young")]
+    [InlineData(4, 80, "young")]
+    [InlineData(4, 0, "adult")]
+    [InlineData(4, 81, "adult")]
+    [InlineData(4, 100, "adult")]
+    [InlineData(1, 80, "adult")]
+    public void VoiceAgeUsesExactBodyHeightHeuristic(int bodyType, int height, string expected) =>
+        Assert.Equal(expected, CastingProfileCatalog.InferVoiceAge(bodyType, height));
 
     [Fact]
     public void ValidationReportsDuplicateReferenceWeightConfidenceSlotsAndCycles()
@@ -459,7 +590,7 @@ public sealed class CastingProfileCatalogTests
 
         Assert.Equal(english, japanese);
         Assert.NotEqual(english, differentSpeaker);
-        Assert.Equal(1, catalog.Version);
+        Assert.Equal(4, catalog.Version);
     }
 
     private static JsonObject ParseFixture(string json)

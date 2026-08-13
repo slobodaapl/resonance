@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DalamudLibPath Condition="'$(DalamudLibPath)' == ''">$(HOME)/.local/share/dev.goats.xivlauncher/dalamud/Hooks/dev</DalamudLibPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="../../src/Game/CutsceneVoiceManifest.cs" Link="CutsceneVoiceManifest.cs" />
+    <Reference Include="Lumina">
+      <HintPath>$(DalamudLibPath)/Lumina.dll</HintPath>
+    </Reference>
+    <Reference Include="Lumina.Excel">
+      <HintPath>$(DalamudLibPath)/Lumina.Excel.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>

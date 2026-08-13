@@ -5,11 +5,39 @@ namespace Resonance.Tests;
 public sealed class OfficialVoiceCatalogTests
 {
     [Fact]
+    public void GameAuthoredActorTokenResolvesSpacedOfficialAlias()
+    {
+        var catalog = OfficialVoiceCatalog.Load(ProjectPath("assets", "official-voices.json"));
+
+        var group = catalog.Resolve(null, "WUKLAMAT", "english");
+
+        Assert.Equal("wuk-lamat", group?.Id);
+    }
+
+    [Fact]
+    public void ExactGameActorTokenIsLanguageIndependent()
+    {
+        var catalog = OfficialVoiceCatalog.Parse("""
+            {
+              "schemaVersion": 1,
+              "catalogVersion": 1,
+              "groups": [{
+                "id": "actor", "label": "Actor", "npcBaseIds": [],
+                "aliases": {}, "sources": {}, "actorTokens": ["GAMEACTOR"]
+              }]
+            }
+            """);
+
+        Assert.Equal("actor", catalog.Resolve(null, "GAMEACTOR", "japanese")?.Id);
+        Assert.Equal("actor", catalog.GetGroup("actor")?.Id);
+    }
+
+    [Fact]
     public void AssetIsStrictAndAcceptsCuratedEnrichment()
     {
         var catalog = OfficialVoiceCatalog.Load(ProjectPath("assets", "official-voices.json"));
 
-        Assert.Equal(1, catalog.Version);
+        Assert.True(catalog.Version > 0);
         Assert.NotEmpty(catalog.Groups);
         Assert.Equal(catalog.Groups.Count, catalog.Groups.Select(value => value.Id).Distinct().Count());
         Assert.All(catalog.Groups, group =>
@@ -18,8 +46,28 @@ public sealed class OfficialVoiceCatalogTests
             Assert.False(String.IsNullOrWhiteSpace(group.Label));
             Assert.NotNull(group.NpcBaseIds);
             Assert.NotNull(group.Aliases);
-            Assert.NotNull(group.Sources);
+            Assert.Empty(group.Sources);
+            Assert.NotEmpty(group.ExactActorTokens);
+            Assert.All(group.ExactActorTokens,
+                actorToken => Assert.Same(group, catalog.Resolve(null, actorToken, "french")));
         });
+        Assert.Equal(catalog.Groups.SelectMany(group => group.ExactActorTokens).Count(),
+            catalog.Groups.SelectMany(group => group.ExactActorTokens)
+                .Select(value => new string(value.Where(char.IsLetterOrDigit)
+                    .Select(char.ToLowerInvariant).ToArray()))
+                .Distinct(StringComparer.Ordinal).Count());
+        Assert.All(catalog.Groups.SelectMany(group => group.ExactActorTokens), actorToken =>
+            Assert.DoesNotContain("/", actorToken, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void CuratedWukLamatNpcVariantsShareOneOfficialIdentity()
+    {
+        var catalog = OfficialVoiceCatalog.Load(ProjectPath("assets", "official-voices.json"));
+        uint[] variants = [1047302, 1047439, 1047526, 1047567, 1047570, 1047583, 1047595, 1047776];
+
+        Assert.All(variants, id => Assert.Equal("wuk-lamat", catalog.Resolve(id, "irrelevant", "english")?.Id));
+        Assert.Equal("wuk-lamat", catalog.Resolve(null, "Wuk Lamat", "english")?.Id);
     }
 
     [Fact]

@@ -55,7 +55,7 @@ internal sealed class BaseRuntimeHostClient : IBaseRuntimeHost
     private Stream? input;
     private Stream? output;
     private Task? readerTask;
-    private Task? stderrTask;
+    private Task<string>? stderrTask;
     private TaskCompletionSource? ready;
     private TaskCompletionSource? startCompletion;
     private string? hostRoot;
@@ -155,6 +155,7 @@ internal sealed class BaseRuntimeHostClient : IBaseRuntimeHost
         catch (Exception error)
         {
             completion.TrySetException(error);
+            ObserveTask(completion.Task);
             throw;
         }
         finally
@@ -275,12 +276,12 @@ internal sealed class BaseRuntimeHostClient : IBaseRuntimeHost
             TryDeleteFile(pendingOwnerPath);
             await readySource.Task.WaitAsync(StartupWait, token).ConfigureAwait(false);
         }
-        catch
+        catch (Exception startupError)
         {
             Stream? cleanupInput;
             Stream? cleanupOutput;
             Task? cleanupReader;
-            Task? cleanupStderr;
+            Task<string>? cleanupStderr;
             lock (processGate)
             {
                 cleanupInput = input;
@@ -297,6 +298,9 @@ internal sealed class BaseRuntimeHostClient : IBaseRuntimeHost
             catch { }
             await AwaitObservedBoundedAsync(cleanupReader).ConfigureAwait(false);
             await AwaitObservedBoundedAsync(cleanupStderr).ConfigureAwait(false);
+            var stderrText = cleanupStderr is { IsCompletedSuccessfully: true }
+                ? cleanupStderr.Result.Trim()
+                : String.Empty;
             var terminationError = (Exception?)null;
             var terminated = false;
             try { terminated = await TerminateProcessAsync(child, hostJob).ConfigureAwait(false); }
@@ -363,6 +367,10 @@ internal sealed class BaseRuntimeHostClient : IBaseRuntimeHost
                     "Base runtime host transient root could not be removed after startup failure");
             }
             if (terminationError is not null) throw terminationError;
+            if (!String.IsNullOrWhiteSpace(stderrText))
+                throw new BaseRuntimeHostException(
+                    $"Base runtime host failed during startup: {startupError.Message}; helper stderr: {stderrText}",
+                    processMayBeRunning: false, startupError);
             throw;
         }
         }
@@ -693,8 +701,6 @@ internal sealed class BaseRuntimeHostClient : IBaseRuntimeHost
     private void FailReadLoop(Exception error)
     {
         Volatile.Write(ref unavailable, 1);
-        try { lifecycleCancellation.Cancel(); }
-        catch (ObjectDisposedException) { }
         lock (pendingGate)
         {
             foreach (var operation in pending.Values)
@@ -709,6 +715,8 @@ internal sealed class BaseRuntimeHostClient : IBaseRuntimeHost
             activeBackendId = null;
             ready?.TrySetException(error);
         }
+        try { lifecycleCancellation.Cancel(); }
+        catch (ObjectDisposedException) { }
     }
 
     private async Task RejectAudioAsync(string requestId, PendingOperation operation)
@@ -822,7 +830,7 @@ internal sealed class BaseRuntimeHostClient : IBaseRuntimeHost
         Stream? hostInput;
         Stream? hostOutput;
         Task? reader;
-        Task? stderr;
+        Task<string>? stderr;
         string? root;
         lock (processGate)
         {

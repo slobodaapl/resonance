@@ -83,6 +83,48 @@ public sealed class DubSchedulerStreamingTests
     }
 
     [Fact]
+    public async Task ActualLinePreemptsUnrelatedActivePrediction()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "resonance-actual-preempt-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            using var database = new Database(Path.Combine(root, "test.sqlite3"));
+            var cache = new LineCache(database, Path.Combine(root, "cache"), () => 0);
+            var runtime = new CancellableRuntime();
+            await using var scheduler = new DubScheduler(runtime, (_, _) =>
+                ValueTask.FromResult(VoiceResolution.Ready(new([], [], 0, 0, ""))), cache, "model", "english");
+            using var prediction = new DubLine
+            {
+                SessionEpoch = 1,
+                Sequence = 1,
+                SpeakerKey = "npc:prediction",
+                SpeakerName = "Prediction",
+                Text = "Speculative",
+                ActualStatus = ActualStatus.Predicted,
+            };
+            using var actual = new DubLine
+            {
+                SessionEpoch = 1,
+                Sequence = 2,
+                SpeakerKey = "npc:actual",
+                SpeakerName = "Actual",
+                Text = "Urgent",
+                ActualStatus = ActualStatus.Actual,
+            };
+
+            scheduler.Enqueue(prediction);
+            await runtime.Started.Task.WaitAsync(TimeSpan.FromSeconds(3), TestContext.Current.CancellationToken);
+            scheduler.Enqueue(actual);
+            await runtime.Cancelled.Task.WaitAsync(TimeSpan.FromSeconds(3), TestContext.Current.CancellationToken);
+
+            Assert.Equal(DubLineState.Invalidated, prediction.State);
+            Assert.True(prediction.Token.IsCancellationRequested);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public async Task SchedulerDisposeCancelsActiveGenerationBeforeWorkerExit()
     {
         var root = Path.Combine(Path.GetTempPath(), "resonance-scheduler-dispose-" + Guid.NewGuid().ToString("N"));
@@ -299,6 +341,49 @@ public sealed class DubSchedulerStreamingTests
         Assert.False(line.TryMarkNativeVoiced(DubLineState.Predicted, DubLineState.Active));
         Assert.Equal(DubLineState.Completed, line.State);
         Assert.Equal(NativeVoiceStatus.Unknown, line.NativeVoiceStatus);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task BaseCorrectionTracksActualSynthesisPath(bool hasBaseReference)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "resonance-base-correction-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            using var database = new Database(Path.Combine(root, "test.sqlite3"));
+            var cache = new LineCache(database, Path.Combine(root, "cache"), () => 0);
+            var runtime = new LanguageRecordingRuntime();
+            await using var scheduler = new DubScheduler(runtime, (line, _) =>
+            {
+                if (!hasBaseReference)
+                {
+                    line.DirectSynthesisCompleted = true;
+                    line.Audio.Complete();
+                }
+                return ValueTask.FromResult(VoiceResolution.Ready(
+                    hasBaseReference ? new VoiceReference([], [], 0, 0, "") : null));
+            }, cache, "model", "english");
+            var buffered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            scheduler.LineBuffered += _ => buffered.TrySetResult();
+            using var line = new DubLine
+            {
+                SessionEpoch = 1,
+                Sequence = 1,
+                SpeakerKey = "npc:correction",
+                SpeakerName = "Correction",
+                Text = "Path provenance",
+                ActualStatus = ActualStatus.Actual,
+                ApplyBaseCloneCorrection = !hasBaseReference,
+            };
+
+            scheduler.Enqueue(line);
+            await buffered.Task.WaitAsync(TimeSpan.FromSeconds(3), TestContext.Current.CancellationToken);
+
+            Assert.Equal(hasBaseReference, line.ApplyBaseCloneCorrection);
+        }
+        finally { Directory.Delete(root, true); }
     }
 
     private static async Task WaitForStateAsync(

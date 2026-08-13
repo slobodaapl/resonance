@@ -67,6 +67,10 @@ public sealed class DubScheduler : IAsyncDisposable
             if (!line.TryTransition(DubLineState.Queued, DubLineState.Predicted,
                     DubLineState.VoiceResolving, DubLineState.Queued, DubLineState.Buffered)) return;
             line.Language ??= defaultLanguage;
+            if (line.ActualStatus == ActualStatus.Actual
+                && generating is { ActualStatus: ActualStatus.Predicted, IsTerminal: false } speculative
+                && !ReferenceEquals(speculative, line))
+                speculative.Cancel(DubLineState.Invalidated);
             Estimate(line, DateTimeOffset.UtcNow);
             queue.Enqueue(line, Priority(line, DateTimeOffset.UtcNow));
             try { ready.Release(); }
@@ -86,6 +90,9 @@ public sealed class DubScheduler : IAsyncDisposable
                 line.ActualStatus = ActualStatus.Actual;
                 line.PlaybackDeadline = deadline;
             }
+            if (generating is { ActualStatus: ActualStatus.Predicted, IsTerminal: false } active
+                && (active.SessionEpoch != sessionEpoch || active.Sequence != sequence))
+                active.Cancel(DubLineState.Invalidated);
             RebuildQueue(DateTimeOffset.UtcNow);
             try { ready.Release(); }
             catch (ObjectDisposedException) { }
@@ -174,6 +181,7 @@ public sealed class DubScheduler : IAsyncDisposable
                     continue;
                 }
                 var voice = voiceResolution.Reference;
+                line.ApplyBaseCloneCorrection = voice is not null;
                 var seed = StableSeed($"{line.SpeakerKey}\0{language}");
                 if (line.DirectSynthesisCompleted)
                 {
@@ -223,16 +231,19 @@ public sealed class DubScheduler : IAsyncDisposable
                     : await capture.DrainAsync(line.Token).ConfigureAwait(false);
                 if (!line.IsTerminal)
                 {
-                    if (capturedSamples is not null && line.VoiceProfileId is not null
-                        && line.VoiceProfileHash is not null)
-                        await lineCache.StoreAsync(line, line.VoiceProfileId, line.VoiceProfileHash,
-                            modelHash, language, seed, capturedSamples, line.Token).ConfigureAwait(false);
                     if (!playbackAuthorized && line.TryTransition(
                             DubLineState.Buffered,
                             DubLineState.Generating))
                     {
                         LineBuffered?.Invoke(line);
                     }
+                    // Cache persistence is not a playback-readiness gate.  In
+                    // particular, the game-mixer can now prepare its complete
+                    // SCD while this worker performs the durable cache write.
+                    if (capturedSamples is not null && line.VoiceProfileId is not null
+                        && line.VoiceProfileHash is not null)
+                        await lineCache.StoreAsync(line, line.VoiceProfileId, line.VoiceProfileHash,
+                            modelHash, language, seed, capturedSamples, line.Token).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException) when (line.Token.IsCancellationRequested) { }

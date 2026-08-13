@@ -527,6 +527,7 @@ jobs:
       group: github-pages
       cancel-in-progress: false
     permissions:
+      contents: read
       pages: write
       id-token: write
     environment:
@@ -540,9 +541,19 @@ jobs:
           path: release
 
       - name: Prepare custom repository site
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir site
           cp release/repo.json site/repo.json
+          if gh release download official-profiles \
+              --repo "$GITHUB_REPOSITORY" \
+              --pattern official-profile-pack.json \
+              --dir site; then
+            test -s site/official-profile-pack.json
+          else
+            echo 'No official profile pack release is published yet.'
+          fi
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5

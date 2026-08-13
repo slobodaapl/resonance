@@ -8,12 +8,22 @@ public sealed class ScdExtractor(IDataManager dataManager, IFramework framework,
     {
         // IDataManager is framework-affine.  Copy the immutable resource bytes
         // on that thread, then perform all decoding on the worker thread.
-        var data = await CaptureResourceAsync(path, token).ConfigureAwait(false);
+        var data = await CaptureResourceBytesAsync(path, token).ConfigureAwait(false);
         return await Task.Run(() => ScdAudioDecoder.Extract(data, soundNumber, token), token)
             .ConfigureAwait(false);
     }
 
-    private Task<byte[]> CaptureResourceAsync(string path, CancellationToken token)
+    public async Task<uint?> ResolveSoleAudioEntryAsync(string path, CancellationToken token)
+    {
+        var data = await CaptureResourceBytesAsync(path, token).ConfigureAwait(false);
+        return await Task.Run(() => ScdAudioDecoder.ResolveSoleAudioEntry(data), token)
+            .ConfigureAwait(false);
+    }
+
+    public Task<byte[]> CaptureResourceBytesAsync(
+        string path,
+        CancellationToken token,
+        bool logFailure = true)
     {
         if (framework.IsFrameworkUnloading)
             return Task.FromCanceled<byte[]>(new CancellationToken(true));
@@ -52,18 +62,18 @@ public sealed class ScdExtractor(IDataManager dataManager, IFramework framework,
                 }
                 catch (Exception error) { completion.TrySetException(error); }
             });
-            _ = ObserveDispatchAsync(dispatch, completion);
+            _ = ObserveDispatchAsync(dispatch, completion, logFailure);
         }
         catch (Exception error)
         {
             completion.TrySetException(error);
-            _ = ObserveDispatchAsync(Task.CompletedTask, completion);
+            _ = ObserveDispatchAsync(Task.CompletedTask, completion, logFailure);
         }
         return completion.Task.WaitAsync(token);
     }
 
     private async Task ObserveDispatchAsync(
-        Task dispatch, TaskCompletionSource<byte[]> completion)
+        Task dispatch, TaskCompletionSource<byte[]> completion, bool logFailure)
     {
         Exception? failure = null;
         try { await dispatch.ConfigureAwait(false); }
@@ -78,7 +88,7 @@ public sealed class ScdExtractor(IDataManager dataManager, IFramework framework,
         }
         try { await completion.Task.ConfigureAwait(false); }
         catch (Exception error) { failure ??= error; }
-        if (failure is not null && failure is not OperationCanceledException)
+        if (logFailure && failure is not null && failure is not OperationCanceledException)
             log?.Warning(failure is AggregateException aggregate ? aggregate.GetBaseException() : failure,
                 "SCD resource framework dispatch failed");
     }

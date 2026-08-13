@@ -1,6 +1,6 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <Version>1.1.3.0</Version>
+    <Version>1.2.0.0</Version>
     <AssemblyName>Resonance</AssemblyName>
     <RootNamespace>Resonance</RootNamespace>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
@@ -16,8 +16,6 @@
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.10" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
     <PackageReference Include="NAudio.Core" Version="2.2.1" />
-    <PackageReference Include="NAudio.WinMM" Version="2.2.1" />
-    <PackageReference Include="NAudio.WinForms" Version="2.2.1" />
     <PackageReference Include="NAudio.Vorbis" Version="1.5.0" />
     <PackageReference Include="VGAudio" Version="2.2.1" />
   </ItemGroup>
@@ -28,6 +26,10 @@
     <Content Include="THIRD_PARTY_NOTICES.md" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="assets\*.json" CopyToOutputDirectory="PreserveNewest" />
     <Compile Remove="tools\ReferenceExtractor\**\*.cs" />
+    <Compile Remove="tools\OfficialProfilePackBuilder\**\*.cs" />
+    <Compile Remove="tools\VoiceReferencePilot\**\*.cs" />
+    <Compile Remove="tools\CutscenePlanBuilder\**\*.cs" />
+    <Compile Remove="tools\FallbackProfileGenerator\**\*.cs" />
     <Compile Remove="tests\**\*.cs" />
     <Compile Remove=".references\**\*.cs" />
   </ItemGroup>
@@ -62,9 +64,17 @@
   </Target>
 
   <Target Name="PublishReferenceExtractor" AfterTargets="Publish">
-    <RemoveDir Directories="$(PublishDir)reference-extractor" />
-    <MSBuild Projects="$(ReferenceExtractorProject)" Targets="Publish"
-             Properties="Configuration=$(Configuration);RuntimeIdentifier=win-x64;SelfContained=false;PublishDir=$(PublishDir)reference-extractor\" />
+    <PropertyGroup>
+      <ReferenceExtractorPublishDirectory>$(PublishDir)reference-extractor</ReferenceExtractorPublishDirectory>
+    </PropertyGroup>
+    <RemoveDir Directories="$(ReferenceExtractorPublishDirectory)" />
+    <MakeDir Directories="$(ReferenceExtractorPublishDirectory)" />
+    <ItemGroup>
+      <ReferenceExtractorPublishFiles Include="$(ReferenceExtractorBuildDirectory)\**\*"
+          Exclude="$(ReferenceExtractorBuildDirectory)\**\ggml*.dll;$(ReferenceExtractorBuildDirectory)\**\qwen*.dll;$(ReferenceExtractorBuildDirectory)\**\*.so;$(ReferenceExtractorBuildDirectory)\**\*.dylib" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ReferenceExtractorPublishFiles)"
+          DestinationFiles="@(ReferenceExtractorPublishFiles->'$(ReferenceExtractorPublishDirectory)\%(RecursiveDir)%(Filename)%(Extension)')" />
     <Delete Files="$(PublishDir)ReferenceExtractor.exe;$(PublishDir)ReferenceExtractor.dll;$(PublishDir)ReferenceExtractor.pdb;$(PublishDir)ReferenceExtractor.deps.json;$(PublishDir)ReferenceExtractor.runtimeconfig.json" />
   </Target>
 </Project>

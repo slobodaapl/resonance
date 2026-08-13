@@ -23,11 +23,19 @@
     <Compile Include="..\..\src\Plugin\Configuration.cs" Link="Source\Configuration.cs" />
     <Compile Include="..\..\src\Plugin\ProcessLifetimeLease.cs" Link="Source\ProcessLifetimeLease.cs" />
     <Compile Include="..\..\src\Audio\StreamingAudioBuffer.cs" Link="Source\StreamingAudioBuffer.cs" />
+    <Compile Include="..\..\src\Audio\BaseCloneCorrectionSampleProvider.cs" Link="Source\BaseCloneCorrectionSampleProvider.cs" />
+    <Compile Include="..\..\src\Audio\DebugWavExporter.cs" Link="Source\DebugWavExporter.cs" />
+    <Compile Include="..\..\src\Audio\AudioBackendSelection.cs" Link="Source\AudioBackendSelection.cs" />
+    <Compile Include="..\..\src\Audio\ScdFileBuilder.cs" Link="Source\ScdFileBuilder.cs" />
+    <Compile Include="..\..\src\Audio\GameMixerAssetStore.cs" Link="Source\GameMixerAssetStore.cs" />
+    <Compile Include="..\..\src\Audio\GameMixerAudioBackend.cs" Link="Source\GameMixerAudioBackend.cs" />
     <Compile Include="..\..\src\Bootstrap\BackendSelector.cs" Link="Source\BackendSelector.cs" />
     <Compile Include="..\..\src\Bootstrap\AssetManager.cs" Link="Source\AssetManager.cs" />
+    <Compile Include="..\..\src\Bootstrap\OfficialProfilePackManager.cs" Link="Source\OfficialProfilePackManager.cs" />
     <Compile Include="..\..\src\Bootstrap\AssetManifest.cs" Link="Source\AssetManifest.cs" />
     <Compile Include="..\..\src\Bootstrap\BackendBenchmark.cs" Link="Source\BackendBenchmark.cs" />
     <Compile Include="..\..\src\Bootstrap\CudaDriverProbe.cs" Link="Source\CudaDriverProbe.cs" />
+    <Compile Include="..\..\src\Tts\WindowsNativeLibrary.cs" Link="Source\WindowsNativeLibrary.cs" />
     <Compile Include="..\..\src\Bootstrap\RuntimePackManager.cs" Link="Source\RuntimePackManager.cs" />
     <Compile Include="..\..\src\Bootstrap\RuntimeEnvironmentIdentity.cs" Link="Source\RuntimeEnvironmentIdentity.cs" />
     <Compile Include="..\..\src\Bootstrap\ReferenceExtractionProtocol.cs" Link="Source\ReferenceExtractionProtocol.cs" />
@@ -39,9 +47,12 @@
     <Compile Include="..\..\src\Data\Database.cs" Link="Source\Database.cs" />
     <Compile Include="..\..\src\Data\LineCache.cs" Link="Source\LineCache.cs" />
     <Compile Include="..\..\src\Game\ScdExtractor.cs" Link="Source\ScdExtractor.cs" />
+    <Compile Include="..\..\src\Game\NativeScdTemplateLoader.cs" Link="Source\NativeScdTemplateLoader.cs" />
     <Compile Include="..\..\src\Game\AutoAdvanceDiagnostics.cs" Link="Source\AutoAdvanceDiagnostics.cs" />
-    <Compile Include="..\..\src\Game\OfficialReferenceBuilder.cs" Link="Source\OfficialReferenceBuilder.cs" />
+    <Compile Include="..\..\src\Game\TalkAdvancePolicy.cs" Link="Source\TalkAdvancePolicy.cs" />
     <Compile Include="..\..\src\Game\OfficialVoiceCatalog.cs" Link="Source\OfficialVoiceCatalog.cs" />
+    <Compile Include="..\..\src\Game\CutsceneVoiceManifest.cs" Link="Source\CutsceneVoiceManifest.cs" />
+    <Compile Include="..\..\src\Game\CutscenePlanStore.cs" Link="Source\CutscenePlanStore.cs" />
     <Compile Include="..\..\src\Plugin\LegacyCastingMigration.cs" Link="Source\LegacyCastingMigration.cs" />
     <Compile Include="..\..\src\Scheduling\CutsceneSession.cs" Link="Source\CutsceneSession.cs" />
     <Compile Include="..\..\src\Scheduling\AutoAdvancePolicy.cs" Link="Source\AutoAdvancePolicy.cs" />

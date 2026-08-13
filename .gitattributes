@@ -1,1 +1,2 @@
 *.patch text eol=lf
+release-assets/official-profiles/*.sqlite3 filter=lfs diff=lfs merge=lfs -text

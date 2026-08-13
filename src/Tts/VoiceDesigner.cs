@@ -29,6 +29,7 @@ public sealed class VoiceDesigner : IAsyncDisposable
     public bool IsSwitching => Volatile.Read(ref switching) != 0;
     public bool IsReady => designRuntime is not null && !IsSwitching
                            && Volatile.Read(ref runtimeDisposalFailed) == 0;
+    public string BackendName => Volatile.Read(ref backendName);
 
     internal VoiceDesigner(ITtsRuntime baseRuntime, string designPath, string codecPath, string backendName,
         IProcessLifetimeLease pluginLifetimeLease,
@@ -141,7 +142,8 @@ public sealed class VoiceDesigner : IAsyncDisposable
             await gate.WaitAsync(token).ConfigureAwait(false);
             try
             {
-                if (String.Equals(this.backendName, backendName, StringComparison.Ordinal)) return;
+                if (designRuntime is not null
+                    && String.Equals(this.backendName, backendName, StringComparison.Ordinal)) return;
                 if (Volatile.Read(ref runtimeDisposalFailed) != 0)
                     throw new InvalidOperationException(
                         "The previous VoiceDesign runtime did not dispose safely; restart is required before switching backends");
@@ -169,14 +171,20 @@ public sealed class VoiceDesigner : IAsyncDisposable
                     this.backendName = backendName;
                     Interlocked.Exchange(ref runtimeDisposalFailed, 0);
                 }
-                catch
+                catch (Exception migrationError)
                 {
                     try
                     {
                         designRuntime = new QwenCppRuntime(designPath, codecPath, previousBackend,
                             ownsProcessLease: false, pluginLifetimeLease: pluginLifetimeLease);
                     }
-                    catch { designRuntime = null; }
+                    catch (Exception restorationError)
+                    {
+                        designRuntime = null;
+                        throw new AggregateException(
+                            "VoiceDesign backend migration and previous-backend restoration both failed",
+                            migrationError, restorationError);
+                    }
                     throw;
                 }
             }

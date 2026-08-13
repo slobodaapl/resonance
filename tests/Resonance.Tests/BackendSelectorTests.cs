@@ -46,6 +46,46 @@ public sealed class BackendSelectorTests
     }
 
     [Fact]
+    public void RememberedDeviceWithMatchingFailedBenchmarkDoesNotRunAtStartup()
+    {
+        var configuration = new Configuration
+        {
+            Compute = ComputePreference.Manual,
+            DesiredBackendName = Cuda.Name,
+            DesiredBackendDescription = Cuda.Description,
+            DesiredBackendType = Cuda.Type,
+            BackendBenchmark = new("identity", Cpu.Name, DateTimeOffset.UtcNow,
+                [new(Cuda.Name, false, 0.2, null, null, "device lost")]),
+        };
+
+        var selected = new BackendSelector().Select(configuration, [Cpu, Cuda], "identity");
+
+        Assert.True(selected.IsTemporaryCpuFallback);
+        Assert.Equal(Cuda, selected.Desired);
+        Assert.Equal(Cpu, selected.Effective);
+        Assert.False(selected.NotifyError);
+    }
+
+    [Fact]
+    public void RememberedDeviceWithStaleFailedBenchmarkIsRetried()
+    {
+        var configuration = new Configuration
+        {
+            Compute = ComputePreference.Manual,
+            DesiredBackendName = Cuda.Name,
+            DesiredBackendDescription = Cuda.Description,
+            DesiredBackendType = Cuda.Type,
+            BackendBenchmark = new("old-identity", Cpu.Name, DateTimeOffset.UtcNow,
+                [new(Cuda.Name, false, 0.2, null, null, "device lost")]),
+        };
+
+        var selected = new BackendSelector().Select(configuration, [Cpu, Cuda], "current-identity");
+
+        Assert.False(selected.IsTemporaryCpuFallback);
+        Assert.Equal(Cuda, selected.Effective);
+    }
+
+    [Fact]
     public void ExplicitChoiceReplacesRememberedUnavailableDevice()
     {
         var configuration = new Configuration

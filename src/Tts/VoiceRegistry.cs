@@ -132,9 +132,14 @@ public sealed record StoredVoiceProfile(
 }
 
 public sealed record NamedVoiceProfile(string DisplayName, StoredVoiceProfile Profile);
+public sealed record SpeakerVoiceMatch(
+    string StableKey, string DisplayName, StoredVoiceProfile Profile);
 
 public sealed class VoiceRegistry(Database database)
 {
+    public static string DomainFallbackSpeakerKey(string domainId, string variantId = "default") =>
+        $"fallback:{domainId}:{variantId}";
+
     public Task<SpeakerIdentity> ResolveSpeakerAsync(
         string stableKey,
         uint? npcBaseId,
@@ -188,11 +193,21 @@ public sealed class VoiceRegistry(Database database)
             stableKey, npcBaseId, displayName, territoryId, language, evidence, token);
 
     public Task<StoredVoiceProfile?> GetBestVoiceAsync(long speakerId, string language, CancellationToken token) =>
-        database.ReadAsync(connection => GetBestVoiceCore(connection, speakerId, language, token), token);
+        database.ReadAsync(connection => GetBestVoiceCore(connection, speakerId, language, null, token), token);
+
+    public Task<StoredVoiceProfile?> GetBestVoiceAsync(
+        long speakerId, string language, string modelHash, CancellationToken token) =>
+        database.ReadAsync(connection => GetBestVoiceCore(connection, speakerId, language, modelHash, token), token);
 
     public Task<StoredVoiceProfile?> GetBestVoiceByStableKeyAsync(
         string stableKey,
         string language,
+        CancellationToken token) => GetBestVoiceByStableKeyAsync(stableKey, language, null, token);
+
+    public Task<StoredVoiceProfile?> GetBestVoiceByStableKeyAsync(
+        string stableKey,
+        string language,
+        string? modelHash,
         CancellationToken token) => database.ReadAsync(async connection =>
     {
         await using var command = connection.CreateCommand();
@@ -200,8 +215,44 @@ public sealed class VoiceRegistry(Database database)
         command.Parameters.AddWithValue("$key", stableKey);
         var speakerId = await command.ExecuteScalarAsync(token).ConfigureAwait(false);
         return speakerId is long id
-            ? await GetBestVoiceCore(connection, id, language, token).ConfigureAwait(false)
+            ? await GetBestVoiceCore(connection, id, language, modelHash, token).ConfigureAwait(false)
             : null;
+    }, token);
+
+    public Task<SpeakerVoiceMatch?> GetBestVoiceByDisplayNameAsync(
+        string displayName,
+        string language,
+        string modelHash,
+        CancellationToken token) => database.ReadAsync(async connection =>
+    {
+        var normalized = NormalizeDisplayName(displayName);
+        if (normalized.Length == 0) return null;
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT s.stable_key,s.display_name,
+                   p.id,p.kind,p.language,p.model_hash,p.palette_version,p.design_instruction,p.seed,
+                   p.ref_text,p.speaker_embedding,p.rvq_codes,p.rvq_length,p.codebooks,
+                   p.domain_id,p.catalog_version,p.traits_json,p.variant_traits_json,
+                   p.source_metadata,p.profile_hash,p.created_utc
+            FROM speaker_voice sv
+            JOIN speaker s ON s.id=sv.speaker_id
+            JOIN voice_profile p ON p.id=sv.profile_id
+            WHERE p.language=$language AND p.model_hash=$model
+            ORDER BY sv.priority DESC,p.created_utc DESC,p.id DESC
+            """;
+        command.Parameters.AddWithValue("$language", language);
+        command.Parameters.AddWithValue("$model", modelHash);
+        SpeakerVoiceMatch? result = null;
+        await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
+        while (await reader.ReadAsync(token).ConfigureAwait(false))
+        {
+            var candidateName = reader.GetString(1);
+            if (NormalizeDisplayName(candidateName) != normalized) continue;
+            var stableKey = reader.GetString(0);
+            if (result is not null && result.StableKey != stableKey) return null;
+            result ??= new(stableKey, candidateName, ReadProfile(reader, 2));
+        }
+        return result;
     }, token);
 
     public Task<IReadOnlyList<NamedVoiceProfile>> GetOfficialVoiceProfilesAsync(
@@ -247,7 +298,9 @@ public sealed class VoiceRegistry(Database database)
             if (Convert.ToInt32(await command.ExecuteScalarAsync(token).ConfigureAwait(false)) != 1) return null;
             command.CommandText = "SELECT p.language FROM speaker_voice sv JOIN voice_profile p ON p.id=sv.profile_id WHERE sv.speaker_id=$speaker LIMIT 1";
             var language = (string?)await command.ExecuteScalarAsync(token).ConfigureAwait(false);
-            return language is null ? null : await GetBestVoiceCore(connection, speakerId, language, token).ConfigureAwait(false);
+            return language is null
+                ? null
+                : await GetBestVoiceCore(connection, speakerId, language, null, token).ConfigureAwait(false);
         }, token).ConfigureAwait(false);
     }
 
@@ -401,10 +454,21 @@ public sealed class VoiceRegistry(Database database)
         string language,
         string sex,
         string? knownTraitsJson,
+        CancellationToken token) => TryAssignDomainPoolVoiceAsync(
+            speakerId, domainId, language, sex, knownTraitsJson, null, token);
+
+    public Task<StoredVoiceProfile?> TryAssignDomainPoolVoiceAsync(
+        long speakerId,
+        string domainId,
+        string language,
+        string sex,
+        string? knownTraitsJson,
+        string? modelHash,
         CancellationToken token) => database.ReadAsync(async connection =>
     {
         await using var transaction = connection.BeginTransaction();
-        var existing = await GetExistingProfileId(connection, transaction, speakerId, language, token).ConfigureAwait(false);
+        var existing = await GetExistingProfileId(
+            connection, transaction, speakerId, language, modelHash, token).ConfigureAwait(false);
         if (existing is not null)
         {
             var assigned = await GetProfileById(connection, existing, token, transaction).ConfigureAwait(false);
@@ -424,6 +488,7 @@ public sealed class VoiceRegistry(Database database)
                 WHERE pv.domain_id=$domain AND pv.language=$language AND pv.sex=$sex
                   AND pv.state=0 AND pv.assigned_speaker_id IS NULL
                   AND p.language=$language AND p.kind=1
+                  AND ($model IS NULL OR p.model_hash=$model)
                   AND NOT EXISTS(SELECT 1 FROM speaker_voice sv WHERE sv.profile_id=pv.profile_id)
                 ORDER BY pv.sequence,pv.profile_id
                 LIMIT 5
@@ -431,6 +496,7 @@ public sealed class VoiceRegistry(Database database)
             select.Parameters.AddWithValue("$domain", domainId);
             select.Parameters.AddWithValue("$language", language);
             select.Parameters.AddWithValue("$sex", NormalizeSex(sex));
+            select.Parameters.AddWithValue("$model", modelHash is null ? DBNull.Value : modelHash);
             await using var reader = await select.ExecuteReaderAsync(token).ConfigureAwait(false);
             while (await reader.ReadAsync(token).ConfigureAwait(false))
             {
@@ -923,6 +989,7 @@ public sealed class VoiceRegistry(Database database)
         SqliteConnection connection,
         long speakerId,
         string language,
+        string? modelHash,
         CancellationToken token,
         SqliteTransaction? transaction = null)
     {
@@ -935,10 +1002,12 @@ public sealed class VoiceRegistry(Database database)
                    p.source_metadata,p.profile_hash,p.created_utc
             FROM speaker_voice sv JOIN voice_profile p ON p.id=sv.profile_id
             WHERE sv.speaker_id=$speaker AND p.language=$language
+              AND ($model IS NULL OR p.model_hash=$model)
             ORDER BY sv.priority DESC,p.created_utc DESC,p.id LIMIT 1
             """;
         command.Parameters.AddWithValue("$speaker", speakerId);
         command.Parameters.AddWithValue("$language", language);
+        command.Parameters.AddWithValue("$model", modelHash is null ? DBNull.Value : modelHash);
         await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
         return await reader.ReadAsync(token).ConfigureAwait(false) ? ReadProfile(reader) : null;
     }
@@ -971,6 +1040,7 @@ public sealed class VoiceRegistry(Database database)
         SqliteTransaction transaction,
         long speakerId,
         string language,
+        string? modelHash,
         CancellationToken token)
     {
         await using var command = connection.CreateCommand();
@@ -978,10 +1048,12 @@ public sealed class VoiceRegistry(Database database)
         command.CommandText = """
             SELECT p.id FROM speaker_voice sv JOIN voice_profile p ON p.id=sv.profile_id
             WHERE sv.speaker_id=$speaker AND p.language=$language
+              AND ($model IS NULL OR p.model_hash=$model)
             ORDER BY sv.priority DESC,sv.assigned_utc DESC,p.id LIMIT 1
             """;
         command.Parameters.AddWithValue("$speaker", speakerId);
         command.Parameters.AddWithValue("$language", language);
+        command.Parameters.AddWithValue("$model", modelHash is null ? DBNull.Value : modelHash);
         return (string?)await command.ExecuteScalarAsync(token).ConfigureAwait(false);
     }
 
@@ -1244,6 +1316,11 @@ public sealed class VoiceRegistry(Database database)
         if (value.Contains("mascul", StringComparison.Ordinal) || value.Contains("male", StringComparison.Ordinal)) return "masculine";
         return value;
     }
+
+    private static string NormalizeDisplayName(string value) => new(value
+        .Where(Char.IsLetterOrDigit)
+        .Select(Char.ToLowerInvariant)
+        .ToArray());
 
     private static string LegacyDomain(uint territoryId) => $"legacy:{territoryId}";
 

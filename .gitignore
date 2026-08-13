@@ -16,8 +16,8 @@
 
 # Native and packaging outputs
 /target/
-/artifact/
 /artifacts/
+/artifact/
 
 # Tests / coverage
 **/TestResults/

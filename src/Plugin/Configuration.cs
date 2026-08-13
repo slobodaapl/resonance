@@ -29,6 +29,7 @@ public sealed class Configuration : IPluginConfiguration
     public string? DesiredBackendDescription { get; set; }
     public BackendType? DesiredBackendType { get; set; }
     public float Volume { get; set; } = 1f;
+    // Legacy v2 JSON field. Ignored: playback always follows FFXIV's mixer.
     public int AudioOutputDeviceNumber { get; set; } = -1;
     /// <summary>
     /// Keeps the Base voice-clone model resident between uses.  This does not
@@ -38,8 +39,9 @@ public sealed class Configuration : IPluginConfiguration
     public bool KeepBaseModelLoaded { get; set; }
     public bool BackgroundCasting { get; set; } = true;
     public bool AutoAdvanceDubbedCutsceneDialogue { get; set; }
-    public bool VoiceLearningDiagnostics { get; set; }
     public bool AutoAdvanceDiagnostics { get; set; }
+    public bool DisableVoicePackAutoUpdate { get; set; }
+    public bool ExportDebugBaseWav { get; set; }
     public int ReadyMasculineVoices { get; set; } = 5;
     public int ReadyFeminineVoices { get; set; } = 5;
     public long CacheLimitBytes { get; set; } = 2L * 1024 * 1024 * 1024;

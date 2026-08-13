@@ -1,27 +1,6432 @@
 {
   "schemaVersion": 1,
-  "catalogVersion": 1,
+  "catalogVersion": 4,
   "groups": [
     {
       "id": "alphinaud",
       "label": "Alphinaud",
       "npcBaseIds": [],
-      "aliases": { "english": ["Alphinaud"] },
-      "sources": {}
+      "aliases": {
+        "english": [
+          "Alphinaud"
+        ]
+      },
+      "sources": {},
+      "actorTokens": [
+        "ALPHINAUD"
+      ]
     },
     {
       "id": "thancred",
       "label": "Thancred",
       "npcBaseIds": [],
-      "aliases": { "english": ["Thancred"] },
-      "sources": {}
+      "aliases": {
+        "english": [
+          "Thancred"
+        ]
+      },
+      "sources": {},
+      "actorTokens": [
+        "THANCRED"
+      ]
     },
     {
       "id": "graha-tia",
       "label": "G'raha Tia",
       "npcBaseIds": [],
-      "aliases": { "english": ["G'raha Tia", "G’raha Tia"] },
-      "sources": {}
+      "aliases": {
+        "english": [
+          "G'raha Tia",
+          "G’raha Tia"
+        ]
+      },
+      "sources": {},
+      "actorTokens": [
+        "GRAHATIA"
+      ]
+    },
+    {
+      "id": "wuk-lamat",
+      "label": "Wuk Lamat",
+      "npcBaseIds": [
+        1047302,
+        1047439,
+        1047526,
+        1047567,
+        1047570,
+        1047583,
+        1047595,
+        1047776
+      ],
+      "aliases": {
+        "english": [
+          "Wuk Lamat"
+        ]
+      },
+      "sources": {},
+      "actorTokens": [
+        "WUKLAMAT"
+      ]
+    },
+    {
+      "id": "abel",
+      "label": "ABEL",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ABEL"
+      ]
+    },
+    {
+      "id": "alamhigancitizen1",
+      "label": "ALAMHIGANCITIZEN1",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALAMHIGANCITIZEN1"
+      ]
+    },
+    {
+      "id": "alamhigancitizen2",
+      "label": "ALAMHIGANCITIZEN2",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALAMHIGANCITIZEN2"
+      ]
+    },
+    {
+      "id": "alamhigancitizen3",
+      "label": "ALAMHIGANCITIZEN3",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALAMHIGANCITIZEN3"
+      ]
+    },
+    {
+      "id": "alamhigancitizena",
+      "label": "ALAMHIGANCITIZENA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALAMHIGANCITIZENA"
+      ]
+    },
+    {
+      "id": "alamhigancitizenb",
+      "label": "ALAMHIGANCITIZENB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALAMHIGANCITIZENB"
+      ]
+    },
+    {
+      "id": "alamhigancitizenc",
+      "label": "ALAMHIGANCITIZENC",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALAMHIGANCITIZENC"
+      ]
+    },
+    {
+      "id": "alamhigandelegation",
+      "label": "ALAMHIGANDELEGATION",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALAMHIGANDELEGATION"
+      ]
+    },
+    {
+      "id": "alamhiganliberatora",
+      "label": "ALAMHIGANLIBERATORA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALAMHIGANLIBERATORA"
+      ]
+    },
+    {
+      "id": "alamhiganliberatorb",
+      "label": "ALAMHIGANLIBERATORB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALAMHIGANLIBERATORB"
+      ]
+    },
+    {
+      "id": "alamhigogarleanofficer",
+      "label": "ALAMHIGOGARLEANOFFICER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALAMHIGOGARLEANOFFICER"
+      ]
+    },
+    {
+      "id": "alayla",
+      "label": "ALAYLA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALAYLA"
+      ]
+    },
+    {
+      "id": "alchemistofthegreatworka",
+      "label": "ALCHEMISTOFTHEGREATWORKA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALCHEMISTOFTHEGREATWORKA"
+      ]
+    },
+    {
+      "id": "alchemistofthegreatworkb",
+      "label": "ALCHEMISTOFTHEGREATWORKB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALCHEMISTOFTHEGREATWORKB"
+      ]
+    },
+    {
+      "id": "alchemistofthegreatworkc",
+      "label": "ALCHEMISTOFTHEGREATWORKC",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALCHEMISTOFTHEGREATWORKC"
+      ]
+    },
+    {
+      "id": "alexandriaboy71",
+      "label": "ALEXANDRIABOY71",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALEXANDRIABOY71"
+      ]
+    },
+    {
+      "id": "alexandriaman71a",
+      "label": "ALEXANDRIAMAN71A",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALEXANDRIAMAN71A"
+      ]
+    },
+    {
+      "id": "alexandriaman71b",
+      "label": "ALEXANDRIAMAN71B",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALEXANDRIAMAN71B"
+      ]
+    },
+    {
+      "id": "alexandriamother71",
+      "label": "ALEXANDRIAMOTHER71",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALEXANDRIAMOTHER71"
+      ]
+    },
+    {
+      "id": "alexandriasoldier",
+      "label": "ALEXANDRIASOLDIER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALEXANDRIASOLDIER"
+      ]
+    },
+    {
+      "id": "alexandriawoman71a",
+      "label": "ALEXANDRIAWOMAN71A",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALEXANDRIAWOMAN71A"
+      ]
+    },
+    {
+      "id": "alexandriawoman71b",
+      "label": "ALEXANDRIAWOMAN71B",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALEXANDRIAWOMAN71B"
+      ]
+    },
+    {
+      "id": "algus",
+      "label": "ALGUS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALGUS"
+      ]
+    },
+    {
+      "id": "alisaie",
+      "label": "ALISAIE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALISAIE"
+      ]
+    },
+    {
+      "id": "all",
+      "label": "ALL",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALL"
+      ]
+    },
+    {
+      "id": "allagman",
+      "label": "ALLAGMAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALLAGMAN"
+      ]
+    },
+    {
+      "id": "almet",
+      "label": "ALMET",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALMET"
+      ]
+    },
+    {
+      "id": "alxaal",
+      "label": "ALXAAL",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ALXAAL"
+      ]
+    },
+    {
+      "id": "amaljaachieftain",
+      "label": "AMALJAACHIEFTAIN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "AMALJAACHIEFTAIN"
+      ]
+    },
+    {
+      "id": "amaljaawarrior",
+      "label": "AMALJAAWARRIOR",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "AMALJAAWARRIOR"
+      ]
+    },
+    {
+      "id": "amaurotadministrator",
+      "label": "AMAUROTADMINISTRATOR",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "AMAUROTADMINISTRATOR"
+      ]
+    },
+    {
+      "id": "ameliance",
+      "label": "AMELIANCE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "AMELIANCE"
+      ]
+    },
+    {
+      "id": "amon",
+      "label": "AMON",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "AMON"
+      ]
+    },
+    {
+      "id": "ancientmemorya",
+      "label": "ANCIENTMEMORYA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ANCIENTMEMORYA"
+      ]
+    },
+    {
+      "id": "ancientmemoryb",
+      "label": "ANCIENTMEMORYB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ANCIENTMEMORYB"
+      ]
+    },
+    {
+      "id": "ancientsa",
+      "label": "ANCIENTSA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ANCIENTSA"
+      ]
+    },
+    {
+      "id": "ancientsb",
+      "label": "ANCIENTSB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ANCIENTSB"
+      ]
+    },
+    {
+      "id": "ancientshadowa",
+      "label": "ANCIENTSHADOWA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ANCIENTSHADOWA"
+      ]
+    },
+    {
+      "id": "ancientshadowb",
+      "label": "ANCIENTSHADOWB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ANCIENTSHADOWB"
+      ]
+    },
+    {
+      "id": "ancientshadowc",
+      "label": "ANCIENTSHADOWC",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ANCIENTSHADOWC"
+      ]
+    },
+    {
+      "id": "ancientshadowd",
+      "label": "ANCIENTSHADOWD",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ANCIENTSHADOWD"
+      ]
+    },
+    {
+      "id": "ancientshadowe",
+      "label": "ANCIENTSHADOWE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ANCIENTSHADOWE"
+      ]
+    },
+    {
+      "id": "announcer",
+      "label": "ANNOUNCER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ANNOUNCER"
+      ]
+    },
+    {
+      "id": "anxiety05306",
+      "label": "ANXIETY05306",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ANXIETY05306"
+      ]
+    },
+    {
+      "id": "arenvald",
+      "label": "ARENVALD",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ARENVALD"
+      ]
+    },
+    {
+      "id": "artoirel",
+      "label": "ARTOIREL",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ARTOIREL"
+      ]
+    },
+    {
+      "id": "aruhnsenna",
+      "label": "ARUHNSENNA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ARUHNSENNA"
+      ]
+    },
+    {
+      "id": "asahi",
+      "label": "ASAHI",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ASAHI"
+      ]
+    },
+    {
+      "id": "asahifather",
+      "label": "ASAHIFATHER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ASAHIFATHER"
+      ]
+    },
+    {
+      "id": "asahimother",
+      "label": "ASAHIMOTHER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ASAHIMOTHER"
+      ]
+    },
+    {
+      "id": "ascian",
+      "label": "ASCIAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ASCIAN"
+      ]
+    },
+    {
+      "id": "ascianprime",
+      "label": "ASCIANPRIME",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ASCIANPRIME"
+      ]
+    },
+    {
+      "id": "athena",
+      "label": "ATHENA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ATHENA"
+      ]
+    },
+    {
+      "id": "awaheen",
+      "label": "AWAHEEN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "AWAHEEN"
+      ]
+    },
+    {
+      "id": "aymeric",
+      "label": "AYMERIC",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "AYMERIC"
+      ]
+    },
+    {
+      "id": "azami",
+      "label": "AZAMI",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "AZAMI"
+      ]
+    },
+    {
+      "id": "azdaja",
+      "label": "AZDAJA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "AZDAJA"
+      ]
+    },
+    {
+      "id": "baggamonan",
+      "label": "BAGGAMONAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BAGGAMONAN"
+      ]
+    },
+    {
+      "id": "bakooljaja",
+      "label": "BAKOOLJAJA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BAKOOLJAJA"
+      ]
+    },
+    {
+      "id": "bardofdarkness",
+      "label": "BARDOFDARKNESS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BARDOFDARKNESS"
+      ]
+    },
+    {
+      "id": "barnier",
+      "label": "BARNIER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BARNIER"
+      ]
+    },
+    {
+      "id": "baronknight",
+      "label": "BARONKNIGHT",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BARONKNIGHT"
+      ]
+    },
+    {
+      "id": "bazaarmoba",
+      "label": "BAZAARMOBA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BAZAARMOBA"
+      ]
+    },
+    {
+      "id": "bazaarmobb",
+      "label": "BAZAARMOBB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BAZAARMOBB"
+      ]
+    },
+    {
+      "id": "bazaarmobc",
+      "label": "BAZAARMOBC",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BAZAARMOBC"
+      ]
+    },
+    {
+      "id": "beqlugg",
+      "label": "BEQLUGG",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BEQLUGG"
+      ]
+    },
+    {
+      "id": "bewilderment05306",
+      "label": "BEWILDERMENT05306",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BEWILDERMENT05306"
+      ]
+    },
+    {
+      "id": "biggs",
+      "label": "BIGGS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BIGGS"
+      ]
+    },
+    {
+      "id": "biggswedge",
+      "label": "BIGGSWEDGE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BIGGSWEDGE"
+      ]
+    },
+    {
+      "id": "bismarck",
+      "label": "BISMARCK",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BISMARCK"
+      ]
+    },
+    {
+      "id": "blackknight",
+      "label": "BLACKKNIGHT",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BLACKKNIGHT"
+      ]
+    },
+    {
+      "id": "blackmageofdarkness",
+      "label": "BLACKMAGEOFDARKNESS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BLACKMAGEOFDARKNESS"
+      ]
+    },
+    {
+      "id": "blackregulator73",
+      "label": "BLACKREGULATOR73",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BLACKREGULATOR73"
+      ]
+    },
+    {
+      "id": "bloewyda",
+      "label": "BLOEWYDA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BLOEWYDA"
+      ]
+    },
+    {
+      "id": "bloodyexecutionera",
+      "label": "BLOODYEXECUTIONERA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BLOODYEXECUTIONERA"
+      ]
+    },
+    {
+      "id": "bloodyexecutionerb",
+      "label": "BLOODYEXECUTIONERB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BLOODYEXECUTIONERB"
+      ]
+    },
+    {
+      "id": "bloodyexecutionerc",
+      "label": "BLOODYEXECUTIONERC",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BLOODYEXECUTIONERC"
+      ]
+    },
+    {
+      "id": "bodyguard01623",
+      "label": "BODYGUARD01623",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BODYGUARD01623"
+      ]
+    },
+    {
+      "id": "bolnoq",
+      "label": "BOLNOQ",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BOLNOQ"
+      ]
+    },
+    {
+      "id": "boonewafemaleaud",
+      "label": "BOONEWAFEMALEAUD",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BOONEWAFEMALEAUD"
+      ]
+    },
+    {
+      "id": "bossoffuath",
+      "label": "BOSSOFFUATH",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BOSSOFFUATH"
+      ]
+    },
+    {
+      "id": "botanistman",
+      "label": "BOTANISTMAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BOTANISTMAN"
+      ]
+    },
+    {
+      "id": "boy05426",
+      "label": "BOY05426",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BOY05426"
+      ]
+    },
+    {
+      "id": "bragi",
+      "label": "BRAGI",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BRAGI"
+      ]
+    },
+    {
+      "id": "bravesoldier",
+      "label": "BRAVESOLDIER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BRAVESOLDIER"
+      ]
+    },
+    {
+      "id": "brukevu",
+      "label": "BRUKEVU",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BRUKEVU"
+      ]
+    },
+    {
+      "id": "bunchin",
+      "label": "BUNCHIN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BUNCHIN"
+      ]
+    },
+    {
+      "id": "byakko",
+      "label": "BYAKKO",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "BYAKKO"
+      ]
+    },
+    {
+      "id": "cahciua",
+      "label": "CAHCIUA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CAHCIUA"
+      ]
+    },
+    {
+      "id": "calmness05306",
+      "label": "CALMNESS05306",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CALMNESS05306"
+      ]
+    },
+    {
+      "id": "calyx",
+      "label": "CALYX",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CALYX"
+      ]
+    },
+    {
+      "id": "canaltowngirl",
+      "label": "CANALTOWNGIRL",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CANALTOWNGIRL"
+      ]
+    },
+    {
+      "id": "canaltownmale",
+      "label": "CANALTOWNMALE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CANALTOWNMALE"
+      ]
+    },
+    {
+      "id": "carvallain",
+      "label": "CARVALLAIN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CARVALLAIN"
+      ]
+    },
+    {
+      "id": "cassard",
+      "label": "CASSARD",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CASSARD"
+      ]
+    },
+    {
+      "id": "cavalry02236",
+      "label": "CAVALRY02236",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CAVALRY02236"
+      ]
+    },
+    {
+      "id": "cefca",
+      "label": "CEFCA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CEFCA"
+      ]
+    },
+    {
+      "id": "chainuzz",
+      "label": "CHAINUZZ",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CHAINUZZ"
+      ]
+    },
+    {
+      "id": "charibert",
+      "label": "CHARIBERT",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CHARIBERT"
+      ]
+    },
+    {
+      "id": "cid",
+      "label": "CID",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CID"
+      ]
+    },
+    {
+      "id": "cirina",
+      "label": "CIRINA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CIRINA"
+      ]
+    },
+    {
+      "id": "citizena02240",
+      "label": "CITIZENA02240",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CITIZENA02240"
+      ]
+    },
+    {
+      "id": "citizenb02240",
+      "label": "CITIZENB02240",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CITIZENB02240"
+      ]
+    },
+    {
+      "id": "citizenc02240",
+      "label": "CITIZENC02240",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CITIZENC02240"
+      ]
+    },
+    {
+      "id": "clownofblue",
+      "label": "CLOWNOFBLUE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CLOWNOFBLUE"
+      ]
+    },
+    {
+      "id": "clownofred",
+      "label": "CLOWNOFRED",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CLOWNOFRED"
+      ]
+    },
+    {
+      "id": "colleaguesoldier",
+      "label": "COLLEAGUESOLDIER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "COLLEAGUESOLDIER"
+      ]
+    },
+    {
+      "id": "confusion05306",
+      "label": "CONFUSION05306",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CONFUSION05306"
+      ]
+    },
+    {
+      "id": "conrad",
+      "label": "CONRAD",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CONRAD"
+      ]
+    },
+    {
+      "id": "crystariumcitizena",
+      "label": "CRYSTARIUMCITIZENA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CRYSTARIUMCITIZENA"
+      ]
+    },
+    {
+      "id": "crystariumcitizenb",
+      "label": "CRYSTARIUMCITIZENB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CRYSTARIUMCITIZENB"
+      ]
+    },
+    {
+      "id": "crystariumcitizenc",
+      "label": "CRYSTARIUMCITIZENC",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CRYSTARIUMCITIZENC"
+      ]
+    },
+    {
+      "id": "crystariumcitizend",
+      "label": "CRYSTARIUMCITIZEND",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CRYSTARIUMCITIZEND"
+      ]
+    },
+    {
+      "id": "crystariumgardold",
+      "label": "CRYSTARIUMGARDOLD",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CRYSTARIUMGARDOLD"
+      ]
+    },
+    {
+      "id": "crystariumgardpicket",
+      "label": "CRYSTARIUMGARDPICKET",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CRYSTARIUMGARDPICKET"
+      ]
+    },
+    {
+      "id": "crystariumgardyoung",
+      "label": "CRYSTARIUMGARDYOUNG",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CRYSTARIUMGARDYOUNG"
+      ]
+    },
+    {
+      "id": "crystariumgatekeeper",
+      "label": "CRYSTARIUMGATEKEEPER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CRYSTARIUMGATEKEEPER"
+      ]
+    },
+    {
+      "id": "crystariumgirl",
+      "label": "CRYSTARIUMGIRL",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CRYSTARIUMGIRL"
+      ]
+    },
+    {
+      "id": "crystariumman",
+      "label": "CRYSTARIUMMAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CRYSTARIUMMAN"
+      ]
+    },
+    {
+      "id": "crystariumoldman",
+      "label": "CRYSTARIUMOLDMAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CRYSTARIUMOLDMAN"
+      ]
+    },
+    {
+      "id": "crystariumwoman",
+      "label": "CRYSTARIUMWOMAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CRYSTARIUMWOMAN"
+      ]
+    },
+    {
+      "id": "curtis",
+      "label": "CURTIS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CURTIS"
+      ]
+    },
+    {
+      "id": "cymet",
+      "label": "CYMET",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "CYMET"
+      ]
+    },
+    {
+      "id": "damielliot",
+      "label": "DAMIELLIOT",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "DAMIELLIOT"
+      ]
+    },
+    {
+      "id": "darknokken",
+      "label": "DARKNOKKEN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "DARKNOKKEN"
+      ]
+    },
+    {
+      "id": "delia",
+      "label": "DELIA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "DELIA"
+      ]
+    },
+    {
+      "id": "dewlala",
+      "label": "DEWLALA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "DEWLALA"
+      ]
+    },
+    {
+      "id": "dirtyman",
+      "label": "DIRTYMAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "DIRTYMAN"
+      ]
+    },
+    {
+      "id": "domanmaid",
+      "label": "DOMANMAID",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "DOMANMAID"
+      ]
+    },
+    {
+      "id": "doprobakooljajaminions",
+      "label": "DOPROBAKOOLJAJAMINIONS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "DOPROBAKOOLJAJAMINIONS"
+      ]
+    },
+    {
+      "id": "dopromalecustomer",
+      "label": "DOPROMALECUSTOMER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "DOPROMALECUSTOMER"
+      ]
+    },
+    {
+      "id": "dotharlman",
+      "label": "DOTHARLMAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "DOTHARLMAN"
+      ]
+    },
+    {
+      "id": "dotharlwoman",
+      "label": "DOTHARLWOMAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "DOTHARLWOMAN"
+      ]
+    },
+    {
+      "id": "drusus",
+      "label": "DRUSUS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "DRUSUS"
+      ]
+    },
+    {
+      "id": "duliachai",
+      "label": "DULIACHAI",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "DULIACHAI"
+      ]
+    },
+    {
+      "id": "dummyardbert",
+      "label": "DUMMYARDBERT",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "DUMMYARDBERT"
+      ]
+    },
+    {
+      "id": "durante",
+      "label": "DURANTE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "DURANTE"
+      ]
+    },
+    {
+      "id": "e3f1garleansoldier",
+      "label": "E3F1GARLEANSOLDIER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "E3F1GARLEANSOLDIER"
+      ]
+    },
+    {
+      "id": "e3f1villager",
+      "label": "E3F1VILLAGER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "E3F1VILLAGER"
+      ]
+    },
+    {
+      "id": "e3f2garleanmessenger",
+      "label": "E3F2GARLEANMESSENGER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "E3F2GARLEANMESSENGER"
+      ]
+    },
+    {
+      "id": "e3f2garleansoldier",
+      "label": "E3F2GARLEANSOLDIER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "E3F2GARLEANSOLDIER"
+      ]
+    },
+    {
+      "id": "e3f2villagera",
+      "label": "E3F2VILLAGERA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "E3F2VILLAGERA"
+      ]
+    },
+    {
+      "id": "e3f2villagerb",
+      "label": "E3F2VILLAGERB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "E3F2VILLAGERB"
+      ]
+    },
+    {
+      "id": "e3f2villagerc",
+      "label": "E3F2VILLAGERC",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "E3F2VILLAGERC"
+      ]
+    },
+    {
+      "id": "e3f2villagerd",
+      "label": "E3F2VILLAGERD",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "E3F2VILLAGERD"
+      ]
+    },
+    {
+      "id": "e3f2villagere",
+      "label": "E3F2VILLAGERE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "E3F2VILLAGERE"
+      ]
+    },
+    {
+      "id": "e3f2villagerf",
+      "label": "E3F2VILLAGERF",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "E3F2VILLAGERF"
+      ]
+    },
+    {
+      "id": "eaa",
+      "label": "EAA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "EAA"
+      ]
+    },
+    {
+      "id": "eab",
+      "label": "EAB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "EAB"
+      ]
+    },
+    {
+      "id": "ealdnarche",
+      "label": "EALDNARCHE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "EALDNARCHE"
+      ]
+    },
+    {
+      "id": "earthmonolith",
+      "label": "EARTHMONOLITH",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "EARTHMONOLITH"
+      ]
+    },
+    {
+      "id": "ecaate",
+      "label": "ECAATE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ECAATE"
+      ]
+    },
+    {
+      "id": "eden3boss3",
+      "label": "EDEN3BOSS3",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "EDEN3BOSS3"
+      ]
+    },
+    {
+      "id": "eden3boss4",
+      "label": "EDEN3BOSS4",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "EDEN3BOSS4"
+      ]
+    },
+    {
+      "id": "eden3boss5",
+      "label": "EDEN3BOSS5",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "EDEN3BOSS5"
+      ]
+    },
+    {
+      "id": "edmont",
+      "label": "EDMONT",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "EDMONT"
+      ]
+    },
+    {
+      "id": "elidibus",
+      "label": "ELIDIBUS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ELIDIBUS"
+      ]
+    },
+    {
+      "id": "emetselch",
+      "label": "EMETSELCH",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "EMETSELCH"
+      ]
+    },
+    {
+      "id": "emmanellain",
+      "label": "EMMANELLAIN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "EMMANELLAIN"
+      ]
+    },
+    {
+      "id": "employeeman",
+      "label": "EMPLOYEEMAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "EMPLOYEEMAN"
+      ]
+    },
+    {
+      "id": "employeewoman",
+      "label": "EMPLOYEEWOMAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "EMPLOYEEWOMAN"
+      ]
+    },
+    {
+      "id": "endsinger",
+      "label": "ENDSINGER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ENDSINGER"
+      ]
+    },
+    {
+      "id": "enuo",
+      "label": "ENUO",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ENUO"
+      ]
+    },
+    {
+      "id": "erenville",
+      "label": "ERENVILLE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ERENVILLE"
+      ]
+    },
+    {
+      "id": "estinien",
+      "label": "ESTINIEN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ESTINIEN"
+      ]
+    },
+    {
+      "id": "eulmoransoldier",
+      "label": "EULMORANSOLDIER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "EULMORANSOLDIER"
+      ]
+    },
+    {
+      "id": "eulmoreadjutant",
+      "label": "EULMOREADJUTANT",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "EULMOREADJUTANT"
+      ]
+    },
+    {
+      "id": "eulmoremana",
+      "label": "EULMOREMANA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "EULMOREMANA"
+      ]
+    },
+    {
+      "id": "eulmoremanb",
+      "label": "EULMOREMANB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "EULMOREMANB"
+      ]
+    },
+    {
+      "id": "eulmorepeoplea",
+      "label": "EULMOREPEOPLEA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "EULMOREPEOPLEA"
+      ]
+    },
+    {
+      "id": "eulmorepeopleb",
+      "label": "EULMOREPEOPLEB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "EULMOREPEOPLEB"
+      ]
+    },
+    {
+      "id": "eulmorepeoplec",
+      "label": "EULMOREPEOPLEC",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "EULMOREPEOPLEC"
+      ]
+    },
+    {
+      "id": "eulmorepeopled",
+      "label": "EULMOREPEOPLED",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "EULMOREPEOPLED"
+      ]
+    },
+    {
+      "id": "eulmoresoldiera",
+      "label": "EULMORESOLDIERA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "EULMORESOLDIERA"
+      ]
+    },
+    {
+      "id": "eulmoresoldierb",
+      "label": "EULMORESOLDIERB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "EULMORESOLDIERB"
+      ]
+    },
+    {
+      "id": "eulmoresoldierc",
+      "label": "EULMORESOLDIERC",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "EULMORESOLDIERC"
+      ]
+    },
+    {
+      "id": "everlastingdarkness",
+      "label": "EVERLASTINGDARKNESS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "EVERLASTINGDARKNESS"
+      ]
+    },
+    {
+      "id": "eyaney",
+      "label": "EYANEY",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "EYANEY"
+      ]
+    },
+    {
+      "id": "eynzahrslafyrsyn",
+      "label": "EYNZAHRSLAFYRSYN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "EYNZAHRSLAFYRSYN"
+      ]
+    },
+    {
+      "id": "facilitatormale",
+      "label": "FACILITATORMALE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "FACILITATORMALE"
+      ]
+    },
+    {
+      "id": "fakegodbeast",
+      "label": "FAKEGODBEAST",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "FAKEGODBEAST"
+      ]
+    },
+    {
+      "id": "fandaniel",
+      "label": "FANDANIEL",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "FANDANIEL"
+      ]
+    },
+    {
+      "id": "fearfulcitizen",
+      "label": "FEARFULCITIZEN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "FEARFULCITIZEN"
+      ]
+    },
+    {
+      "id": "fearfulcitizena",
+      "label": "FEARFULCITIZENA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "FEARFULCITIZENA"
+      ]
+    },
+    {
+      "id": "fearfulcitizenb",
+      "label": "FEARFULCITIZENB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "FEARFULCITIZENB"
+      ]
+    },
+    {
+      "id": "femaleheretic",
+      "label": "FEMALEHERETIC",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "FEMALEHERETIC"
+      ]
+    },
+    {
+      "id": "feoul",
+      "label": "FEOUL",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "FEOUL"
+      ]
+    },
+    {
+      "id": "firemonolith",
+      "label": "FIREMONOLITH",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "FIREMONOLITH"
+      ]
+    },
+    {
+      "id": "flamessoldier",
+      "label": "FLAMESSOLDIER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "FLAMESSOLDIER"
+      ]
+    },
+    {
+      "id": "fordola",
+      "label": "FORDOLA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "FORDOLA"
+      ]
+    },
+    {
+      "id": "fordolafather",
+      "label": "FORDOLAFATHER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "FORDOLAFATHER"
+      ]
+    },
+    {
+      "id": "fordolamother",
+      "label": "FORDOLAMOTHER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "FORDOLAMOTHER"
+      ]
+    },
+    {
+      "id": "formerminionvoidsent",
+      "label": "FORMERMINIONVOIDSENT",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "FORMERMINIONVOIDSENT"
+      ]
+    },
+    {
+      "id": "fourchenault",
+      "label": "FOURCHENAULT",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "FOURCHENAULT"
+      ]
+    },
+    {
+      "id": "fyrgeiss",
+      "label": "FYRGEISS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "FYRGEISS"
+      ]
+    },
+    {
+      "id": "g3f1imperialcenturion",
+      "label": "G3F1IMPERIALCENTURION",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "G3F1IMPERIALCENTURION"
+      ]
+    },
+    {
+      "id": "g3f2villager",
+      "label": "G3F2VILLAGER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "G3F2VILLAGER"
+      ]
+    },
+    {
+      "id": "gabu",
+      "label": "GABU",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GABU"
+      ]
+    },
+    {
+      "id": "gaia",
+      "label": "GAIA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GAIA"
+      ]
+    },
+    {
+      "id": "galene",
+      "label": "GALENE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GALENE"
+      ]
+    },
+    {
+      "id": "galuf",
+      "label": "GALUF",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GALUF"
+      ]
+    },
+    {
+      "id": "garleangeneral",
+      "label": "GARLEANGENERAL",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GARLEANGENERAL"
+      ]
+    },
+    {
+      "id": "garleanharpooner",
+      "label": "GARLEANHARPOONER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GARLEANHARPOONER"
+      ]
+    },
+    {
+      "id": "garleanleadera",
+      "label": "GARLEANLEADERA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GARLEANLEADERA"
+      ]
+    },
+    {
+      "id": "garleanleaderb",
+      "label": "GARLEANLEADERB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GARLEANLEADERB"
+      ]
+    },
+    {
+      "id": "garleanleaderc",
+      "label": "GARLEANLEADERC",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GARLEANLEADERC"
+      ]
+    },
+    {
+      "id": "garleanleaderd",
+      "label": "GARLEANLEADERD",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GARLEANLEADERD"
+      ]
+    },
+    {
+      "id": "garleanleaderdoma",
+      "label": "GARLEANLEADERDOMA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GARLEANLEADERDOMA"
+      ]
+    },
+    {
+      "id": "garleanofficer",
+      "label": "GARLEANOFFICER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GARLEANOFFICER"
+      ]
+    },
+    {
+      "id": "garleansoldier10320",
+      "label": "GARLEANSOLDIER10320",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GARLEANSOLDIER10320"
+      ]
+    },
+    {
+      "id": "garleansoldier10410",
+      "label": "GARLEANSOLDIER10410",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GARLEANSOLDIER10410"
+      ]
+    },
+    {
+      "id": "garuda",
+      "label": "GARUDA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GARUDA"
+      ]
+    },
+    {
+      "id": "gatetownman",
+      "label": "GATETOWNMAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GATETOWNMAN"
+      ]
+    },
+    {
+      "id": "gatetownmiddleage",
+      "label": "GATETOWNMIDDLEAGE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GATETOWNMIDDLEAGE"
+      ]
+    },
+    {
+      "id": "gatetownwoman",
+      "label": "GATETOWNWOMAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GATETOWNWOMAN"
+      ]
+    },
+    {
+      "id": "genolt",
+      "label": "GENOLT",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GENOLT"
+      ]
+    },
+    {
+      "id": "geode",
+      "label": "GEODE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GEODE"
+      ]
+    },
+    {
+      "id": "ghengen",
+      "label": "GHENGEN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GHENGEN"
+      ]
+    },
+    {
+      "id": "giantcolibri",
+      "label": "GIANTCOLIBRI",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GIANTCOLIBRI"
+      ]
+    },
+    {
+      "id": "girl05426",
+      "label": "GIRL05426",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GIRL05426"
+      ]
+    },
+    {
+      "id": "glynard",
+      "label": "GLYNARD",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GLYNARD"
+      ]
+    },
+    {
+      "id": "gnathpriest",
+      "label": "GNATHPRIEST",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GNATHPRIEST"
+      ]
+    },
+    {
+      "id": "gosetsu",
+      "label": "GOSETSU",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GOSETSU"
+      ]
+    },
+    {
+      "id": "gossan",
+      "label": "GOSSAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GOSSAN"
+      ]
+    },
+    {
+      "id": "gridaniandelegation",
+      "label": "GRIDANIANDELEGATION",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GRIDANIANDELEGATION"
+      ]
+    },
+    {
+      "id": "grinnaux",
+      "label": "GRINNAUX",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GRINNAUX"
+      ]
+    },
+    {
+      "id": "grithil",
+      "label": "GRITHIL",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GRITHIL"
+      ]
+    },
+    {
+      "id": "growingway",
+      "label": "GROWINGWAY",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GROWINGWAY"
+      ]
+    },
+    {
+      "id": "grynewaht",
+      "label": "GRYNEWAHT",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GRYNEWAHT"
+      ]
+    },
+    {
+      "id": "guloolja",
+      "label": "GULOOLJA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GULOOLJA"
+      ]
+    },
+    {
+      "id": "gulooljaja",
+      "label": "GULOOLJAJA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GULOOLJAJA"
+      ]
+    },
+    {
+      "id": "gurfurlur",
+      "label": "GURFURLUR",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GURFURLUR"
+      ]
+    },
+    {
+      "id": "guthjon",
+      "label": "GUTHJON",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GUTHJON"
+      ]
+    },
+    {
+      "id": "gyodo",
+      "label": "GYODO",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "GYODO"
+      ]
+    },
+    {
+      "id": "haambortman",
+      "label": "HAAMBORTMAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HAAMBORTMAN"
+      ]
+    },
+    {
+      "id": "halmarut",
+      "label": "HALMARUT",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HALMARUT"
+      ]
+    },
+    {
+      "id": "halric",
+      "label": "HALRIC",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HALRIC"
+      ]
+    },
+    {
+      "id": "hancock",
+      "label": "HANCOCK",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HANCOCK"
+      ]
+    },
+    {
+      "id": "hannishboya",
+      "label": "HANNISHBOYA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HANNISHBOYA"
+      ]
+    },
+    {
+      "id": "hannishboyb",
+      "label": "HANNISHBOYB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HANNISHBOYB"
+      ]
+    },
+    {
+      "id": "hannishman04735a",
+      "label": "HANNISHMAN04735A",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HANNISHMAN04735A"
+      ]
+    },
+    {
+      "id": "hannishman04735b",
+      "label": "HANNISHMAN04735B",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HANNISHMAN04735B"
+      ]
+    },
+    {
+      "id": "hannishmana",
+      "label": "HANNISHMANA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HANNISHMANA"
+      ]
+    },
+    {
+      "id": "hannishmanb",
+      "label": "HANNISHMANB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HANNISHMANB"
+      ]
+    },
+    {
+      "id": "hannisholdwomana",
+      "label": "HANNISHOLDWOMANA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HANNISHOLDWOMANA"
+      ]
+    },
+    {
+      "id": "hannisholdwomanb",
+      "label": "HANNISHOLDWOMANB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HANNISHOLDWOMANB"
+      ]
+    },
+    {
+      "id": "hannishwomana",
+      "label": "HANNISHWOMANA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HANNISHWOMANA"
+      ]
+    },
+    {
+      "id": "hanuhanubearera",
+      "label": "HANUHANUBEARERA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HANUHANUBEARERA"
+      ]
+    },
+    {
+      "id": "hanuhanubearerb",
+      "label": "HANUHANUBEARERB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HANUHANUBEARERB"
+      ]
+    },
+    {
+      "id": "hanuhanubearerc",
+      "label": "HANUHANUBEARERC",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HANUHANUBEARERC"
+      ]
+    },
+    {
+      "id": "hanuhanumaleauda",
+      "label": "HANUHANUMALEAUDA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HANUHANUMALEAUDA"
+      ]
+    },
+    {
+      "id": "haurchefant",
+      "label": "HAURCHEFANT",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HAURCHEFANT"
+      ]
+    },
+    {
+      "id": "hephaestus",
+      "label": "HEPHAESTUS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HEPHAESTUS"
+      ]
+    },
+    {
+      "id": "hermes",
+      "label": "HERMES",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HERMES"
+      ]
+    },
+    {
+      "id": "hhetsarroman",
+      "label": "HHETSARROMAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HHETSARROMAN"
+      ]
+    },
+    {
+      "id": "hhusatahwiauda",
+      "label": "HHUSATAHWIAUDA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HHUSATAHWIAUDA"
+      ]
+    },
+    {
+      "id": "hhusatahwiaudsb",
+      "label": "HHUSATAHWIAUDSB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HHUSATAHWIAUDSB"
+      ]
+    },
+    {
+      "id": "hhusatahwifemalea",
+      "label": "HHUSATAHWIFEMALEA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HHUSATAHWIFEMALEA"
+      ]
+    },
+    {
+      "id": "hhusatahwifemaleb",
+      "label": "HHUSATAHWIFEMALEB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HHUSATAHWIFEMALEB"
+      ]
+    },
+    {
+      "id": "hhusatahwimalea",
+      "label": "HHUSATAHWIMALEA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HHUSATAHWIMALEA"
+      ]
+    },
+    {
+      "id": "hhusatahwimaleb",
+      "label": "HHUSATAHWIMALEB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HHUSATAHWIMALEB"
+      ]
+    },
+    {
+      "id": "hhwato",
+      "label": "HHWATO",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HHWATO"
+      ]
+    },
+    {
+      "id": "hien",
+      "label": "HIEN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HIEN"
+      ]
+    },
+    {
+      "id": "highlandergladiator",
+      "label": "HIGHLANDERGLADIATOR",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HIGHLANDERGLADIATOR"
+      ]
+    },
+    {
+      "id": "hilda",
+      "label": "HILDA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HILDA"
+      ]
+    },
+    {
+      "id": "hoaryboulder",
+      "label": "HOARYBOULDER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HOARYBOULDER"
+      ]
+    },
+    {
+      "id": "honoroit",
+      "label": "HONOROIT",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HONOROIT"
+      ]
+    },
+    {
+      "id": "honu",
+      "label": "HONU",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HONU"
+      ]
+    },
+    {
+      "id": "hoobigobakooljajaminionsa",
+      "label": "HOOBIGOBAKOOLJAJAMINIONSA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HOOBIGOBAKOOLJAJAMINIONSA"
+      ]
+    },
+    {
+      "id": "hoobigobakooljajaminionsb",
+      "label": "HOOBIGOBAKOOLJAJAMINIONSB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HOOBIGOBAKOOLJAJAMINIONSB"
+      ]
+    },
+    {
+      "id": "hoobigofemaleaud",
+      "label": "HOOBIGOFEMALEAUD",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HOOBIGOFEMALEAUD"
+      ]
+    },
+    {
+      "id": "hoobigomalesoldier",
+      "label": "HOOBIGOMALESOLDIER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HOOBIGOMALESOLDIER"
+      ]
+    },
+    {
+      "id": "hoobigomalevillager",
+      "label": "HOOBIGOMALEVILLAGER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HOOBIGOMALEVILLAGER"
+      ]
+    },
+    {
+      "id": "housefortempssteward",
+      "label": "HOUSEFORTEMPSSTEWARD",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HOUSEFORTEMPSSTEWARD"
+      ]
+    },
+    {
+      "id": "hraesvelgr",
+      "label": "HRAESVELGR",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HRAESVELGR"
+      ]
+    },
+    {
+      "id": "hungarygarlean10320",
+      "label": "HUNGARYGARLEAN10320",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HUNGARYGARLEAN10320"
+      ]
+    },
+    {
+      "id": "hunmurruk",
+      "label": "HUNMURRUK",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HUNMURRUK"
+      ]
+    },
+    {
+      "id": "hydaelyn",
+      "label": "HYDAELYN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HYDAELYN"
+      ]
+    },
+    {
+      "id": "hyllfyr",
+      "label": "HYLLFYR",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HYLLFYR"
+      ]
+    },
+    {
+      "id": "hyperboreiastaff",
+      "label": "HYPERBOREIASTAFF",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HYPERBOREIASTAFF"
+      ]
+    },
+    {
+      "id": "hythlodaeus",
+      "label": "HYTHLODAEUS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "HYTHLODAEUS"
+      ]
+    },
+    {
+      "id": "iceheart",
+      "label": "ICEHEART",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ICEHEART"
+      ]
+    },
+    {
+      "id": "igeyohrm",
+      "label": "IGEYOHRM",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "IGEYOHRM"
+      ]
+    },
+    {
+      "id": "igeyorhm",
+      "label": "IGEYORHM",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "IGEYORHM"
+      ]
+    },
+    {
+      "id": "ikaruga",
+      "label": "IKARUGA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "IKARUGA"
+      ]
+    },
+    {
+      "id": "ilberd",
+      "label": "ILBERD",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ILBERD"
+      ]
+    },
+    {
+      "id": "immigrationcontrolstaff",
+      "label": "IMMIGRATIONCONTROLSTAFF",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "IMMIGRATIONCONTROLSTAFF"
+      ]
+    },
+    {
+      "id": "imperialcenturion",
+      "label": "IMPERIALCENTURION",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "IMPERIALCENTURION"
+      ]
+    },
+    {
+      "id": "imperialdoctor",
+      "label": "IMPERIALDOCTOR",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "IMPERIALDOCTOR"
+      ]
+    },
+    {
+      "id": "imperialengineer",
+      "label": "IMPERIALENGINEER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "IMPERIALENGINEER"
+      ]
+    },
+    {
+      "id": "imperialsoldier",
+      "label": "IMPERIALSOLDIER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "IMPERIALSOLDIER"
+      ]
+    },
+    {
+      "id": "imperialsoldier04505",
+      "label": "IMPERIALSOLDIER04505",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "IMPERIALSOLDIER04505"
+      ]
+    },
+    {
+      "id": "ironmask",
+      "label": "IRONMASK",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "IRONMASK"
+      ]
+    },
+    {
+      "id": "ironworksengineer04500",
+      "label": "IRONWORKSENGINEER04500",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "IRONWORKSENGINEER04500"
+      ]
+    },
+    {
+      "id": "irritation05306",
+      "label": "IRRITATION05306",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "IRRITATION05306"
+      ]
+    },
+    {
+      "id": "irvithe",
+      "label": "IRVITHE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "IRVITHE"
+      ]
+    },
+    {
+      "id": "isadora",
+      "label": "ISADORA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ISADORA"
+      ]
+    },
+    {
+      "id": "ishgardianpriest",
+      "label": "ISHGARDIANPRIEST",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ISHGARDIANPRIEST"
+      ]
+    },
+    {
+      "id": "isse",
+      "label": "ISSE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ISSE"
+      ]
+    },
+    {
+      "id": "ixalichieftain",
+      "label": "IXALICHIEFTAIN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "IXALICHIEFTAIN"
+      ]
+    },
+    {
+      "id": "jifuya",
+      "label": "JIFUYA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "JIFUYA"
+      ]
+    },
+    {
+      "id": "journeysheadnurse",
+      "label": "JOURNEYSHEADNURSE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "JOURNEYSHEADNURSE"
+      ]
+    },
+    {
+      "id": "journeysheadpatient",
+      "label": "JOURNEYSHEADPATIENT",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "JOURNEYSHEADPATIENT"
+      ]
+    },
+    {
+      "id": "jullus",
+      "label": "JULLUS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "JULLUS"
+      ]
+    },
+    {
+      "id": "kairos",
+      "label": "KAIROS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "KAIROS"
+      ]
+    },
+    {
+      "id": "kaishirr",
+      "label": "KAISHIRR",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "KAISHIRR"
+      ]
+    },
+    {
+      "id": "kanesenna",
+      "label": "KANESENNA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "KANESENNA"
+      ]
+    },
+    {
+      "id": "kanilokka",
+      "label": "KANILOKKA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "KANILOKKA"
+      ]
+    },
+    {
+      "id": "katanasoldier",
+      "label": "KATANASOLDIER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "KATANASOLDIER"
+      ]
+    },
+    {
+      "id": "katliss",
+      "label": "KATLISS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "KATLISS"
+      ]
+    },
+    {
+      "id": "kemakka",
+      "label": "KEMAKKA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "KEMAKKA"
+      ]
+    },
+    {
+      "id": "ketenramm",
+      "label": "KETENRAMM",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "KETENRAMM"
+      ]
+    },
+    {
+      "id": "ketonye",
+      "label": "KETONYE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "KETONYE"
+      ]
+    },
+    {
+      "id": "kidnappedpirate",
+      "label": "KIDNAPPEDPIRATE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "KIDNAPPEDPIRATE"
+      ]
+    },
+    {
+      "id": "koana",
+      "label": "KOANA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "KOANA"
+      ]
+    },
+    {
+      "id": "kojinsoldier",
+      "label": "KOJINSOLDIER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "KOJINSOLDIER"
+      ]
+    },
+    {
+      "id": "kokkoldankkol",
+      "label": "KOKKOLDANKKOL",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "KOKKOLDANKKOL"
+      ]
+    },
+    {
+      "id": "koujintaicho",
+      "label": "KOUJINTAICHO",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "KOUJINTAICHO"
+      ]
+    },
+    {
+      "id": "krakensdeckhand",
+      "label": "KRAKENSDECKHAND",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "KRAKENSDECKHAND"
+      ]
+    },
+    {
+      "id": "krile",
+      "label": "KRILE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "KRILE"
+      ]
+    },
+    {
+      "id": "kytte",
+      "label": "KYTTE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "KYTTE"
+      ]
+    },
+    {
+      "id": "lahabrea",
+      "label": "LAHABREA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "LAHABREA"
+      ]
+    },
+    {
+      "id": "lakshmi",
+      "label": "LAKSHMI",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "LAKSHMI"
+      ]
+    },
+    {
+      "id": "lastwoman71",
+      "label": "LASTWOMAN71",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "LASTWOMAN71"
+      ]
+    },
+    {
+      "id": "laurentius",
+      "label": "LAURENTIUS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "LAURENTIUS"
+      ]
+    },
+    {
+      "id": "legislatora",
+      "label": "LEGISLATORA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "LEGISLATORA"
+      ]
+    },
+    {
+      "id": "legislatorb",
+      "label": "LEGISLATORB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "LEGISLATORB"
+      ]
+    },
+    {
+      "id": "linercrew",
+      "label": "LINERCREW",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "LINERCREW"
+      ]
+    },
+    {
+      "id": "linuhanu",
+      "label": "LINUHANU",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "LINUHANU"
+      ]
+    },
+    {
+      "id": "livingway",
+      "label": "LIVINGWAY",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "LIVINGWAY"
+      ]
+    },
+    {
+      "id": "lolorito",
+      "label": "LOLORITO",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "LOLORITO"
+      ]
+    },
+    {
+      "id": "lucia",
+      "label": "LUCIA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "LUCIA"
+      ]
+    },
+    {
+      "id": "lumull",
+      "label": "LUMULL",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "LUMULL"
+      ]
+    },
+    {
+      "id": "lyna",
+      "label": "LYNA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "LYNA"
+      ]
+    },
+    {
+      "id": "lyse",
+      "label": "LYSE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "LYSE"
+      ]
+    },
+    {
+      "id": "lysenarration",
+      "label": "LYSENARRATION",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "LYSENARRATION"
+      ]
+    },
+    {
+      "id": "m017",
+      "label": "M017",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "M017"
+      ]
+    },
+    {
+      "id": "mablu",
+      "label": "MABLU",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MABLU"
+      ]
+    },
+    {
+      "id": "maelie",
+      "label": "MAELIE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MAELIE"
+      ]
+    },
+    {
+      "id": "maelstromofficer",
+      "label": "MAELSTROMOFFICER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MAELSTROMOFFICER"
+      ]
+    },
+    {
+      "id": "magnai",
+      "label": "MAGNAI",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MAGNAI"
+      ]
+    },
+    {
+      "id": "magnus",
+      "label": "MAGNUS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MAGNUS"
+      ]
+    },
+    {
+      "id": "mahuwsa",
+      "label": "MAHUWSA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MAHUWSA"
+      ]
+    },
+    {
+      "id": "malachite",
+      "label": "MALACHITE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MALACHITE"
+      ]
+    },
+    {
+      "id": "maleheretic",
+      "label": "MALEHERETIC",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MALEHERETIC"
+      ]
+    },
+    {
+      "id": "mappingway",
+      "label": "MAPPINGWAY",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MAPPINGWAY"
+      ]
+    },
+    {
+      "id": "masterstigmaone",
+      "label": "MASTERSTIGMAONE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MASTERSTIGMAONE"
+      ]
+    },
+    {
+      "id": "matoya",
+      "label": "MATOYA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MATOYA"
+      ]
+    },
+    {
+      "id": "matsya",
+      "label": "MATSYA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MATSYA"
+      ]
+    },
+    {
+      "id": "maxima",
+      "label": "MAXIMA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MAXIMA"
+      ]
+    },
+    {
+      "id": "meffrid",
+      "label": "MEFFRID",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MEFFRID"
+      ]
+    },
+    {
+      "id": "mehrahd",
+      "label": "MEHRAHD",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MEHRAHD"
+      ]
+    },
+    {
+      "id": "mehryde",
+      "label": "MEHRYDE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MEHRYDE"
+      ]
+    },
+    {
+      "id": "mehvan",
+      "label": "MEHVAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MEHVAN"
+      ]
+    },
+    {
+      "id": "memoriamastera04661",
+      "label": "MEMORIAMASTERA04661",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MEMORIAMASTERA04661"
+      ]
+    },
+    {
+      "id": "memoriamastera10430",
+      "label": "MEMORIAMASTERA10430",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MEMORIAMASTERA10430"
+      ]
+    },
+    {
+      "id": "memoriamasterb10430",
+      "label": "MEMORIAMASTERB10430",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MEMORIAMASTERB10430"
+      ]
+    },
+    {
+      "id": "memory",
+      "label": "MEMORY",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MEMORY"
+      ]
+    },
+    {
+      "id": "menphina",
+      "label": "MENPHINA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MENPHINA"
+      ]
+    },
+    {
+      "id": "merlwyb",
+      "label": "MERLWYB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MERLWYB"
+      ]
+    },
+    {
+      "id": "mesoterminal",
+      "label": "MESOTERMINAL",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MESOTERMINAL"
+      ]
+    },
+    {
+      "id": "messenger02341",
+      "label": "MESSENGER02341",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MESSENGER02341"
+      ]
+    },
+    {
+      "id": "meteion",
+      "label": "METEION",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "METEION"
+      ]
+    },
+    {
+      "id": "metem",
+      "label": "METEM",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "METEM"
+      ]
+    },
+    {
+      "id": "mettius",
+      "label": "METTIUS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "METTIUS"
+      ]
+    },
+    {
+      "id": "miayli",
+      "label": "MIAYLI",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MIAYLI"
+      ]
+    },
+    {
+      "id": "midgardsormr",
+      "label": "MIDGARDSORMR",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MIDGARDSORMR"
+      ]
+    },
+    {
+      "id": "mihleel",
+      "label": "MIHLEEL",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MIHLEEL"
+      ]
+    },
+    {
+      "id": "miilalja",
+      "label": "MIILALJA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MIILALJA"
+      ]
+    },
+    {
+      "id": "milos",
+      "label": "MILOS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MILOS"
+      ]
+    },
+    {
+      "id": "minfilia",
+      "label": "MINFILIA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MINFILIA"
+      ]
+    },
+    {
+      "id": "mitron",
+      "label": "MITRON",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MITRON"
+      ]
+    },
+    {
+      "id": "mnaago",
+      "label": "MNAAGO",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MNAAGO"
+      ]
+    },
+    {
+      "id": "montichaigne",
+      "label": "MONTICHAIGNE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MONTICHAIGNE"
+      ]
+    },
+    {
+      "id": "mordmerchanta",
+      "label": "MORDMERCHANTA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MORDMERCHANTA"
+      ]
+    },
+    {
+      "id": "mordmerchantb",
+      "label": "MORDMERCHANTB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MORDMERCHANTB"
+      ]
+    },
+    {
+      "id": "mordmerchantc",
+      "label": "MORDMERCHANTC",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MORDMERCHANTC"
+      ]
+    },
+    {
+      "id": "moren",
+      "label": "MOREN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MOREN"
+      ]
+    },
+    {
+      "id": "mysteriouscooperator",
+      "label": "MYSTERIOUSCOOPERATOR",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MYSTERIOUSCOOPERATOR"
+      ]
+    },
+    {
+      "id": "mysteriouslady",
+      "label": "MYSTERIOUSLADY",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MYSTERIOUSLADY"
+      ]
+    },
+    {
+      "id": "mysteriousperson",
+      "label": "MYSTERIOUSPERSON",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MYSTERIOUSPERSON"
+      ]
+    },
+    {
+      "id": "mysteriousvoice",
+      "label": "MYSTERIOUSVOICE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MYSTERIOUSVOICE"
+      ]
+    },
+    {
+      "id": "mysteryvoice",
+      "label": "MYSTERYVOICE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "MYSTERYVOICE"
+      ]
+    },
+    {
+      "id": "naahe",
+      "label": "NAAHE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "NAAHE"
+      ]
+    },
+    {
+      "id": "nabaatharengpeoplea",
+      "label": "NABAATHARENGPEOPLEA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "NABAATHARENGPEOPLEA"
+      ]
+    },
+    {
+      "id": "nabaatharengpeopleb",
+      "label": "NABAATHARENGPEOPLEB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "NABAATHARENGPEOPLEB"
+      ]
+    },
+    {
+      "id": "nabaatharengpeoplec",
+      "label": "NABAATHARENGPEOPLEC",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "NABAATHARENGPEOPLEC"
+      ]
+    },
+    {
+      "id": "nabaatharengpeopled",
+      "label": "NABAATHARENGPEOPLED",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "NABAATHARENGPEOPLED"
+      ]
+    },
+    {
+      "id": "nahbdeen",
+      "label": "NAHBDEEN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "NAHBDEEN"
+      ]
+    },
+    {
+      "id": "naldthal",
+      "label": "NALDTHAL",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "NALDTHAL"
+      ]
+    },
+    {
+      "id": "namikka",
+      "label": "NAMIKKA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "NAMIKKA"
+      ]
+    },
+    {
+      "id": "nanamo",
+      "label": "NANAMO",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "NANAMO"
+      ]
+    },
+    {
+      "id": "nanamosteward",
+      "label": "NANAMOSTEWARD",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "NANAMOSTEWARD"
+      ]
+    },
+    {
+      "id": "nanamoulnamo",
+      "label": "NANAMOULNAMO",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "NANAMOULNAMO"
+      ]
+    },
+    {
+      "id": "narration",
+      "label": "NARRATION",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "NARRATION"
+      ]
+    },
+    {
+      "id": "nero",
+      "label": "NERO",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "NERO"
+      ]
+    },
+    {
+      "id": "newsphene",
+      "label": "NEWSPHENE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "NEWSPHENE"
+      ]
+    },
+    {
+      "id": "nextheroboy",
+      "label": "NEXTHEROBOY",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "NEXTHEROBOY"
+      ]
+    },
+    {
+      "id": "nidhana",
+      "label": "NIDHANA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "NIDHANA"
+      ]
+    },
+    {
+      "id": "nidhogg",
+      "label": "NIDHOGG",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "NIDHOGG"
+      ]
+    },
+    {
+      "id": "nitowikwe",
+      "label": "NITOWIKWE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "NITOWIKWE"
+      ]
+    },
+    {
+      "id": "nokken",
+      "label": "NOKKEN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "NOKKEN"
+      ]
+    },
+    {
+      "id": "nophica",
+      "label": "NOPHICA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "NOPHICA"
+      ]
+    },
+    {
+      "id": "nostalgia",
+      "label": "NOSTALGIA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "NOSTALGIA"
+      ]
+    },
+    {
+      "id": "oblivionwoman73",
+      "label": "OBLIVIONWOMAN73",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "OBLIVIONWOMAN73"
+      ]
+    },
+    {
+      "id": "officeclerk",
+      "label": "OFFICECLERK",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "OFFICECLERK"
+      ]
+    },
+    {
+      "id": "oldeulmoremayor",
+      "label": "OLDEULMOREMAYOR",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "OLDEULMOREMAYOR"
+      ]
+    },
+    {
+      "id": "oldtitania",
+      "label": "OLDTITANIA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "OLDTITANIA"
+      ]
+    },
+    {
+      "id": "oldwoman02236",
+      "label": "OLDWOMAN02236",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "OLDWOMAN02236"
+      ]
+    },
+    {
+      "id": "originalsphene",
+      "label": "ORIGINALSPHENE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ORIGINALSPHENE"
+      ]
+    },
+    {
+      "id": "oronirman",
+      "label": "ORONIRMAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ORONIRMAN"
+      ]
+    },
+    {
+      "id": "oschon",
+      "label": "OSCHON",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "OSCHON"
+      ]
+    },
+    {
+      "id": "otis",
+      "label": "OTIS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "OTIS"
+      ]
+    },
+    {
+      "id": "oulsigun",
+      "label": "OULSIGUN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "OULSIGUN"
+      ]
+    },
+    {
+      "id": "outskirtscaregivera",
+      "label": "OUTSKIRTSCAREGIVERA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "OUTSKIRTSCAREGIVERA"
+      ]
+    },
+    {
+      "id": "outskirtscaregiverb",
+      "label": "OUTSKIRTSCAREGIVERB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "OUTSKIRTSCAREGIVERB"
+      ]
+    },
+    {
+      "id": "outskirtsfarmera",
+      "label": "OUTSKIRTSFARMERA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "OUTSKIRTSFARMERA"
+      ]
+    },
+    {
+      "id": "outskirtsfarmerb",
+      "label": "OUTSKIRTSFARMERB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "OUTSKIRTSFARMERB"
+      ]
+    },
+    {
+      "id": "pakwene",
+      "label": "PAKWENE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "PAKWENE"
+      ]
+    },
+    {
+      "id": "paladinofdarkness",
+      "label": "PALADINOFDARKNESS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "PALADINOFDARKNESS"
+      ]
+    },
+    {
+      "id": "palakasman",
+      "label": "PALAKASMAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "PALAKASMAN"
+      ]
+    },
+    {
+      "id": "palakasoldman",
+      "label": "PALAKASOLDMAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "PALAKASOLDMAN"
+      ]
+    },
+    {
+      "id": "palakaswomana",
+      "label": "PALAKASWOMANA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "PALAKASWOMANA"
+      ]
+    },
+    {
+      "id": "palakaswomanb",
+      "label": "PALAKASWOMANB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "PALAKASWOMANB"
+      ]
+    },
+    {
+      "id": "pandaemonium",
+      "label": "PANDAEMONIUM",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "PANDAEMONIUM"
+      ]
+    },
+    {
+      "id": "panicfisherman10720",
+      "label": "PANICFISHERMAN10720",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "PANICFISHERMAN10720"
+      ]
+    },
+    {
+      "id": "panickedfighter",
+      "label": "PANICKEDFIGHTER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "PANICKEDFIGHTER"
+      ]
+    },
+    {
+      "id": "papalymo",
+      "label": "PAPALYMO",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "PAPALYMO"
+      ]
+    },
+    {
+      "id": "passer02356",
+      "label": "PASSER02356",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "PASSER02356"
+      ]
+    },
+    {
+      "id": "peddlerofnorvrandt",
+      "label": "PEDDLEROFNORVRANDT",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "PEDDLEROFNORVRANDT"
+      ]
+    },
+    {
+      "id": "pelupelumaleauda",
+      "label": "PELUPELUMALEAUDA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "PELUPELUMALEAUDA"
+      ]
+    },
+    {
+      "id": "peopleofnighta",
+      "label": "PEOPLEOFNIGHTA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "PEOPLEOFNIGHTA"
+      ]
+    },
+    {
+      "id": "peopleofnightb",
+      "label": "PEOPLEOFNIGHTB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "PEOPLEOFNIGHTB"
+      ]
+    },
+    {
+      "id": "pepoane",
+      "label": "PEPOANE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "PEPOANE"
+      ]
+    },
+    {
+      "id": "peshiwa",
+      "label": "PESHIWA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "PESHIWA"
+      ]
+    },
+    {
+      "id": "pipin",
+      "label": "PIPIN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "PIPIN"
+      ]
+    },
+    {
+      "id": "pippin",
+      "label": "PIPPIN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "PIPPIN"
+      ]
+    },
+    {
+      "id": "preservationman73",
+      "label": "PRESERVATIONMAN73",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "PRESERVATIONMAN73"
+      ]
+    },
+    {
+      "id": "preservationwoman73",
+      "label": "PRESERVATIONWOMAN73",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "PRESERVATIONWOMAN73"
+      ]
+    },
+    {
+      "id": "prishe",
+      "label": "PRISHE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "PRISHE"
+      ]
+    },
+    {
+      "id": "propylaionstaff",
+      "label": "PROPYLAIONSTAFF",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "PROPYLAIONSTAFF"
+      ]
+    },
+    {
+      "id": "puddingway",
+      "label": "PUDDINGWAY",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "PUDDINGWAY"
+      ]
+    },
+    {
+      "id": "puppeteervoidcent",
+      "label": "PUPPETEERVOIDCENT",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "PUPPETEERVOIDCENT"
+      ]
+    },
+    {
+      "id": "puppetman",
+      "label": "PUPPETMAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "PUPPETMAN"
+      ]
+    },
+    {
+      "id": "qalyanapatriarch",
+      "label": "QALYANAPATRIARCH",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "QALYANAPATRIARCH"
+      ]
+    },
+    {
+      "id": "queenactor",
+      "label": "QUEENACTOR",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "QUEENACTOR"
+      ]
+    },
+    {
+      "id": "quintus",
+      "label": "QUINTUS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "QUINTUS"
+      ]
+    },
+    {
+      "id": "raganfrid",
+      "label": "RAGANFRID",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "RAGANFRID"
+      ]
+    },
+    {
+      "id": "ranjit",
+      "label": "RANJIT",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "RANJIT"
+      ]
+    },
+    {
+      "id": "rasho",
+      "label": "RASHO",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "RASHO"
+      ]
+    },
+    {
+      "id": "raubahn",
+      "label": "RAUBAHN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "RAUBAHN"
+      ]
+    },
+    {
+      "id": "raubahnmerlwybkanesenna",
+      "label": "RAUBAHNMERLWYBKANESENNA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "RAUBAHNMERLWYBKANESENNA"
+      ]
+    },
+    {
+      "id": "ravana",
+      "label": "RAVANA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "RAVANA"
+      ]
+    },
+    {
+      "id": "readerofondo",
+      "label": "READEROFONDO",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "READEROFONDO"
+      ]
+    },
+    {
+      "id": "referee",
+      "label": "REFEREE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "REFEREE"
+      ]
+    },
+    {
+      "id": "refugeeman",
+      "label": "REFUGEEMAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "REFUGEEMAN"
+      ]
+    },
+    {
+      "id": "regula",
+      "label": "REGULA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "REGULA"
+      ]
+    },
+    {
+      "id": "requestedlegislator",
+      "label": "REQUESTEDLEGISLATOR",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "REQUESTEDLEGISLATOR"
+      ]
+    },
+    {
+      "id": "residentboy05300",
+      "label": "RESIDENTBOY05300",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "RESIDENTBOY05300"
+      ]
+    },
+    {
+      "id": "residentman05300",
+      "label": "RESIDENTMAN05300",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "RESIDENTMAN05300"
+      ]
+    },
+    {
+      "id": "residenttrea",
+      "label": "RESIDENTTREA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "RESIDENTTREA"
+      ]
+    },
+    {
+      "id": "residenttreb",
+      "label": "RESIDENTTREB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "RESIDENTTREB"
+      ]
+    },
+    {
+      "id": "residenttrec",
+      "label": "RESIDENTTREC",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "RESIDENTTREC"
+      ]
+    },
+    {
+      "id": "resistance",
+      "label": "RESISTANCE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "RESISTANCE"
+      ]
+    },
+    {
+      "id": "resistancehealer",
+      "label": "RESISTANCEHEALER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "RESISTANCEHEALER"
+      ]
+    },
+    {
+      "id": "resistancewarrior",
+      "label": "RESISTANCEWARRIOR",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "RESISTANCEWARRIOR"
+      ]
+    },
+    {
+      "id": "resolutesoldier",
+      "label": "RESOLUTESOLDIER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "RESOLUTESOLDIER"
+      ]
+    },
+    {
+      "id": "restlessgarlean10320",
+      "label": "RESTLESSGARLEAN10320",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "RESTLESSGARLEAN10320"
+      ]
+    },
+    {
+      "id": "revolutionary1",
+      "label": "REVOLUTIONARY1",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "REVOLUTIONARY1"
+      ]
+    },
+    {
+      "id": "revolutionary2",
+      "label": "REVOLUTIONARY2",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "REVOLUTIONARY2"
+      ]
+    },
+    {
+      "id": "rhetkympf",
+      "label": "RHETKYMPF",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "RHETKYMPF"
+      ]
+    },
+    {
+      "id": "robeman",
+      "label": "ROBEMAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ROBEMAN"
+      ]
+    },
+    {
+      "id": "robor",
+      "label": "ROBOR",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ROBOR"
+      ]
+    },
+    {
+      "id": "roegadyngladiator",
+      "label": "ROEGADYNGLADIATOR",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ROEGADYNGLADIATOR"
+      ]
+    },
+    {
+      "id": "runar",
+      "label": "RUNAR",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "RUNAR"
+      ]
+    },
+    {
+      "id": "ryne",
+      "label": "RYNE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "RYNE"
+      ]
+    },
+    {
+      "id": "sadu",
+      "label": "SADU",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SADU"
+      ]
+    },
+    {
+      "id": "sahaginpriest",
+      "label": "SAHAGINPRIEST",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SAHAGINPRIEST"
+      ]
+    },
+    {
+      "id": "sailorpanicvoicea",
+      "label": "SAILORPANICVOICEA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SAILORPANICVOICEA"
+      ]
+    },
+    {
+      "id": "sailorpanicvoiceb",
+      "label": "SAILORPANICVOICEB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SAILORPANICVOICEB"
+      ]
+    },
+    {
+      "id": "sailorpanicvoicec",
+      "label": "SAILORPANICVOICEC",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SAILORPANICVOICEC"
+      ]
+    },
+    {
+      "id": "sailorsunburned",
+      "label": "SAILORSUNBURNED",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SAILORSUNBURNED"
+      ]
+    },
+    {
+      "id": "sareelja",
+      "label": "SAREELJA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SAREELJA"
+      ]
+    },
+    {
+      "id": "seiryu",
+      "label": "SEIRYU",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SEIRYU"
+      ]
+    },
+    {
+      "id": "sekishintaisoldier",
+      "label": "SEKISHINTAISOLDIER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SEKISHINTAISOLDIER"
+      ]
+    },
+    {
+      "id": "serpentssoldier",
+      "label": "SERPENTSSOLDIER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SERPENTSSOLDIER"
+      ]
+    },
+    {
+      "id": "seto",
+      "label": "SETO",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SETO"
+      ]
+    },
+    {
+      "id": "shaaloanipassenger",
+      "label": "SHAALOANIPASSENGER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SHAALOANIPASSENGER"
+      ]
+    },
+    {
+      "id": "shadowhunter",
+      "label": "SHADOWHUNTER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SHADOWHUNTER"
+      ]
+    },
+    {
+      "id": "shadowlord",
+      "label": "SHADOWLORD",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SHADOWLORD"
+      ]
+    },
+    {
+      "id": "shale",
+      "label": "SHALE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SHALE"
+      ]
+    },
+    {
+      "id": "shantotto",
+      "label": "SHANTOTTO",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SHANTOTTO"
+      ]
+    },
+    {
+      "id": "sharlayancitizena",
+      "label": "SHARLAYANCITIZENA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SHARLAYANCITIZENA"
+      ]
+    },
+    {
+      "id": "sharlayancitizenb",
+      "label": "SHARLAYANCITIZENB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SHARLAYANCITIZENB"
+      ]
+    },
+    {
+      "id": "shenza",
+      "label": "SHENZA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SHENZA"
+      ]
+    },
+    {
+      "id": "shetonafemaleaud",
+      "label": "SHETONAFEMALEAUD",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SHETONAFEMALEAUD"
+      ]
+    },
+    {
+      "id": "shetonamaleaud",
+      "label": "SHETONAMALEAUD",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SHETONAMALEAUD"
+      ]
+    },
+    {
+      "id": "sicard",
+      "label": "SICARD",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SICARD"
+      ]
+    },
+    {
+      "id": "singingway",
+      "label": "SINGINGWAY",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SINGINGWAY"
+      ]
+    },
+    {
+      "id": "skullsoldiera",
+      "label": "SKULLSOLDIERA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SKULLSOLDIERA"
+      ]
+    },
+    {
+      "id": "skullsoldierb",
+      "label": "SKULLSOLDIERB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SKULLSOLDIERB"
+      ]
+    },
+    {
+      "id": "skullsoldierc",
+      "label": "SKULLSOLDIERC",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SKULLSOLDIERC"
+      ]
+    },
+    {
+      "id": "sleepingway",
+      "label": "SLEEPINGWAY",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SLEEPINGWAY"
+      ]
+    },
+    {
+      "id": "soldier03608",
+      "label": "SOLDIER03608",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SOLDIER03608"
+      ]
+    },
+    {
+      "id": "soldiera",
+      "label": "SOLDIERA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SOLDIERA"
+      ]
+    },
+    {
+      "id": "soldiera02354",
+      "label": "SOLDIERA02354",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SOLDIERA02354"
+      ]
+    },
+    {
+      "id": "soldierb",
+      "label": "SOLDIERB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SOLDIERB"
+      ]
+    },
+    {
+      "id": "soldierb02354",
+      "label": "SOLDIERB02354",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SOLDIERB02354"
+      ]
+    },
+    {
+      "id": "soldierc02354",
+      "label": "SOLDIERC02354",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SOLDIERC02354"
+      ]
+    },
+    {
+      "id": "soluszosgalvus",
+      "label": "SOLUSZOSGALVUS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SOLUSZOSGALVUS"
+      ]
+    },
+    {
+      "id": "solutionnfighter",
+      "label": "SOLUTIONNFIGHTER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SOLUTIONNFIGHTER"
+      ]
+    },
+    {
+      "id": "solutionresident73",
+      "label": "SOLUTIONRESIDENT73",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SOLUTIONRESIDENT73"
+      ]
+    },
+    {
+      "id": "someoneoffuatha",
+      "label": "SOMEONEOFFUATHA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SOMEONEOFFUATHA"
+      ]
+    },
+    {
+      "id": "someoneoffuathb",
+      "label": "SOMEONEOFFUATHB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SOMEONEOFFUATHB"
+      ]
+    },
+    {
+      "id": "someoneoffuathc",
+      "label": "SOMEONEOFFUATHC",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SOMEONEOFFUATHC"
+      ]
+    },
+    {
+      "id": "someoneoffuathd",
+      "label": "SOMEONEOFFUATHD",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SOMEONEOFFUATHD"
+      ]
+    },
+    {
+      "id": "someoneofnumoua",
+      "label": "SOMEONEOFNUMOUA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SOMEONEOFNUMOUA"
+      ]
+    },
+    {
+      "id": "someoneofnumoub",
+      "label": "SOMEONEOFNUMOUB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SOMEONEOFNUMOUB"
+      ]
+    },
+    {
+      "id": "soroban",
+      "label": "SOROBAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SOROBAN"
+      ]
+    },
+    {
+      "id": "souleater",
+      "label": "SOULEATER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SOULEATER"
+      ]
+    },
+    {
+      "id": "sphene",
+      "label": "SPHENE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SPHENE"
+      ]
+    },
+    {
+      "id": "spyvoidsent",
+      "label": "SPYVOIDSENT",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SPYVOIDSENT"
+      ]
+    },
+    {
+      "id": "stormofficer",
+      "label": "STORMOFFICER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "STORMOFFICER"
+      ]
+    },
+    {
+      "id": "suluin",
+      "label": "SULUIN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SULUIN"
+      ]
+    },
+    {
+      "id": "susano",
+      "label": "SUSANO",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SUSANO"
+      ]
+    },
+    {
+      "id": "suzaku",
+      "label": "SUZAKU",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SUZAKU"
+      ]
+    },
+    {
+      "id": "system",
+      "label": "SYSTEM",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SYSTEM"
+      ]
+    },
+    {
+      "id": "taapu",
+      "label": "TAAPU",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TAAPU"
+      ]
+    },
+    {
+      "id": "tansui",
+      "label": "TANSUI",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TANSUI"
+      ]
+    },
+    {
+      "id": "tataru",
+      "label": "TATARU",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TATARU"
+      ]
+    },
+    {
+      "id": "teeshalja",
+      "label": "TEESHALJA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TEESHALJA"
+      ]
+    },
+    {
+      "id": "templeknight2",
+      "label": "TEMPLEKNIGHT2",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TEMPLEKNIGHT2"
+      ]
+    },
+    {
+      "id": "templerknight10810",
+      "label": "TEMPLERKNIGHT10810",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TEMPLERKNIGHT10810"
+      ]
+    },
+    {
+      "id": "temulun",
+      "label": "TEMULUN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TEMULUN"
+      ]
+    },
+    {
+      "id": "teshitapirate",
+      "label": "TESHITAPIRATE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TESHITAPIRATE"
+      ]
+    },
+    {
+      "id": "tesleen",
+      "label": "TESLEEN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TESLEEN"
+      ]
+    },
+    {
+      "id": "thaffe",
+      "label": "THAFFE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "THAFFE"
+      ]
+    },
+    {
+      "id": "themis",
+      "label": "THEMIS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "THEMIS"
+      ]
+    },
+    {
+      "id": "thetwelve",
+      "label": "THETWELVE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "THETWELVE"
+      ]
+    },
+    {
+      "id": "theva",
+      "label": "THEVA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "THEVA"
+      ]
+    },
+    {
+      "id": "thordan",
+      "label": "THORDAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "THORDAN"
+      ]
+    },
+    {
+      "id": "tiamat",
+      "label": "TIAMAT",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TIAMAT"
+      ]
+    },
+    {
+      "id": "timid05306",
+      "label": "TIMID05306",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TIMID05306"
+      ]
+    },
+    {
+      "id": "tireddragon",
+      "label": "TIREDDRAGON",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TIREDDRAGON"
+      ]
+    },
+    {
+      "id": "tobli",
+      "label": "TOBLI",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TOBLI"
+      ]
+    },
+    {
+      "id": "tonawaatauqmaleauda",
+      "label": "TONAWAATAUQMALEAUDA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TONAWAATAUQMALEAUDA"
+      ]
+    },
+    {
+      "id": "tonawaatauqmaleaudb",
+      "label": "TONAWAATAUQMALEAUDB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TONAWAATAUQMALEAUDB"
+      ]
+    },
+    {
+      "id": "trainsystem",
+      "label": "TRAINSYSTEM",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TRAINSYSTEM"
+      ]
+    },
+    {
+      "id": "traitorb02236",
+      "label": "TRAITORB02236",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TRAITORB02236"
+      ]
+    },
+    {
+      "id": "traitorc02236",
+      "label": "TRAITORC02236",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TRAITORC02236"
+      ]
+    },
+    {
+      "id": "trepidation05306",
+      "label": "TREPIDATION05306",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TREPIDATION05306"
+      ]
+    },
+    {
+      "id": "trialofficiant",
+      "label": "TRIALOFFICIANT",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TRIALOFFICIANT"
+      ]
+    },
+    {
+      "id": "tsukuyomi",
+      "label": "TSUKUYOMI",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TSUKUYOMI"
+      ]
+    },
+    {
+      "id": "tuliyollalchild",
+      "label": "TULIYOLLALCHILD",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TULIYOLLALCHILD"
+      ]
+    },
+    {
+      "id": "tuliyollalfemale",
+      "label": "TULIYOLLALFEMALE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TULIYOLLALFEMALE"
+      ]
+    },
+    {
+      "id": "tuliyollalmale",
+      "label": "TULIYOLLALMALE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TULIYOLLALMALE"
+      ]
+    },
+    {
+      "id": "tuliyollalsoldiera",
+      "label": "TULIYOLLALSOLDIERA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TULIYOLLALSOLDIERA"
+      ]
+    },
+    {
+      "id": "tuliyollalsoldierb",
+      "label": "TULIYOLLALSOLDIERB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TULIYOLLALSOLDIERB"
+      ]
+    },
+    {
+      "id": "tuliyollalsoldierc",
+      "label": "TULIYOLLALSOLDIERC",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TULIYOLLALSOLDIERC"
+      ]
+    },
+    {
+      "id": "tuliyollalsoldierd",
+      "label": "TULIYOLLALSOLDIERD",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TULIYOLLALSOLDIERD"
+      ]
+    },
+    {
+      "id": "turmoil05306",
+      "label": "TURMOIL05306",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "TURMOIL05306"
+      ]
+    },
+    {
+      "id": "uimet",
+      "label": "UIMET",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "UIMET"
+      ]
+    },
+    {
+      "id": "uldahndelegation",
+      "label": "ULDAHNDELEGATION",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ULDAHNDELEGATION"
+      ]
+    },
+    {
+      "id": "ultima",
+      "label": "ULTIMA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ULTIMA"
+      ]
+    },
+    {
+      "id": "unsettledresearcher",
+      "label": "UNSETTLEDRESEARCHER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "UNSETTLEDRESEARCHER"
+      ]
+    },
+    {
+      "id": "urianger",
+      "label": "URIANGER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "URIANGER"
+      ]
+    },
+    {
+      "id": "valigarmanda",
+      "label": "VALIGARMANDA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "VALIGARMANDA"
+      ]
+    },
+    {
+      "id": "varis",
+      "label": "VARIS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "VARIS"
+      ]
+    },
+    {
+      "id": "varshahn",
+      "label": "VARSHAHN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "VARSHAHN"
+      ]
+    },
+    {
+      "id": "varshahnbig",
+      "label": "VARSHAHNBIG",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "VARSHAHNBIG"
+      ]
+    },
+    {
+      "id": "vauthry",
+      "label": "VAUTHRY",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "VAUTHRY"
+      ]
+    },
+    {
+      "id": "venas",
+      "label": "VENAS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "VENAS"
+      ]
+    },
+    {
+      "id": "vidofnir",
+      "label": "VIDOFNIR",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "VIDOFNIR"
+      ]
+    },
+    {
+      "id": "vigilantemalea",
+      "label": "VIGILANTEMALEA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "VIGILANTEMALEA"
+      ]
+    },
+    {
+      "id": "villagevoidsenta",
+      "label": "VILLAGEVOIDSENTA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "VILLAGEVOIDSENTA"
+      ]
+    },
+    {
+      "id": "villagevoidsentb",
+      "label": "VILLAGEVOIDSENTB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "VILLAGEVOIDSENTB"
+      ]
+    },
+    {
+      "id": "villagevoidsentc",
+      "label": "VILLAGEVOIDSENTC",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "VILLAGEVOIDSENTC"
+      ]
+    },
+    {
+      "id": "villagevoidsentd",
+      "label": "VILLAGEVOIDSENTD",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "VILLAGEVOIDSENTD"
+      ]
+    },
+    {
+      "id": "virasoldier",
+      "label": "VIRASOLDIER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "VIRASOLDIER"
+      ]
+    },
+    {
+      "id": "voiceguide",
+      "label": "VOICEGUIDE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "VOICEGUIDE"
+      ]
+    },
+    {
+      "id": "voidperson04735",
+      "label": "VOIDPERSON04735",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "VOIDPERSON04735"
+      ]
+    },
+    {
+      "id": "voidsent04735",
+      "label": "VOIDSENT04735",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "VOIDSENT04735"
+      ]
+    },
+    {
+      "id": "voidsent10410",
+      "label": "VOIDSENT10410",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "VOIDSENT10410"
+      ]
+    },
+    {
+      "id": "voidsenta",
+      "label": "VOIDSENTA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "VOIDSENTA"
+      ]
+    },
+    {
+      "id": "voidsentb",
+      "label": "VOIDSENTB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "VOIDSENTB"
+      ]
+    },
+    {
+      "id": "voidsentc",
+      "label": "VOIDSENTC",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "VOIDSENTC"
+      ]
+    },
+    {
+      "id": "voidsentd",
+      "label": "VOIDSENTD",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "VOIDSENTD"
+      ]
+    },
+    {
+      "id": "vorporlor",
+      "label": "VORPORLOR",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "VORPORLOR"
+      ]
+    },
+    {
+      "id": "vritra",
+      "label": "VRITRA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "VRITRA"
+      ]
+    },
+    {
+      "id": "waiterofthelaststand",
+      "label": "WAITEROFTHELASTSTAND",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "WAITEROFTHELASTSTAND"
+      ]
+    },
+    {
+      "id": "waitress02236",
+      "label": "WAITRESS02236",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "WAITRESS02236"
+      ]
+    },
+    {
+      "id": "warriorofdarkness",
+      "label": "WARRIOROFDARKNESS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "WARRIOROFDARKNESS"
+      ]
+    },
+    {
+      "id": "warrioroflightavatars",
+      "label": "WARRIOROFLIGHTAVATARS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "WARRIOROFLIGHTAVATARS"
+      ]
+    },
+    {
+      "id": "watcherofmoon",
+      "label": "WATCHEROFMOON",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "WATCHEROFMOON"
+      ]
+    },
+    {
+      "id": "watermonolith",
+      "label": "WATERMONOLITH",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "WATERMONOLITH"
+      ]
+    },
+    {
+      "id": "wawlika",
+      "label": "WAWLIKA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "WAWLIKA"
+      ]
+    },
+    {
+      "id": "wayakkwe",
+      "label": "WAYAKKWE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "WAYAKKWE"
+      ]
+    },
+    {
+      "id": "wedge",
+      "label": "WEDGE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "WEDGE"
+      ]
+    },
+    {
+      "id": "whitemageofdarkness",
+      "label": "WHITEMAGEOFDARKNESS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "WHITEMAGEOFDARKNESS"
+      ]
+    },
+    {
+      "id": "wickedthunder",
+      "label": "WICKEDTHUNDER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "WICKEDTHUNDER"
+      ]
+    },
+    {
+      "id": "wihuwte",
+      "label": "WIHUWTE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "WIHUWTE"
+      ]
+    },
+    {
+      "id": "wilfsunn",
+      "label": "WILFSUNN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "WILFSUNN"
+      ]
+    },
+    {
+      "id": "windmonolith",
+      "label": "WINDMONOLITH",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "WINDMONOLITH"
+      ]
+    },
+    {
+      "id": "woundedimperial",
+      "label": "WOUNDEDIMPERIAL",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "WOUNDEDIMPERIAL"
+      ]
+    },
+    {
+      "id": "woundedoldman",
+      "label": "WOUNDEDOLDMAN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "WOUNDEDOLDMAN"
+      ]
+    },
+    {
+      "id": "wrenden",
+      "label": "WRENDEN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "WRENDEN"
+      ]
+    },
+    {
+      "id": "wukevu",
+      "label": "WUKEVU",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "WUKEVU"
+      ]
+    },
+    {
+      "id": "xande",
+      "label": "XANDE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "XANDE"
+      ]
+    },
+    {
+      "id": "xbalaalmaleauda",
+      "label": "XBALAALMALEAUDA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "XBALAALMALEAUDA"
+      ]
+    },
+    {
+      "id": "xbalaalmaleaudb",
+      "label": "XBALAALMALEAUDB",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "XBALAALMALEAUDB"
+      ]
+    },
+    {
+      "id": "xbalaalmalecustomer",
+      "label": "XBALAALMALECUSTOMER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "XBALAALMALECUSTOMER"
+      ]
+    },
+    {
+      "id": "xbalaalmalesoldier",
+      "label": "XBALAALMALESOLDIER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "XBALAALMALESOLDIER"
+      ]
+    },
+    {
+      "id": "xbalaalmalevillager",
+      "label": "XBALAALMALEVILLAGER",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "XBALAALMALEVILLAGER"
+      ]
+    },
+    {
+      "id": "yda",
+      "label": "YDA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "YDA"
+      ]
+    },
+    {
+      "id": "yesterlandboy",
+      "label": "YESTERLANDBOY",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "YESTERLANDBOY"
+      ]
+    },
+    {
+      "id": "yesterlandgirl",
+      "label": "YESTERLANDGIRL",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "YESTERLANDGIRL"
+      ]
+    },
+    {
+      "id": "yesterlandtroupe",
+      "label": "YESTERLANDTROUPE",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "YESTERLANDTROUPE"
+      ]
+    },
+    {
+      "id": "yokhuyenemya",
+      "label": "YOKHUYENEMYA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "YOKHUYENEMYA"
+      ]
+    },
+    {
+      "id": "yotsuyu",
+      "label": "YOTSUYU",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "YOTSUYU"
+      ]
+    },
+    {
+      "id": "youngtempleknight",
+      "label": "YOUNGTEMPLEKNIGHT",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "YOUNGTEMPLEKNIGHT"
+      ]
+    },
+    {
+      "id": "yshtola",
+      "label": "YSHTOLA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "YSHTOLA"
+      ]
+    },
+    {
+      "id": "ysiala",
+      "label": "YSIALA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "YSIALA"
+      ]
+    },
+    {
+      "id": "yugiri",
+      "label": "YUGIRI",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "YUGIRI"
+      ]
+    },
+    {
+      "id": "zada",
+      "label": "ZADA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ZADA"
+      ]
+    },
+    {
+      "id": "zanuhali",
+      "label": "ZANUHALI",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ZANUHALI"
+      ]
+    },
+    {
+      "id": "zasshal",
+      "label": "ZASSHAL",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ZASSHAL"
+      ]
+    },
+    {
+      "id": "zawpya",
+      "label": "ZAWPYA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ZAWPYA"
+      ]
+    },
+    {
+      "id": "zekowa",
+      "label": "ZEKOWA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ZEKOWA"
+      ]
+    },
+    {
+      "id": "zelenia",
+      "label": "ZELENIA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ZELENIA"
+      ]
+    },
+    {
+      "id": "zenos",
+      "label": "ZENOS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ZENOS"
+      ]
+    },
+    {
+      "id": "zephirin",
+      "label": "ZEPHIRIN",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ZEPHIRIN"
+      ]
+    },
+    {
+      "id": "zereelja",
+      "label": "ZEREELJA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ZEREELJA"
+      ]
+    },
+    {
+      "id": "zeromus",
+      "label": "ZEROMUS",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ZEROMUS"
+      ]
+    },
+    {
+      "id": "zodiark",
+      "label": "ZODIARK",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ZODIARK"
+      ]
+    },
+    {
+      "id": "zoraalja",
+      "label": "ZORAALJA",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ZORAALJA"
+      ]
+    },
+    {
+      "id": "zurmurwur",
+      "label": "ZURMURWUR",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "ZURMURWUR"
+      ]
     }
   ]
 }

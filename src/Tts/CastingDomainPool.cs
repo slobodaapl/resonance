@@ -79,10 +79,11 @@ public sealed class CastingDomainPool : IAsyncDisposable
         Func<bool>? backgroundEnabled = null,
         Func<CancellationToken, Task<bool>>? canWorkAsync = null,
         Func<CancellationToken, Task<string?>>? territoryPlaceNameAsync = null,
-        Func<CancellationToken, Task<string>>? languageAsync = null)
+        Func<CancellationToken, Task<string>>? languageAsync = null,
+        Func<string, long, string, CancellationToken, Task<VoiceReference>>? designReference = null)
         : this(registry, catalog, designer, canWork, territoryPlaceName, language, targets, modelHash,
             promptOverride, backgroundEnabled, canWorkAsync, territoryPlaceNameAsync,
-            languageAsync, null, true, null, null)
+            languageAsync, designReference, true, null, null)
     {
     }
 

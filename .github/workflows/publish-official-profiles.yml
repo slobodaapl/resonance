@@ -1,0 +1,85 @@
+name: Publish official profiles
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - release-assets/official-profiles/**
+      - assets/models.json
+      - .github/workflows/publish-official-profiles.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: official-profiles
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          lfs: true
+
+      - name: Package profile database
+        run: |
+          set -euo pipefail
+          database=release-assets/official-profiles/official-profiles.sqlite3
+          mkdir package
+          cp "$database" package/official-profiles.sqlite3
+          database_hash="$(sha256sum "$database" | cut -d ' ' -f 1)"
+          database_length="$(stat -c '%s' "$database")"
+          schema_version="$(sqlite3 "$database" 'select schema_version from pack_metadata limit 1')"
+          profile_count="$(sqlite3 "$database" 'select (select count(*) from official_profile)+(select count(*) from fallback_profile)')"
+          pack_version="$(sqlite3 "$database" 'select pack_version from pack_metadata limit 1')"
+          catalog_version="$(sqlite3 "$database" 'select catalog_version from pack_metadata limit 1')"
+          model_hashes="$(jq '{q4: (.artifacts[] | select(.id == "base-q4") | .sha256), q8: (.artifacts[] | select(.id == "base-q8") | .sha256)}' assets/models.json)"
+          jq -n \
+            --argjson packVersion "$pack_version" \
+            --argjson catalogVersion "$catalog_version" \
+            --argjson profileCount "$profile_count" \
+            --arg databaseSha256 "$database_hash" \
+            --argjson modelHashes "$model_hashes" \
+            --argjson schemaVersion "$schema_version" \
+            --argjson databaseLength "$database_length" \
+            '{SchemaVersion: $schemaVersion, PackVersion: $packVersion, CatalogVersion: $catalogVersion, ProfileCount: $profileCount, DatabaseSha256: $databaseSha256, DatabaseLength: $databaseLength, ModelHashes: $modelHashes}' \
+            > package/official-profile-pack.json
+          touch -t 198001010000 package/official-profiles.sqlite3 package/official-profile-pack.json
+          (cd package && zip -X -9 ../Resonance-Official-Profiles.zip official-profiles.sqlite3 official-profile-pack.json)
+          archive=Resonance-Official-Profiles.zip
+          archive_hash="$(sha256sum "$archive" | cut -d ' ' -f 1)"
+          archive_length="$(stat -c '%s' "$archive")"
+          jq -n \
+            --argjson packVersion "$pack_version" \
+            --arg url 'https://github.com/slobodaapl/resonance/releases/download/official-profiles/Resonance-Official-Profiles.zip' \
+            --argjson length "$archive_length" \
+            --arg sha256 "$archive_hash" \
+            --arg databaseSha256 "$database_hash" \
+            --argjson profileCount "$profile_count" \
+            --argjson schemaVersion "$schema_version" \
+            --argjson catalogVersion "$catalog_version" \
+            --argjson databaseLength "$database_length" \
+            '{SchemaVersion: $schemaVersion, PackVersion: $packVersion, Url: $url, Length: $length, Sha256: $sha256, DatabaseSha256: $databaseSha256, ProfileCount: $profileCount, CatalogVersion: $catalogVersion, DatabaseLength: $databaseLength}' \
+            > official-profile-pack.json
+
+      - name: Publish stable profile-pack release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ! gh release view official-profiles --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create official-profiles \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title 'Official voice profiles' \
+              --notes 'Versioned precomputed Base voice profiles.' \
+              --latest=false
+          fi
+          gh release upload official-profiles \
+            --repo "$GITHUB_REPOSITORY" \
+            Resonance-Official-Profiles.zip \
+            official-profile-pack.json \
+            --clobber

@@ -2,7 +2,6 @@ using System.Text.Json;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Ipc;
 using Resonance.Bootstrap;
-using Resonance.Game;
 using Resonance.Plugin;
 using Resonance.Scheduling;
 
@@ -42,20 +41,17 @@ public sealed class IpcService : IDisposable
         speakerProfile.RegisterFunc(coordinator.GetSpeakerProfile);
         coordinator.LineStarted += OnLineStarted;
         coordinator.LineFinished += OnLineFinished;
-        coordinator.NativeVoiceObserved += OnNativeVoice;
         coordinator.SpeakerProfileUpgraded += OnProfileUpgraded;
     }
 
     private void OnLineStarted(DubLine line) => lineStarted.SendMessage(line.Sequence, line.SpeakerKey, line.Text);
     private void OnLineFinished(DubLine line) => lineFinished.SendMessage(line.Sequence, line.SpeakerKey, line.Text);
-    private void OnNativeVoice(NativeVoiceObservation observation) => nativeVoiceObserved.SendMessage(observation.ScdPath);
     private void OnProfileUpgraded(string speakerKey, string profileId) => speakerProfileUpgraded.SendMessage(speakerKey, profileId);
 
     public void Dispose()
     {
         coordinator.LineStarted -= OnLineStarted;
         coordinator.LineFinished -= OnLineFinished;
-        coordinator.NativeVoiceObserved -= OnNativeVoice;
         coordinator.SpeakerProfileUpgraded -= OnProfileUpgraded;
         apiVersion.UnregisterFunc();
         isReady.UnregisterFunc();

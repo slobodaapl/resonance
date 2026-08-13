@@ -11,6 +11,7 @@ using Resonance.UI;
 using Resonance.Ipc;
 using Resonance.Tts;
 using Dalamud.Game;
+using Dalamud.Game.Command;
 using Lumina.Excel.Sheets;
 using Lumina.Text;
 
@@ -24,13 +25,13 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IClientState ClientState { get; private set; } = null!;
     [PluginService] internal static IObjectTable ObjectTable { get; private set; } = null!;
     [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
-    [PluginService] internal static ISigScanner SigScanner { get; private set; } = null!;
-    [PluginService] internal static IGameInteropProvider GameInterop { get; private set; } = null!;
     [PluginService] internal static IFramework Framework { get; private set; } = null!;
     [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
-    [PluginService] internal static IGameConfig GameConfig { get; private set; } = null!;
     [PluginService] internal static INotificationManager Notifications { get; private set; } = null!;
+    [PluginService] internal static ICommandManager CommandManager { get; private set; } = null!;
+    [PluginService] internal static ISigScanner SigScanner { get; private set; } = null!;
+    [PluginService] internal static IGameInteropProvider GameInterop { get; private set; } = null!;
 
     private readonly string dataDirectory;
     private readonly WindowSystem windows = new("Resonance");
@@ -38,8 +39,9 @@ public sealed class Plugin : IDalamudPlugin
     private Database? database;
     private CutsceneDetector? cutscenes;
     private TalkObserver? talk;
-    private NativeVoiceDetector? nativeVoice;
     private BootstrapService? bootstrap;
+    private OfficialProfilePackManager? officialProfilePacks;
+    private Task? officialProfilePackTask;
     private SessionCoordinator? coordinator;
     private IpcService? ipc;
     private LipSyncService? startupLipSync;
@@ -54,6 +56,7 @@ public sealed class Plugin : IDalamudPlugin
     private Exception? startupFailure;
     private string? notifiedFallbackKey;
     private int disposed;
+    private int openSettingsRequested;
 
     public Configuration Configuration { get; }
 
@@ -71,6 +74,13 @@ public sealed class Plugin : IDalamudPlugin
         Configuration.MigrateCastingV2(catalog, EnglishTerritoryName,
             message => Log.Information("Casting configuration: {Message}", message));
         PluginInterface.SavePluginConfig(Configuration);
+        PluginInterface.UiBuilder.Draw += windows.Draw;
+        PluginInterface.UiBuilder.OpenConfigUi += OpenConfigUi;
+        PluginInterface.UiBuilder.OpenMainUi += OpenMainUi;
+        CommandManager.AddHandler("/resonance", new CommandInfo(OnCommand)
+        {
+            HelpMessage = "Open Resonance settings.",
+        });
         startupTask = Task.Run(() => InitializeAsync(startupShutdown.Token));
     }
 
@@ -149,9 +159,18 @@ public sealed class Plugin : IDalamudPlugin
         {
             if (Volatile.Read(ref disposed) != 0) return;
             var createdDatabase = database = new Database(Path.Combine(dataDirectory, "resonance.sqlite3"));
+            var createdVoices = new VoiceRegistry(createdDatabase);
+            officialProfilePacks = new OfficialProfilePackManager(
+                dataDirectory, createdDatabase, createdVoices, officialVoiceCatalog, catalog);
             var createdCutscenes = cutscenes = new CutsceneDetector(Condition);
-            var createdTalk = talk = new TalkObserver(AddonLifecycle, GameGui, () => Configuration.AutoAdvanceDiagnostics);
-            var createdNativeVoice = nativeVoice = new NativeVoiceDetector(SigScanner, GameInterop, Log, lease);
+            SessionCoordinator? createdCoordinator = null;
+            var createdTalk = talk = new TalkObserver(
+                AddonLifecycle,
+                GameGui,
+                () => Configuration.AutoAdvanceDiagnostics,
+                () => Configuration.Enabled
+                      && Configuration.AutoAdvanceDubbedCutsceneDialogue
+                      && createdCoordinator?.ShouldSuppressAutomaticAdvance == true);
             var createdBootstrap = bootstrap = new BootstrapService(
                 PluginInterface.AssemblyLocation.Directory!.FullName,
                 dataDirectory,
@@ -159,15 +178,34 @@ public sealed class Plugin : IDalamudPlugin
                 SaveConfiguration,
                 lease);
             var createdLipSync = startupLipSync = new LipSyncService(Framework, ObjectTable);
-            var createdCoordinator = coordinator = new SessionCoordinator(
+            var createdScdExtractor = new ScdExtractor(DataManager, Framework, Log);
+            var nativeScdTemplateLoader = new NativeScdTemplateLoader(createdDatabase, createdScdExtractor);
+            IGameMixerAudioBackend? createdGameMixer = null;
+            try
+            {
+                createdGameMixer = new FfxivGameMixerAudioBackend(
+                    dataDirectory,
+                    new ResonanceScdResourceOverride(SigScanner, GameInterop, Log),
+                    new FfxivClientSoundPlayer(Framework),
+                    loadNativeScdTemplate: nativeScdTemplateLoader.LoadAsync);
+            }
+            catch (Exception error)
+            {
+                Log.Warning(error, "FFXIV native voice output unavailable");
+            }
+            createdCoordinator = coordinator = new SessionCoordinator(
                 createdCutscenes, createdTalk, ClientState, Condition, Framework,
-                new SpeakerResolver(ObjectTable, DataManager, catalog,
+                new SpeakerResolver(ObjectTable, DataManager,
                     () => EnglishTerritoryName(ClientState.TerritoryType)),
-                new QuestDialoguePrefetcher(DataManager, ClientState), createdNativeVoice, createdLipSync,
-                createdDatabase, createdBootstrap, new GameVolumeService(GameConfig), Path.Combine(dataDirectory, "line-cache"),
-                new ScdExtractor(DataManager, Framework, Log), Path.Combine(dataDirectory, "official-working"),
+                new QuestDialoguePrefetcher(DataManager, ClientState),
+                new CutsceneVoiceManifestProvider(
+                    DataManager, ClientState, Log, new CutscenePlanStore(dataDirectory)),
+                createdLipSync,
+                createdDatabase, createdVoices, createdBootstrap,
+                Path.Combine(dataDirectory, "line-cache"),
+                Path.Combine(dataDirectory, "debug-audio"),
                 catalog, officialVoiceCatalog, EnglishTerritoryName,
-                Configuration, Log);
+                Configuration, Log, createdGameMixer);
             startupLipSync = null;
             ipc = new IpcService(PluginInterface, createdBootstrap, createdCoordinator);
 
@@ -178,7 +216,6 @@ public sealed class Plugin : IDalamudPlugin
                 () => ClientState.ClientLanguage.ToString().ToLowerInvariant(),
                 catalog,
                 createdCoordinator.GetCastingPoolSnapshot,
-                () => (createdNativeVoice.IsAvailable, createdNativeVoice.UnavailableReason),
                 createdCoordinator.RegenerateCurrentTerritoryVoicesAsync,
                 createdCoordinator.RegenerateDomainVoicesAsync,
                 createdCoordinator.GetDebugInferenceSnapshot,
@@ -187,43 +224,93 @@ public sealed class Plugin : IDalamudPlugin
                 createdCoordinator.RunBaseDebugAsync,
                 createdCoordinator.CancelDebugInference,
                 SaveConfiguration, ReportError,
+                createdCoordinator.GetAudioBackendStatus,
                 createdCoordinator.SetBackendAsync,
-                createdCoordinator.RebuildBackendBenchmarkAsync);
+            createdCoordinator.RebuildBackendBenchmarkAsync);
             windows.AddWindow(createdWindow);
-            PluginInterface.UiBuilder.Draw += windows.Draw;
-            PluginInterface.UiBuilder.OpenConfigUi += createdWindow.Toggle;
-            PluginInterface.UiBuilder.OpenMainUi += createdWindow.Toggle;
+            if (Interlocked.Exchange(ref openSettingsRequested, 0) != 0)
+                createdWindow.IsOpen = true;
 
             createdBootstrap.StateChanged += OnBootstrapState;
             createdBootstrap.Ready += OnRuntimeReady;
             createdBootstrap.OptionalRuntimeFailed += OnOptionalRuntimeFailed;
             createdBootstrap.OptionalPreparationFailed += OnOptionalPreparationFailed;
+            createdBootstrap.CudaDriverProbeCompleted += OnCudaDriverProbeCompleted;
             createdBootstrap.Start();
-            if (!createdNativeVoice.IsAvailable)
-                QueueFrameworkUi(() => Notifications.AddNotification(new Notification
-                {
-                    Title = "Resonance native VO correlation unavailable",
-                    Content = $"Native voice correlation is unavailable ({createdNativeVoice.UnavailableReason}). Synthetic cutscene playback remains enabled, but official native clips cannot be matched automatically.",
-                    Type = NotificationType.Warning,
-                    InitialDuration = TimeSpan.FromSeconds(12),
-                    Minimized = true,
-                }), "Native VO availability notification dispatch failed");
         }
     }
+
+    private void OnCommand(string command, string arguments) => OpenSettings();
+
+    private void OpenSettings()
+    {
+        var window = configWindow;
+        if (window is not null) window.IsOpen = true;
+        else Interlocked.Exchange(ref openSettingsRequested, 1);
+    }
+
+    private void OpenConfigUi() => OpenSettings();
+
+    private void OpenMainUi() => OpenSettings();
 
     private void OnRuntimeReady(RuntimeManager manager)
     {
         manager.SelectionChanged += OnBackendSelection;
         if (manager.Selection is not null) OnBackendSelection(manager.Selection);
+        StartOfficialProfilePackSync(manager.ModelHash);
     }
 
-    private void OnBackendSelection(BackendSelection selection) => QueueFrameworkUi(
-        () => OnBackendSelectionOnFramework(selection),
-        "Backend-selection notification dispatch failed");
+    private void StartOfficialProfilePackSync(string modelHash)
+    {
+        var packs = officialProfilePacks;
+        if (packs is null || Volatile.Read(ref disposed) != 0) return;
+        lock (disposeGate)
+        {
+            if (officialProfilePackTask is { IsCompleted: false }) return;
+            officialProfilePackTask = Task.Run(async () =>
+            {
+                try
+                {
+                    var result = await packs.SynchronizeAsync(modelHash, startupShutdown.Token,
+                            !Configuration.DisableVoicePackAutoUpdate)
+                        .ConfigureAwait(false);
+                    Log.Information(
+                        "Official profile pack synchronized Version={Version} Downloaded={Downloaded} Imported={Imported}",
+                        result.PackVersion, result.Downloaded, result.ImportedProfiles);
+                    if (result.ImportedProfiles > 0)
+                        coordinator?.NotifyOfficialProfilePackImported();
+                }
+                catch (OperationCanceledException) when (startupShutdown.IsCancellationRequested) { }
+                catch (HttpRequestException error)
+                {
+                    Log.Information(error,
+                        "Official profile pack update check unavailable; cached/local profiles remain active");
+                }
+                catch (Exception error)
+                {
+                    Log.Warning(error,
+                        "Official profile pack update failed validation; cached/local profiles remain active");
+                }
+            });
+        }
+    }
+
+    private void OnBackendSelection(BackendSelection selection)
+    {
+        var backends = bootstrap?.RuntimeManager?.DetectedBackends
+            .Select(value => $"{value.Name}:{value.Type}") ?? [];
+        Log.Information(
+            "Inference selection desired={Desired}, effective={Effective}; backends=[{Backends}]; CUDA loader={CudaLoader}; error={Error}",
+            selection.Desired.Name, selection.Effective.Name, String.Join(", ", backends),
+            QwenCppRuntime.CudaLoadError ?? "ok", selection.Error ?? "none");
+        QueueFrameworkUi(
+            () => OnBackendSelectionOnFramework(selection),
+            "Backend-selection notification dispatch failed");
+    }
 
     private void OnBackendSelectionOnFramework(BackendSelection selection)
     {
-        if (!selection.IsTemporaryCpuFallback || selection.Error is null)
+        if (!selection.IsTemporaryCpuFallback || selection.Error is null || !selection.NotifyError)
         {
             notifiedFallbackKey = null;
             return;
@@ -278,6 +365,26 @@ public sealed class Plugin : IDalamudPlugin
                 Minimized = true,
             });
         }, "Optional preparation failure notification dispatch failed");
+    }
+
+    private void OnCudaDriverProbeCompleted()
+    {
+        var boot = bootstrap;
+        if (boot?.CudaDriverAvailable != false || !boot.IsWineRuntime) return;
+        var missing = boot.MissingProtonCudaVariables;
+        var content = missing.Count > 0
+            ? $"Launch XIVLauncher with {String.Join(" and ", missing.Select(name => $"{name}=1"))}, then fully restart XIVLauncher and FFXIV. CPU/Vulkan remain available."
+            : "The required Proton variables are present, but Proton did not install or expose nvcuda.dll in this prefix. Refresh the prefix with an UMU-visible CUDA-capable Proton build, then fully restart XIVLauncher and FFXIV. CPU/Vulkan remain available.";
+        QueueFrameworkUi(() => Notifications.AddNotification(new Notification
+        {
+            Title = missing.Count > 0
+                ? "Resonance CUDA setup required under Proton"
+                : "Resonance Proton CUDA bridge unavailable",
+            Content = content,
+            Type = NotificationType.Warning,
+            InitialDuration = TimeSpan.FromSeconds(20),
+            Minimized = false,
+        }), "Proton CUDA environment notification dispatch failed");
     }
 
     private void ReportError(Exception error) => QueueFrameworkUi(
@@ -399,8 +506,9 @@ public sealed class Plugin : IDalamudPlugin
         IpcService? ownedIpc;
         SessionCoordinator? ownedCoordinator;
         BootstrapService? ownedBootstrap;
+        OfficialProfilePackManager? ownedOfficialProfilePacks;
+        Task? ownedOfficialProfilePackTask;
         TalkObserver? ownedTalk;
-        NativeVoiceDetector? ownedNativeVoice;
         CutsceneDetector? ownedCutscenes;
         Database? ownedDatabase;
         LipSyncService? ownedLipSync;
@@ -415,10 +523,12 @@ public sealed class Plugin : IDalamudPlugin
             coordinator = null;
             ownedBootstrap = bootstrap;
             bootstrap = null;
+            ownedOfficialProfilePacks = officialProfilePacks;
+            officialProfilePacks = null;
+            ownedOfficialProfilePackTask = officialProfilePackTask;
+            officialProfilePackTask = null;
             ownedTalk = talk;
             talk = null;
-            ownedNativeVoice = nativeVoice;
-            nativeVoice = null;
             ownedCutscenes = cutscenes;
             cutscenes = null;
             ownedDatabase = database;
@@ -452,16 +562,15 @@ public sealed class Plugin : IDalamudPlugin
                 Record("Bootstrap", error);
             }
         }
+        if (ownedOfficialProfilePackTask is not null)
+        {
+            try { await ownedOfficialProfilePackTask.ConfigureAwait(false); }
+            catch (Exception error) { Record("Official profile pack synchronization", error); }
+        }
+        try { ownedOfficialProfilePacks?.Dispose(); }
+        catch (Exception error) { Record("Official profile pack manager", error); }
         try { ownedTalk?.Dispose(); }
         catch (Exception error) { Record("Talk observer", error); }
-        if (ownedNativeVoice is not null)
-        {
-            try { await ownedNativeVoice.DisposeAsync().ConfigureAwait(false); }
-            catch (Exception error)
-            {
-                Record("Native voice", error);
-            }
-        }
         try { ownedCutscenes?.Dispose(); }
         catch (Exception error) { Record("Cutscene detector", error); }
         if (ownedLipSync is not null)
@@ -492,18 +601,17 @@ public sealed class Plugin : IDalamudPlugin
 
     private void DetachPluginSubscriptions()
     {
+        CommandManager.RemoveHandler("/resonance");
         PluginInterface.UiBuilder.Draw -= windows.Draw;
-        if (configWindow is not null)
-        {
-            PluginInterface.UiBuilder.OpenConfigUi -= configWindow.Toggle;
-            PluginInterface.UiBuilder.OpenMainUi -= configWindow.Toggle;
-        }
+        PluginInterface.UiBuilder.OpenConfigUi -= OpenConfigUi;
+        PluginInterface.UiBuilder.OpenMainUi -= OpenMainUi;
         if (bootstrap is not null)
         {
             bootstrap.StateChanged -= OnBootstrapState;
             bootstrap.Ready -= OnRuntimeReady;
             bootstrap.OptionalRuntimeFailed -= OnOptionalRuntimeFailed;
             bootstrap.OptionalPreparationFailed -= OnOptionalPreparationFailed;
+            bootstrap.CudaDriverProbeCompleted -= OnCudaDriverProbeCompleted;
         }
         if (bootstrap?.RuntimeManager is { } manager)
             manager.SelectionChanged -= OnBackendSelection;

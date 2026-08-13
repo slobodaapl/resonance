@@ -1,10 +1,10 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
+using Resonance.Audio;
 using Resonance.Bootstrap;
 using Resonance.Plugin;
 using Resonance.Tts;
-using NAudio.Wave;
 
 namespace Resonance.UI;
 
@@ -23,13 +23,13 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
     private readonly Func<string> currentLanguage;
     private readonly CastingProfileCatalog catalog;
     private readonly Func<CastingPoolSnapshot?> poolSnapshot;
-    private readonly Func<(bool Available, string? Reason)> nativeVoiceStatus;
     private readonly Func<CancellationToken, Task> regenerateCurrentTerritory;
     private readonly Func<string, CancellationToken, Task> regenerateDomain;
     private readonly Func<string, DebugInferenceSnapshot> debugSnapshot;
     private readonly Func<string, CancellationToken, Task> refreshDebugBaseVoices;
     private readonly Func<string, string, string, CancellationToken, Task> runVoiceDesignDebug;
     private readonly Func<string, string, string, CancellationToken, Task> runBaseDebug;
+    private readonly Func<AudioBackendStatus> audioBackendStatus;
     private readonly Func<BackendInfo, CancellationToken, Task>? setBackend;
     private readonly Func<CancellationToken, Task>? rebuildBackendBenchmark;
     private readonly Action cancelDebug;
@@ -60,7 +60,6 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
         Func<string> currentLanguage,
         CastingProfileCatalog catalog,
         Func<CastingPoolSnapshot?> poolSnapshot,
-        Func<(bool Available, string? Reason)> nativeVoiceStatus,
         Func<CancellationToken, Task> regenerateCurrentTerritory,
         Func<string, CancellationToken, Task> regenerateDomain,
         Func<string, DebugInferenceSnapshot> debugSnapshot,
@@ -70,6 +69,7 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
         Action cancelDebug,
         Action save,
         Action<Exception> reportError,
+        Func<AudioBackendStatus>? audioBackendStatus = null,
         Func<BackendInfo, CancellationToken, Task>? setBackend = null,
         Func<CancellationToken, Task>? rebuildBackendBenchmark = null)
         : base("Resonance Settings###ResonanceSettings")
@@ -82,13 +82,15 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
         this.currentLanguage = currentLanguage;
         this.catalog = catalog;
         this.poolSnapshot = poolSnapshot;
-        this.nativeVoiceStatus = nativeVoiceStatus;
         this.regenerateCurrentTerritory = regenerateCurrentTerritory;
         this.regenerateDomain = regenerateDomain;
         this.debugSnapshot = debugSnapshot;
         this.refreshDebugBaseVoices = refreshDebugBaseVoices;
         this.runVoiceDesignDebug = runVoiceDesignDebug;
         this.runBaseDebug = runBaseDebug;
+        this.audioBackendStatus = audioBackendStatus ?? (() => new AudioBackendStatus(
+            AudioOutputBackend.FfxivGameMixer, false, false, false, false,
+            "FFXIV game mixer backend is not installed"));
         this.setBackend = setBackend;
         this.rebuildBackendBenchmark = rebuildBackendBenchmark;
         this.cancelDebug = cancelDebug;
@@ -149,7 +151,9 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
                 $"{progress.Id}: {progress.BytesReceived / 1048576d:F0} / {progress.TotalBytes / 1048576d:F0} MiB");
         }
         var effective = manager?.Selection?.Effective;
-        ImGui.TextUnformatted($"Effective inference device: {effective?.Description ?? "Preparing..."}");
+        ImGui.TextUnformatted(effective is null
+            ? "Effective inference device: Preparing..."
+            : $"Effective inference device: {effective.Description} ({effective.Type})");
         var cudaBridge = boot.CudaDriverAvailable switch
         {
             true => "available",
@@ -157,12 +161,25 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
             null => "probing...",
         };
         ImGui.TextUnformatted($"CUDA driver bridge: {cudaBridge}");
+        if (boot.CudaDriverAvailable == false && boot.MissingProtonCudaVariables.Count > 0)
+        {
+            var missing = String.Join(" and ", boot.MissingProtonCudaVariables.Select(name => $"{name}=1"));
+            ImGui.TextColored(new Vector4(1f, .75f, .25f, 1f),
+                $"Proton CUDA requires launching XIVLauncher with {missing}, then fully restarting XIVLauncher and FFXIV");
+        }
+        else if (boot.CudaDriverAvailable == false && boot.IsWineRuntime)
+        {
+            ImGui.TextColored(new Vector4(1f, .75f, .25f, 1f),
+                "Proton variables are enabled, but this prefix has no loadable nvcuda.dll bridge; refresh it with an UMU-visible CUDA-capable Proton build");
+        }
         if (boot.CudaDriverAvailable == true
             && manager is not null
             && !manager.DetectedBackends.Any(candidate => candidate.Type == BackendType.Cuda))
         {
             ImGui.TextColored(new Vector4(1f, .75f, .25f, 1f),
                 "CUDA backend: not installed or not loadable; the driver bridge alone is insufficient");
+            if (QwenCppRuntime.CudaLoadError is { } cudaError)
+                ImGui.TextWrapped($"CUDA loader: {cudaError}");
         }
         if (manager?.Selection?.IsTemporaryCpuFallback == true)
         {
@@ -183,7 +200,7 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
                 {
                     var selected = configuration.Compute == ComputePreference.Manual
                         && configuration.DesiredBackendName == backend.Name;
-                    var label = $"{backend.Description} [{backend.Name}]";
+                    var label = $"{backend.Description} ({backend.Type})";
                     if (ImGui.Selectable(label, selected))
                         Run(() => setBackend is null
                             ? manager.SetDesiredAsync(backend, shutdown.Token)
@@ -195,25 +212,11 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
 
         var volume = configuration.Volume;
         if (ImGui.SliderFloat("Volume", ref volume, 0f, 2f, "%.2f")) { configuration.Volume = volume; save(); }
-        var outputPreview = configuration.AudioOutputDeviceNumber < 0
-            ? "System default"
-            : GetOutputName(configuration.AudioOutputDeviceNumber);
-        if (ImGui.BeginCombo("Output device (restart required)", outputPreview))
-        {
-            if (ImGui.Selectable("System default", configuration.AudioOutputDeviceNumber < 0))
-            {
-                configuration.AudioOutputDeviceNumber = -1;
-                save();
-            }
-            for (var index = 0; index < WaveOut.DeviceCount; index++)
-            {
-                var name = GetOutputName(index);
-                if (!ImGui.Selectable(name, configuration.AudioOutputDeviceNumber == index)) continue;
-                configuration.AudioOutputDeviceNumber = index;
-                save();
-            }
-            ImGui.EndCombo();
-        }
+        var mixerStatus = audioBackendStatus();
+        ImGui.TextWrapped($"Voice output: FFXIV game audio mixer — {mixerStatus.Diagnostic}");
+        ImGui.TextUnformatted(mixerStatus.SceneLocked
+            ? "Cutscene voice output active"
+            : "Voice playback follows FFXIV's output device and voice-volume settings");
         var casting = configuration.BackgroundCasting;
         if (ImGui.Checkbox("Background casting", ref casting)) { configuration.BackgroundCasting = casting; save(); }
         var autoAdvance = configuration.AutoAdvanceDubbedCutsceneDialogue;
@@ -222,13 +225,6 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
             configuration.AutoAdvanceDubbedCutsceneDialogue = autoAdvance;
             save();
         }
-        var voiceLearningDiagnostics = configuration.VoiceLearningDiagnostics;
-        if (ImGui.Checkbox("Voice-learning diagnostics", ref voiceLearningDiagnostics))
-        {
-            configuration.VoiceLearningDiagnostics = voiceLearningDiagnostics;
-            save();
-        }
-        ImGui.TextWrapped("Logs official voice observations and profile-building decisions to the Dalamud plugin log; can be noisy.");
         var autoAdvanceDiagnostics = configuration.AutoAdvanceDiagnostics;
         if (ImGui.Checkbox("Auto-advance diagnostics", ref autoAdvanceDiagnostics))
         {
@@ -256,7 +252,6 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
         }
         var canBenchmark = manager is not null
             && boot.VoiceDesignPath is not null
-            && configuration.Compute != ComputePreference.Manual
             && Volatile.Read(ref benchmarkInFlight) == 0;
         ImGui.BeginDisabled(!canBenchmark);
         if (ImGui.Button(Volatile.Read(ref benchmarkInFlight) == 0
@@ -287,9 +282,6 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
         }
         if (ImGui.CollapsingHeader("Diagnostics"))
         {
-            var guard = nativeVoiceStatus();
-            ImGui.TextUnformatted($"Native VO guard: {(guard.Available ? "available" : "unavailable")}");
-            if (guard.Reason is not null) ImGui.TextWrapped($"Guard detail: {guard.Reason}");
             if (boot.Failure is not null) ImGui.TextWrapped($"Bootstrap failure: {boot.Failure.Message}");
             if (manager?.Selection is { } selection)
             {
@@ -313,12 +305,6 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
             if (!ImGui.Selectable(label, selected)) return;
             configuration.Compute = preference;
             save();
-        }
-
-        static string GetOutputName(int index)
-        {
-            try { return WaveOut.GetCapabilities(index).ProductName; }
-            catch { return $"Output device {index}"; }
         }
     }
 
@@ -368,12 +354,28 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
     {
         var manager = runtime();
         var snapshot = debugSnapshot(debugLanguage);
+        var disableVoicePackAutoUpdate = configuration.DisableVoicePackAutoUpdate;
+        if (ImGui.Checkbox("Don't auto-update voice packs", ref disableVoicePackAutoUpdate))
+        {
+            configuration.DisableVoicePackAutoUpdate = disableVoicePackAutoUpdate;
+            save();
+        }
+        ImGui.TextWrapped("Uses and imports the locally installed pack without checking or downloading remote updates.");
+        ImGui.Separator();
         ImGui.TextUnformatted("Inference smoke tests");
         ImGui.TextWrapped("Runs real Base and VoiceDesign inference on the selected device and streams the result through Resonance's in-game audio output.");
         ImGui.Separator();
         ImGui.TextUnformatted($"Readiness: {snapshot.Readiness}");
         ImGui.TextUnformatted($"Device: {snapshot.Device}");
+        ImGui.TextUnformatted($"VoiceDesign runtime backend: {snapshot.VoiceDesignBackend}");
         ImGui.TextWrapped($"Status: {snapshot.Status}");
+
+        var selectionFailed = manager?.Selection is { } selection
+                              && !String.Equals(selection.Desired.Name, selection.Effective.Name,
+                                  StringComparison.Ordinal);
+        if (selectionFailed)
+            ImGui.TextColored(new Vector4(1f, .35f, .25f, 1f),
+                $"Requested device failed; tests use no fallback. Select a working device. {manager!.Selection!.Error}");
 
         if (snapshot.Ready && Volatile.Read(ref refreshedDebugLanguage) != debugLanguage
                            && Volatile.Read(ref debugRefreshInFlight) == 0)
@@ -383,13 +385,15 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
         ImGui.BeginDisabled(controlsDisabled);
         if (manager is not null && manager.DetectedBackends.Count > 0)
         {
-            var preview = manager.Selection?.Effective.Description ?? "Preparing...";
+            var preview = manager.Selection?.Effective is { } selectedBackend
+                ? $"{selectedBackend.Description} ({selectedBackend.Type})"
+                : "Preparing...";
             if (ImGui.BeginCombo("Test inference device", preview))
             {
                 foreach (var backend in manager.DetectedBackends)
                 {
                     var selected = manager.Selection?.Effective.Name == backend.Name;
-                    if (ImGui.Selectable($"{backend.Description} [{backend.Name}]", selected))
+                    if (ImGui.Selectable($"{backend.Description} ({backend.Type})", selected))
                         Run(() => setBackend is null
                             ? manager.SetDesiredAsync(backend, shutdown.Token)
                             : setBackend(backend, shutdown.Token));
@@ -409,12 +413,21 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
         ImGui.InputTextMultiline("##DebugSampleSentence", ref debugSentence, 2048, new Vector2(-1, 90));
         ImGui.TextUnformatted("VoiceDesign instruction");
         ImGui.InputTextMultiline("##DebugVoiceDesignInstruction", ref debugInstruction, 4096, new Vector2(-1, 90));
+        ImGui.BeginDisabled(selectionFailed);
         if (ImGui.Button("Test VoiceDesign + playback"))
             Run(() => runVoiceDesignDebug(debugSentence, debugInstruction, debugLanguage, shutdown.Token));
+        ImGui.EndDisabled();
 
         ImGui.Separator();
         ImGui.TextUnformatted("Base voice clone");
-        ImGui.TextWrapped("Uses verified official game resources. Curated sources build lazily; captured sources persist for later reuse.");
+        ImGui.TextWrapped("Uses installed official voice-profile packs for the selected language and model quality.");
+        var exportDebugBaseWav = configuration.ExportDebugBaseWav;
+        if (ImGui.Checkbox("Export post-processed Base debug WAV", ref exportDebugBaseWav))
+        {
+            configuration.ExportDebugBaseWav = exportDebugBaseWav;
+            save();
+        }
+        ImGui.TextWrapped("Writes the selected backend's corrected, gained, resampled PCM to the plugin debug-audio directory.");
         var voices = snapshot.BaseVoices;
         var selectedVoice = voices.FirstOrDefault(value => value.Key == debugBaseVoice) ?? voices.First();
         if (ImGui.BeginCombo("Official voice", $"{selectedVoice.Label} — {selectedVoice.SourceStatus}"))
@@ -427,7 +440,7 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
             }
             ImGui.EndCombo();
         }
-        ImGui.BeginDisabled(!selectedVoice.Available);
+        ImGui.BeginDisabled(!selectedVoice.Available || selectionFailed);
         if (ImGui.Button("Test Base clone + playback"))
             Run(() => runBaseDebug(debugBaseVoice, debugSentence, debugLanguage, shutdown.Token));
         ImGui.EndDisabled();

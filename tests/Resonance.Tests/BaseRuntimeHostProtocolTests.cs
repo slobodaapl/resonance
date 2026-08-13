@@ -824,6 +824,34 @@ public sealed class BaseRuntimeHostProtocolTests
     }
 
     [Fact]
+    public async Task CutsceneResidencyLeaseKeepsNonResidentBaseAcrossAdjacentLines()
+    {
+        var root = CreateRoot();
+        try
+        {
+            var host = new FakeHost();
+            await using var manager = CreateManager(root, new Configuration(), host);
+            await manager.EnsureReadyAsync(TestContext.Current.CancellationToken);
+            manager.AcquireBaseResidencyLease();
+
+            using (var first = new StreamingAudioBuffer())
+                await manager.SynthesizeAsync(
+                    new("First line.", "english", null, "A calm voice.", 1), first,
+                    TestContext.Current.CancellationToken);
+            using (var second = new StreamingAudioBuffer())
+                await manager.SynthesizeAsync(
+                    new("Second line.", "english", null, "A calm voice.", 2), second,
+                    TestContext.Current.CancellationToken);
+
+            Assert.Equal(1, host.StartCount);
+            Assert.Equal(0, host.DisposeCount);
+            await manager.ReleaseBaseResidencyLeaseAsync(TestContext.Current.CancellationToken);
+            Assert.Equal(1, host.DisposeCount);
+        }
+        finally { TestDirectory.Delete(root); }
+    }
+
+    [Fact]
     public async Task BusyBaseHostIsReportedWithoutVoiceDesignFallback()
     {
         var root = CreateRoot();

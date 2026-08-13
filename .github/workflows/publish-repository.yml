@@ -7,6 +7,9 @@ on:
         description: Release tag to publish; leave blank to use the latest release
         required: false
         type: string
+  workflow_run:
+    workflows: [Publish official profiles]
+    types: [completed]
 
 permissions:
   contents: read
@@ -19,7 +22,10 @@ concurrency:
 
 jobs:
   publish:
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -91,6 +97,20 @@ jobs:
             .[0].AssemblyVersion == $version and
             .[0].DownloadLinkInstall == $download
           ' --arg version "$VERSION" --arg download "$download_url" _site/repo.json >/dev/null
+
+      - name: Include official profile pack metadata when published
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release download official-profiles \
+              --repo "$GITHUB_REPOSITORY" \
+              --pattern official-profile-pack.json \
+              --dir _site; then
+            test -s _site/official-profile-pack.json
+          else
+            echo 'No official profile pack release is published yet.'
+          fi
 
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v4

@@ -6,11 +6,12 @@ namespace Resonance.Tests;
 public sealed class ConfigurationMigrationIntegrationTests
 {
     [Fact]
-    public void VoiceLearningDiagnosticsDefaultsOff()
+    public void RuntimeOptionsDefaultOff()
     {
-        Assert.False(new Configuration().VoiceLearningDiagnostics);
         Assert.False(new Configuration().AutoAdvanceDiagnostics);
         Assert.False(new Configuration().KeepBaseModelLoaded);
+        Assert.False(new Configuration().DisableVoicePackAutoUpdate);
+        Assert.False(new Configuration().ExportDebugBaseWav);
     }
 
     [Fact]

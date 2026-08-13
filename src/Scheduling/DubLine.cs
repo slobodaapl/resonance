@@ -46,10 +46,16 @@ public sealed class DubLine : IDisposable
     public DubLineState State { get; private set; }
     public string? VoiceProfileId { get; set; }
     public string? VoiceProfileHash { get; set; }
+    public string? PredictionKey { get; set; }
+    public string? OfficialVoiceGroupId { get; set; }
+    public string? NextPredictionKey { get; set; }
+    public IReadOnlyList<string> NextPredictionKeys { get; set; } = [];
     public long? SpeakerId { get; set; }
     public bool TransientSpeaker { get; set; }
     public bool DirectSynthesisCompleted { get; set; }
+    public bool ApplyBaseCloneCorrection { get; set; }
     public bool CanStartStreaming { get; set; }
+    public bool PlaybackAssetReady { get; set; }
     public string VoiceArchetype { get; set; } = "neutral_adult";
     public string VoiceSex { get; set; } = "masculine";
     public string? Language { get; set; }
@@ -92,8 +98,10 @@ public sealed class DubLine : IDisposable
             ReplaceAudio(new StreamingAudioBuffer());
             VoiceProfileId = null;
             VoiceProfileHash = null;
+            ApplyBaseCloneCorrection = false;
             DirectSynthesisCompleted = false;
             CanStartStreaming = false;
+            PlaybackAssetReady = false;
         }
     }
 

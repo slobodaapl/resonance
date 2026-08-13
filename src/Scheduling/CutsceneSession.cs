@@ -1,5 +1,14 @@
 namespace Resonance.Scheduling;
 
+public sealed record CutscenePrediction(
+    string Key,
+    string SpeakerKey,
+    string Speaker,
+    string Text,
+    string Language,
+    string? OfficialVoiceGroupId = null,
+    ResolvedLineSpeaker? Resolution = null);
+
 public sealed class CutsceneSession : IDisposable
 {
     private readonly Dictionary<long, DubLine> lines = [];
@@ -87,11 +96,96 @@ public sealed class CutsceneSession : IDisposable
         }
     }
 
+    public IReadOnlyList<DubLine> ReconcilePredictions(
+        IEnumerable<CutscenePrediction> predictions,
+        bool preserveExisting = true)
+    {
+        lock (gate)
+        {
+        if (disposed) return [];
+        speculationEpoch++;
+        var desired = predictions.ToArray();
+        var duplicate = desired.GroupBy(value => value.Key, StringComparer.Ordinal)
+            .FirstOrDefault(group => group.Count() > 1);
+        if (duplicate is not null)
+            throw new InvalidDataException($"Duplicate cutscene prediction key '{duplicate.Key}'");
+        var desiredByKey = desired.ToDictionary(value => value.Key, StringComparer.Ordinal);
+        var existing = lines.Values
+            .Where(line => line.ActualStatus == ActualStatus.Predicted && !line.IsTerminal)
+            .ToArray();
+        foreach (var line in existing)
+        {
+            var retain = preserveExisting
+                         && line.PredictionKey is { } key
+                         && desiredByKey.TryGetValue(key, out var prediction)
+                         && line.SpeakerKey == prediction.SpeakerKey
+                         && line.SpeakerName == prediction.Speaker
+                         && line.Text == prediction.Text
+                         && line.Language == prediction.Language
+                         && line.OfficialVoiceGroupId == prediction.OfficialVoiceGroupId
+                         && ResolutionMatches(line, prediction.Resolution);
+            if (retain) continue;
+            lines.Remove(line.Sequence);
+            line.Cancel(DubLineState.Invalidated);
+            line.Dispose();
+        }
+
+        var retainedKeys = lines.Values
+            .Where(line => line.ActualStatus == ActualStatus.Predicted && !line.IsTerminal
+                           && line.PredictionKey is not null)
+            .Select(line => line.PredictionKey!)
+            .ToHashSet(StringComparer.Ordinal);
+        var added = new List<DubLine>();
+        var deadline = DateTimeOffset.UtcNow;
+        foreach (var prediction in desired)
+        {
+            deadline += TimeSpan.FromSeconds(4);
+            if (retainedKeys.Contains(prediction.Key)) continue;
+            var sequence = ++nextSequence;
+            var line = new DubLine
+            {
+                SessionEpoch = Epoch,
+                Sequence = sequence,
+                PredictionKey = prediction.Key,
+                SpeakerKey = prediction.SpeakerKey,
+                SpeakerName = prediction.Speaker,
+                Text = prediction.Text,
+                Language = prediction.Language,
+                OfficialVoiceGroupId = prediction.OfficialVoiceGroupId,
+                ActualStatus = ActualStatus.Predicted,
+                NativeVoiceStatus = NativeVoiceStatus.Unknown,
+                PlaybackDeadline = deadline,
+            };
+            lines.Add(sequence, line);
+            if (prediction.Resolution is { } resolution)
+            {
+                line.ApplyResolvedSpeaker(resolution);
+                line.TransientSpeaker = resolution.SpeakerId == 0
+                                        && resolution.SpeakerKey.StartsWith("scene:", StringComparison.Ordinal);
+                if (line.TransientSpeaker) line.SpeakerId = null;
+            }
+            added.Add(line);
+        }
+        return added;
+        }
+    }
+
+    private static bool ResolutionMatches(DubLine line, ResolvedLineSpeaker? resolution) =>
+        resolution is null
+        || line.SpeakerKey == resolution.SpeakerKey
+        && line.SpeakerName == resolution.SpeakerName
+        && line.VoiceSex == resolution.VoiceSex
+        && line.VoiceArchetype == resolution.VoiceArchetype
+        && line.CastingSlotId == resolution.CastingSlotId
+        && line.Casting == resolution.Casting
+        && line.CastingEvidence == resolution.Evidence;
+
     public DubLine? PromotePrediction(
         string speakerName,
         string normalizedText,
         ResolvedLineSpeaker? resolvedSpeaker = null,
-        string? language = null)
+        string? language = null,
+        string? predictionKey = null)
     {
         lock (gate)
         {
@@ -99,14 +193,22 @@ public sealed class CutsceneSession : IDisposable
         var line = lines.Values
             .Where(line => line.ActualStatus == ActualStatus.Predicted && !line.IsTerminal)
             .OrderBy(line => line.Sequence)
-            .FirstOrDefault(line => line.SpeakerName.Equals(speakerName, StringComparison.OrdinalIgnoreCase)
-                && line.Text == normalizedText);
+            .FirstOrDefault(line => predictionKey is not null && line.PredictionKey == predictionKey)
+            ?? lines.Values
+                .Where(line => line.ActualStatus == ActualStatus.Predicted && !line.IsTerminal)
+                .OrderBy(line => line.Sequence)
+                .FirstOrDefault(line => line.SpeakerName.Equals(speakerName, StringComparison.OrdinalIgnoreCase)
+                    && line.Text == normalizedText);
         if (line is null) return null;
         var resolvedLanguage = resolvedSpeaker?.Language ?? language;
         var preservePreparedAudio = resolvedSpeaker is not null
-            && line.TransientSpeaker
-            && resolvedSpeaker.SpeakerId == 0
-            && String.Equals(line.Language, resolvedLanguage, StringComparison.Ordinal);
+            && String.Equals(line.Language, resolvedLanguage, StringComparison.Ordinal)
+            && String.Equals(line.SpeakerKey, resolvedSpeaker.SpeakerKey, StringComparison.Ordinal)
+            && (line.VoiceProfileId is not null
+                || line.OfficialVoiceGroupId is not null
+                || line.VoiceSex == resolvedSpeaker.VoiceSex
+                && line.CastingSlotId == resolvedSpeaker.CastingSlotId
+                && line.Casting == resolvedSpeaker.Casting);
         if (!preservePreparedAudio && line.State != DubLineState.Predicted)
         {
             lines.Remove(line.Sequence);

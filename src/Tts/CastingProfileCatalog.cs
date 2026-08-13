@@ -37,7 +37,21 @@ public sealed record SpeakerCastingEvidence(
     string? MuscleMassBucket = null,
     string? Class = null,
     string? Personality = null,
-    IReadOnlyList<string>? ModifierIds = null);
+    IReadOnlyList<string>? ModifierIds = null,
+    int? RaceId = null,
+    int? TribeId = null,
+    int? BodyTypeId = null,
+    int? HeightValue = null,
+    long? ModelCharaId = null,
+    int? ModelFamilyId = null,
+    int? ModelType = null,
+    int? ModelBase = null,
+    int? ModelVariant = null,
+    long? ModelHeadId = null,
+    long? ModelBodyId = null,
+    long? ModelHandsId = null,
+    long? ModelLegsId = null,
+    long? ModelFeetId = null);
 
 public sealed record TerritoryCastingPrior(
     string DomainId,
@@ -72,6 +86,7 @@ public sealed record CastingSlotTemplate(
 public sealed record CastingDomain(
     string Id,
     string Confidence,
+    string FallbackDimensions,
     string EnglishPrompt,
     string NeutralPrompt,
     string? Inherits,
@@ -106,6 +121,34 @@ public sealed record CastingRule(
     string? SpeakerCategory,
     int Priority,
     string Confidence);
+
+public sealed record CastingMetadataMatch(
+    IReadOnlyList<int> RaceIds,
+    IReadOnlyList<int> TribeIds,
+    IReadOnlyList<int> BodyTypeIds,
+    IReadOnlyList<int> HeightValues,
+    IReadOnlyList<long> ModelCharaIds,
+    IReadOnlyList<int> ModelFamilyIds,
+    IReadOnlyList<int> ModelTypes,
+    IReadOnlyList<int> ModelBases,
+    IReadOnlyList<int> ModelVariants,
+    IReadOnlyList<long> ModelHeadIds,
+    IReadOnlyList<long> ModelBodyIds,
+    IReadOnlyList<long> ModelHandsIds,
+    IReadOnlyList<long> ModelLegsIds,
+    IReadOnlyList<long> ModelFeetIds);
+
+public sealed record CastingMetadataRule(
+    string Id,
+    string DomainId,
+    IReadOnlyList<string> ModifierIds,
+    IReadOnlyList<string> TerritoryPlaceNames,
+    string SpeakerCategory,
+    int Priority,
+    string Confidence,
+    CastingEvidenceSource Source,
+    string? VoiceSex,
+    CastingMetadataMatch Match);
 
 public sealed record CastingResolution(
     string DomainId,
@@ -147,7 +190,7 @@ public sealed class CastingProfileCatalogException : FormatException
 /// </summary>
 public sealed class CastingProfileCatalog
 {
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 4;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -180,6 +223,7 @@ public sealed class CastingProfileCatalog
     private readonly ReadOnlyCollection<CastingModifier> modifiers;
     private readonly ReadOnlyCollection<CastingIdentityGroup> identityGroups;
     private readonly ReadOnlyCollection<CastingRule> rules;
+    private readonly ReadOnlyCollection<CastingMetadataRule> metadataRules;
     private readonly ReadOnlyCollection<TerritoryCastingProfile> territories;
     private readonly Dictionary<string, CastingDomain> domainsById;
     private readonly Dictionary<string, CastingModifier> modifiersById;
@@ -195,6 +239,7 @@ public sealed class CastingProfileCatalog
         modifiers = new(document.Modifiers!.Select(ToModifier).ToList());
         identityGroups = new(document.IdentityGroups!.Select(ToIdentityGroup).ToList());
         rules = new(document.Rules!.Select(ToRule).ToList());
+        metadataRules = new(document.MetadataRules!.Select(ToMetadataRule).ToList());
         territories = new(document.Territories!.Select(ToTerritory).ToList());
         domainsById = domains.ToDictionary(domain => domain.Id, StringComparer.Ordinal);
         modifiersById = modifiers.ToDictionary(modifier => modifier.Id, StringComparer.Ordinal);
@@ -215,7 +260,15 @@ public sealed class CastingProfileCatalog
 
     public IReadOnlyList<CastingRule> Rules => rules;
 
+    public IReadOnlyList<CastingMetadataRule> MetadataRules => metadataRules;
+
     public IReadOnlyList<TerritoryCastingProfile> Territories => territories;
+
+    public static string InferVoiceAge(int bodyType, int height) =>
+        height == byte.MaxValue && bodyType is 1 or 4
+        || bodyType == 4 && height is >= 1 and <= 80
+            ? "young"
+            : "adult";
 
     public static CastingProfileCatalog Load(string path)
     {
@@ -472,6 +525,33 @@ public sealed class CastingProfileCatalog
             .First();
     }
 
+    public string FallbackVariantId(CastingResolution resolution, SpeakerCastingEvidence evidence)
+    {
+        var dimensions = GetDomain(resolution.DomainId).FallbackDimensions;
+        var sex = NormalizeSex(evidence.Sex);
+        var age = String.Equals(evidence.Age, "young", StringComparison.Ordinal) ? "young" : "adult";
+        return dimensions switch
+        {
+            "none" => "default",
+            "feminine_only" => "feminine",
+            "sex" => sex,
+            "sex_age" => $"{sex}_{age}",
+            _ => throw new InvalidDataException($"Unknown fallback dimensions '{dimensions}'"),
+        };
+    }
+
+    public string ResolveVoiceSex(SpeakerCastingEvidence evidence, string fallbackSex)
+    {
+        ArgumentNullException.ThrowIfNull(evidence);
+        var rule = metadataRules
+            .Where(candidate => candidate.VoiceSex is not null)
+            .Where(candidate => Matches(candidate, evidence, evidence.TerritoryPlaceName))
+            .OrderByDescending(candidate => candidate.Priority)
+            .ThenBy(candidate => candidate.Id, StringComparer.Ordinal)
+            .FirstOrDefault();
+        return rule?.VoiceSex ?? NormalizeSex(fallbackSex);
+    }
+
     public CastingSlotTemplate GetSlot(string domainId, string sex, string slotId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(domainId);
@@ -586,12 +666,58 @@ public sealed class CastingProfileCatalog
 
     private IEnumerable<CastingRule> MatchingDomainRules(
         SpeakerCastingEvidence evidence,
-        string? territoryPlaceName) => rules
-        .Where(candidate => DomainRuleKinds.Contains(candidate.Kind))
-        .Where(candidate => Matches(candidate, evidence, territoryPlaceName))
-        .OrderByDescending(candidate => candidate.Priority)
-        .ThenBy(candidate => RuleKindRank(candidate.Kind))
-        .ThenBy(candidate => candidate.Id, StringComparer.Ordinal);
+        string? territoryPlaceName)
+    {
+        var semantic = rules
+            .Where(candidate => DomainRuleKinds.Contains(candidate.Kind))
+            .Where(candidate => Matches(candidate, evidence, territoryPlaceName));
+        var derived = metadataRules
+            .Where(candidate => Matches(candidate, evidence, territoryPlaceName))
+            .Select(candidate => new CastingRule(
+                candidate.Id, MetadataRuleKind(candidate.Source), candidate.Id, candidate.DomainId,
+                candidate.ModifierIds, candidate.TerritoryPlaceNames, candidate.SpeakerCategory,
+                candidate.Priority, candidate.Confidence));
+        return semantic.Concat(derived)
+            .OrderByDescending(candidate => candidate.Priority)
+            .ThenBy(candidate => RuleKindRank(candidate.Kind))
+            .ThenBy(candidate => candidate.Id, StringComparer.Ordinal);
+    }
+
+    private static string MetadataRuleKind(CastingEvidenceSource source) => source switch
+    {
+        CastingEvidenceSource.Faction => "faction",
+        CastingEvidenceSource.Culture => "culture",
+        _ => "model",
+    };
+
+    private static bool Matches(
+        CastingMetadataRule rule,
+        SpeakerCastingEvidence evidence,
+        string? territoryPlaceName)
+    {
+        if (rule.TerritoryPlaceNames.Count > 0 &&
+            (territoryPlaceName is null || !rule.TerritoryPlaceNames.Contains(territoryPlaceName, StringComparer.Ordinal)))
+            return false;
+        if (!CategoryAllowed(rule.SpeakerCategory, evidence.Category)) return false;
+        var match = rule.Match;
+        return Matches(match.RaceIds, evidence.RaceId)
+            && Matches(match.TribeIds, evidence.TribeId)
+            && Matches(match.BodyTypeIds, evidence.BodyTypeId)
+            && Matches(match.HeightValues, evidence.HeightValue)
+            && Matches(match.ModelCharaIds, evidence.ModelCharaId)
+            && Matches(match.ModelFamilyIds, evidence.ModelFamilyId)
+            && Matches(match.ModelTypes, evidence.ModelType)
+            && Matches(match.ModelBases, evidence.ModelBase)
+            && Matches(match.ModelVariants, evidence.ModelVariant)
+            && Matches(match.ModelHeadIds, evidence.ModelHeadId)
+            && Matches(match.ModelBodyIds, evidence.ModelBodyId)
+            && Matches(match.ModelHandsIds, evidence.ModelHandsId)
+            && Matches(match.ModelLegsIds, evidence.ModelLegsId)
+            && Matches(match.ModelFeetIds, evidence.ModelFeetId);
+    }
+
+    private static bool Matches<T>(IReadOnlyList<T> expected, T? actual) where T : struct =>
+        expected.Count == 0 || actual is { } value && expected.Contains(value);
 
     private static bool Matches(CastingRule rule, SpeakerCastingEvidence evidence, string? territoryPlaceName)
     {
@@ -790,6 +916,18 @@ public sealed class CastingProfileCatalog
         dto.Id!, dto.Kind!, dto.Value!, dto.DomainId!, dto.ModifierIds ?? [],
         dto.TerritoryPlaceNames ?? [], dto.SpeakerCategory, dto.Priority, dto.Confidence!);
 
+    private static CastingMetadataRule ToMetadataRule(MetadataRuleDto dto) => new(
+        dto.Id!, dto.DomainId!, dto.ModifierIds ?? [], dto.TerritoryPlaceNames ?? [],
+        dto.SpeakerCategory ?? "any", dto.Priority, dto.Confidence!,
+        Enum.Parse<CastingEvidenceSource>(dto.Source!, ignoreCase: true),
+        dto.VoiceSex,
+        new CastingMetadataMatch(
+            dto.Match!.RaceIds ?? [], dto.Match.TribeIds ?? [], dto.Match.BodyTypeIds ?? [],
+            dto.Match.HeightValues ?? [], dto.Match.ModelCharaIds ?? [], dto.Match.ModelFamilyIds ?? [],
+            dto.Match.ModelTypes ?? [], dto.Match.ModelBases ?? [], dto.Match.ModelVariants ?? [],
+            dto.Match.ModelHeadIds ?? [], dto.Match.ModelBodyIds ?? [], dto.Match.ModelHandsIds ?? [],
+            dto.Match.ModelLegsIds ?? [], dto.Match.ModelFeetIds ?? []));
+
     private static TerritoryCastingProfile ToTerritory(TerritoryDto dto) => new(
         dto.PlaceName!, dto.Confidence!, (dto.Priors ?? []).Select(prior => new TerritoryCastingPrior(
             prior.DomainId!, prior.Weight, prior.AllowedSpeakerCategories ?? [], prior.ModifierIds ?? [])).ToArray());
@@ -811,6 +949,8 @@ public sealed class CastingProfileCatalog
             issues.Add(new("missing-identity-groups", "identityGroups", "Identity group collection is required"));
         if (document.Rules is null)
             issues.Add(new("missing-rules", "rules", "Rule collection is required"));
+        if (document.MetadataRules is null)
+            issues.Add(new("missing-metadata-rules", "metadataRules", "Metadata rule collection is required"));
         if (document.Territories is null)
             issues.Add(new("missing-territories", "territories", "Territory collection is required"));
         if (issues.Count > 0) return issues;
@@ -860,6 +1000,9 @@ public sealed class CastingProfileCatalog
                 issues.Add(new("duplicate-id", $"{path}.id", $"Duplicate domain '{domain.Id}'"));
             ValidateConfidence(domain.Confidence, $"{path}.confidence", issues);
             ValidatePrompt(domain.Prompts, $"{path}.prompts", issues);
+            if (domain.FallbackDimensions is not ("sex_age" or "sex" or "none" or "feminine_only"))
+                issues.Add(new("invalid-fallback-dimensions", $"{path}.fallbackDimensions",
+                    "Fallback dimensions must be sex_age, sex, none, or feminine_only"));
             if (domain.SlotTemplates is null)
             {
                 issues.Add(new("missing-slot-templates", $"{path}.slotTemplates", "Domain slot templates are required"));
@@ -985,6 +1128,33 @@ public sealed class CastingProfileCatalog
             if (String.Equals(rule.Kind, "species", StringComparison.Ordinal)
                 && !String.Equals(rule.SpeakerCategory, "non_humanoid", StringComparison.Ordinal))
                 issues.Add(new("malformed-rule", $"{path}.speakerCategory", "Species rules require non_humanoid category restriction"));
+            if (rule.TerritoryPlaceNames is not null)
+                foreach (var placeName in rule.TerritoryPlaceNames)
+                    if (placeName is null || !territoryNames.Contains(placeName))
+                        issues.Add(new("missing-reference", $"{path}.territoryPlaceNames", $"Unknown exact place name '{placeName}'"));
+        }
+
+        foreach (var (rule, index) in document.MetadataRules!.Select((value, index) => (value, index)))
+        {
+            var path = $"metadataRules[{index}]";
+            if (rule is null)
+            {
+                issues.Add(new("null-entry", path, "Metadata rule entry cannot be null"));
+                continue;
+            }
+            ValidateId(rule.Id, path, ids, issues);
+            if (rule.DomainId is null || !domainIds.Contains(rule.DomainId))
+                issues.Add(new("missing-reference", $"{path}.domainId", $"Unknown domain '{rule.DomainId}'"));
+            ValidateModifierReferences(rule.ModifierIds, path, modifierIds, issues);
+            ValidateConfidence(rule.Confidence, $"{path}.confidence", issues);
+            if (rule.Source is not ("culture" or "species" or "faction"))
+                issues.Add(new("malformed-metadata-rule", $"{path}.source", "Source must be culture, species or faction"));
+            if (rule.VoiceSex is not null && rule.VoiceSex is not ("masculine" or "feminine"))
+                issues.Add(new("malformed-metadata-rule", $"{path}.voiceSex", "Voice sex must be masculine or feminine"));
+            if (rule.SpeakerCategory is not null && !SpeakerCategories.Contains(rule.SpeakerCategory))
+                issues.Add(new("malformed-metadata-rule", $"{path}.speakerCategory", "Unsupported speaker category"));
+            if (rule.Match is null || !rule.Match.HasConstraint)
+                issues.Add(new("malformed-metadata-rule", $"{path}.match", "At least one raw metadata constraint is required"));
             if (rule.TerritoryPlaceNames is not null)
                 foreach (var placeName in rule.TerritoryPlaceNames)
                     if (placeName is null || !territoryNames.Contains(placeName))
@@ -1139,7 +1309,7 @@ public sealed class CastingProfileCatalog
     }
 
     private static CastingDomain ToDomain(DomainDto dto, IReadOnlyDictionary<string, CastingSlotTemplate> slots) => new(
-        dto.Id!, dto.Confidence!, dto.Prompts!.English!, dto.Prompts.Neutral!, dto.Inherits,
+        dto.Id!, dto.Confidence!, dto.FallbackDimensions!, dto.Prompts!.English!, dto.Prompts.Neutral!, dto.Inherits,
         dto.SlotTemplates!.Masculine!.Select(id => slots[id]).ToArray(),
         dto.SlotTemplates.Feminine!.Select(id => slots[id]).ToArray(),
         dto.Prompts.Japanese, dto.Prompts.German, dto.Prompts.French);
@@ -1153,6 +1323,7 @@ public sealed class CastingProfileCatalog
         public List<ModifierDto>? Modifiers { get; set; }
         public List<IdentityGroupDto>? IdentityGroups { get; set; }
         public List<RuleDto>? Rules { get; set; }
+        public List<MetadataRuleDto>? MetadataRules { get; set; }
         public List<TerritoryDto>? Territories { get; set; }
     }
 
@@ -1184,6 +1355,7 @@ public sealed class CastingProfileCatalog
         public string? Id { get; set; }
         public string? Confidence { get; set; }
         public string? Inherits { get; set; }
+        public string? FallbackDimensions { get; set; } = "sex_age";
         public PromptDto? Prompts { get; set; }
         public DomainSlotReferencesDto? SlotTemplates { get; set; }
     }
@@ -1220,6 +1392,47 @@ public sealed class CastingProfileCatalog
         public string? SpeakerCategory { get; set; }
         public int Priority { get; set; }
         public string? Confidence { get; set; }
+    }
+
+    private sealed class MetadataRuleDto
+    {
+        public string? Id { get; set; }
+        public string? DomainId { get; set; }
+        public List<string>? ModifierIds { get; set; }
+        public List<string>? TerritoryPlaceNames { get; set; }
+        public string? SpeakerCategory { get; set; }
+        public int Priority { get; set; }
+        public string? Confidence { get; set; }
+        public string? Source { get; set; }
+        public string? VoiceSex { get; set; }
+        public MetadataMatchDto? Match { get; set; }
+    }
+
+    private sealed class MetadataMatchDto
+    {
+        public List<int>? RaceIds { get; set; }
+        public List<int>? TribeIds { get; set; }
+        public List<int>? BodyTypeIds { get; set; }
+        public List<int>? HeightValues { get; set; }
+        public List<long>? ModelCharaIds { get; set; }
+        public List<int>? ModelFamilyIds { get; set; }
+        public List<int>? ModelTypes { get; set; }
+        public List<int>? ModelBases { get; set; }
+        public List<int>? ModelVariants { get; set; }
+        public List<long>? ModelHeadIds { get; set; }
+        public List<long>? ModelBodyIds { get; set; }
+        public List<long>? ModelHandsIds { get; set; }
+        public List<long>? ModelLegsIds { get; set; }
+        public List<long>? ModelFeetIds { get; set; }
+
+        public bool HasConstraint =>
+            RaceIds is { Count: > 0 } || TribeIds is { Count: > 0 } || BodyTypeIds is { Count: > 0 }
+            || HeightValues is { Count: > 0 } || ModelCharaIds is { Count: > 0 }
+            || ModelFamilyIds is { Count: > 0 } || ModelTypes is { Count: > 0 }
+            || ModelBases is { Count: > 0 } || ModelVariants is { Count: > 0 }
+            || ModelHeadIds is { Count: > 0 } || ModelBodyIds is { Count: > 0 }
+            || ModelHandsIds is { Count: > 0 } || ModelLegsIds is { Count: > 0 }
+            || ModelFeetIds is { Count: > 0 };
     }
 
     private sealed class TerritoryDto

@@ -152,6 +152,7 @@ internal static class Program
         private nint ggmlBase;
         private nint ggml;
         private nint qwen;
+        private readonly List<(string Name, nint Handle)> backendDependencies = [];
         private nint context;
         private CancellationTokenSource? synthesisCancellation;
         private string? synthesisRequestId;
@@ -187,6 +188,7 @@ internal static class Program
             if (Interlocked.Exchange(ref resolverInstalled, 1) == 0)
                 NativeLibrary.SetDllImportResolver(typeof(QwenNative).Assembly, (_, _, _) => qwen);
             ValidateAbi();
+            EnsureBackendDependencies(BackendName);
             if (QwenNative.BackendLoadFromPath(launch.RuntimeDirectory) != 0)
                 throw new InvalidDataException("Base runtime host backend loading failed");
             InitializeContext(BackendName);
@@ -417,6 +419,9 @@ internal static class Program
                 if (Volatile.Read(ref nativeOwnershipPoisoned) != 0)
                     throw new InvalidOperationException(
                         "Base runtime host native ownership is poisoned; restart is required");
+                EnsureBackendDependencies(backend);
+                if (QwenNative.BackendLoadFromPath(launch.RuntimeDirectory) != 0)
+                    throw new InvalidDataException("Base runtime host backend loading failed");
                 var previousBackend = BackendName;
                 try
                 {
@@ -621,7 +626,35 @@ internal static class Program
             }
             if (!TryFree(ref ggmlBase, "ggml-base"))
                 Volatile.Write(ref nativeOwnershipPoisoned, 1);
+            if (ggmlBase == 0)
+            {
+                for (var index = backendDependencies.Count - 1; index >= 0; index--)
+                {
+                    var dependency = backendDependencies[index];
+                    try
+                    {
+                        NativeLibrary.Free(dependency.Handle);
+                        backendDependencies.RemoveAt(index);
+                    }
+                    catch (Exception error)
+                    {
+                        Console.Error.WriteLine($"host backend dependency cleanup failed ({dependency.Name}): {error.Message}");
+                        Volatile.Write(ref nativeOwnershipPoisoned, 1);
+                    }
+                }
+            }
             processCancellation.Dispose();
+        }
+
+        private void EnsureBackendDependencies(string backend)
+        {
+            if (!OperatingSystem.IsWindows()
+                || !backend.StartsWith("CUDA", StringComparison.OrdinalIgnoreCase)
+                || backendDependencies.Count != 0) return;
+            backendDependencies.Add(("nvcuda.dll", WindowsNativeLibrary.LoadCudaDriver()));
+            foreach (var name in new[] { "cudart64_12.dll", "cublasLt64_12.dll", "cublas64_12.dll" })
+                backendDependencies.Add((name,
+                    NativeLibrary.Load(TrustedRuntimeLibrary(launch.RuntimeDirectory, name))));
         }
 
         private static bool TryFree(ref nint handle, string name)

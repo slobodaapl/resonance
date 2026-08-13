@@ -50,6 +50,9 @@ public sealed class AutoAdvanceDiagnosticGate
     public const byte TimerTickEventType = 64;
     public const int MaxReceiveSignatures = 32;
 
+    public static bool ShouldSuppressAutomaticAdvance(byte eventType, bool suppressionEnabled) =>
+        suppressionEnabled && eventType == TimerTickEventType;
+
     private readonly HashSet<ReceiveSignature> receiveSignatures = [];
     private long? talkSerial;
     private bool timerTickObserved;

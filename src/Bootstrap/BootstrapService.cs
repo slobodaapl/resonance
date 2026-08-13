@@ -1,4 +1,6 @@
 using System.Runtime.ExceptionServices;
+using System.Security.Cryptography;
+using System.Text;
 using Resonance.Plugin;
 using Resonance.Tts;
 
@@ -32,6 +34,8 @@ public sealed class BootstrapService : IAsyncDisposable
     public string? VoiceDesignPath { get; private set; }
     public Exception? Failure { get; private set; }
     public bool? CudaDriverAvailable { get; private set; }
+    public bool IsWineRuntime { get; private set; }
+    public IReadOnlyList<string> MissingProtonCudaVariables { get; private set; } = [];
     public AssetProgress? CurrentProgress { get; private set; }
     public event Action<BootstrapState>? StateChanged;
     public event Action<AssetProgress>? Progress;
@@ -39,6 +43,7 @@ public sealed class BootstrapService : IAsyncDisposable
     public event Action<string, string>? VoiceDesignReady;
     public event Action<Exception>? OptionalRuntimeFailed;
     public event Action<Exception>? OptionalPreparationFailed;
+    public event Action? CudaDriverProbeCompleted;
 
     internal BootstrapService(string pluginDirectory, string dataDirectory, Configuration configuration, Action saveConfiguration,
         IProcessLifetimeLease lifetimeLease)
@@ -48,8 +53,7 @@ public sealed class BootstrapService : IAsyncDisposable
         runtimeManifestPath = Path.Combine(pluginDirectory, "assets", "runtimes.json");
         assets = new AssetManager(Path.Combine(dataDirectory, "models"));
         runtimeDirectory = Path.Combine(dataDirectory, "runtimes");
-        referenceExtractorPath = Path.Combine(pluginDirectory, "reference-extractor",
-            OperatingSystem.IsWindows() ? "ReferenceExtractor.exe" : "ReferenceExtractor");
+        referenceExtractorPath = StageReferenceExtractor(pluginDirectory, dataDirectory);
         referenceExtractionDirectory = Path.Combine(dataDirectory, "reference-extraction");
         runtimePacks = new RuntimePackManager(runtimeDirectory, Path.Combine(dataDirectory, "runtime-downloads"));
         void ReportProgress(AssetProgress value)
@@ -61,6 +65,60 @@ public sealed class BootstrapService : IAsyncDisposable
         runtimePacks.Progress += ReportProgress;
         this.configuration = configuration;
         this.saveConfiguration = saveConfiguration;
+    }
+
+    private static string StageReferenceExtractor(string pluginDirectory, string dataDirectory)
+    {
+        var sourceDirectory = Path.Combine(pluginDirectory, "reference-extractor");
+        var executableName = OperatingSystem.IsWindows() ? "ReferenceExtractor.exe" : "ReferenceExtractor";
+        var requiredNames = new[]
+        {
+            executableName,
+            "ReferenceExtractor.dll",
+            "ReferenceExtractor.deps.json",
+            "ReferenceExtractor.runtimeconfig.json",
+        };
+        var sourceFiles = requiredNames.Select(name => Path.Combine(sourceDirectory, name)).ToArray();
+        var missing = sourceFiles.FirstOrDefault(path => !File.Exists(path));
+        if (missing is not null)
+            throw new FileNotFoundException("Reference extractor package is incomplete", missing);
+
+        var identity = HelperPackageIdentity(sourceFiles);
+        var destinationDirectory = Path.Combine(dataDirectory, "helper-packages", identity);
+        Directory.CreateDirectory(destinationDirectory);
+        var destinationFiles = requiredNames.Select(name => Path.Combine(destinationDirectory, name)).ToArray();
+        if (destinationFiles.All(File.Exists))
+        {
+            if (HelperPackageIdentity(destinationFiles) != identity)
+                throw new InvalidDataException("Staged reference extractor package was modified");
+            return Path.Combine(destinationDirectory, executableName);
+        }
+        for (var index = 0; index < sourceFiles.Length; index++)
+        {
+            var source = sourceFiles[index];
+            var destination = destinationFiles[index];
+            var temporary = destination + ".part";
+            File.Copy(source, temporary, true);
+            File.Move(temporary, destination, true);
+        }
+        if (HelperPackageIdentity(destinationFiles) != identity)
+            throw new InvalidDataException("Staged reference extractor package verification failed");
+        return Path.Combine(destinationDirectory, executableName);
+    }
+
+    private static string HelperPackageIdentity(IEnumerable<string> paths)
+    {
+        using var packageHash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        foreach (var path in paths)
+        {
+            packageHash.AppendData(Encoding.UTF8.GetBytes(Path.GetFileName(path)));
+            using var input = File.OpenRead(path);
+            var buffer = new byte[128 * 1024];
+            int count;
+            while ((count = input.Read(buffer, 0, buffer.Length)) != 0)
+                packageHash.AppendData(buffer, 0, count);
+        }
+        return Convert.ToHexStringLower(packageHash.GetHashAndReset());
     }
 
     public void Start()
@@ -127,9 +185,6 @@ public sealed class BootstrapService : IAsyncDisposable
                 SetState(BootstrapState.DownloadingVoiceDesign);
                 VoiceDesignPath = await assets.EnsureAsync(design, token).ConfigureAwait(false);
                 if (optionalRuntimeTask is not null) await optionalRuntimeTask.ConfigureAwait(false);
-                SetState(BootstrapState.BenchmarkingBackends);
-                await manager.BenchmarkAndApplyAsync(VoiceDesignPath, token).ConfigureAwait(false);
-                await manager.EnsureBaseHotLoadedWhenSafeAsync(token).ConfigureAwait(false);
                 VoiceDesignReady?.Invoke(VoiceDesignPath, codecPath);
                 SetState(BootstrapState.Ready);
             }
@@ -163,7 +218,11 @@ public sealed class BootstrapService : IAsyncDisposable
     {
         try
         {
+            IsWineRuntime = RuntimeEnvironmentIdentity.IsWine();
+            MissingProtonCudaVariables = RuntimeEnvironmentIdentity.MissingProtonCudaVariables(
+                IsWineRuntime, Environment.GetEnvironmentVariable);
             CudaDriverAvailable = CudaDriverProbe.IsAvailable();
+            CudaDriverProbeCompleted?.Invoke();
             await runtimePacks.EnsureMatchingAsync(runtimeManifestPath, manager.DetectedBackends, token,
                 CudaDriverAvailable.Value).ConfigureAwait(false);
             await manager.RefreshBackendsAsync(token).ConfigureAwait(false);

@@ -6,6 +6,22 @@ namespace Resonance.Tests;
 public sealed class ScdAudioDecoderTests
 {
     [Fact]
+    public void SoleAudioEntryFallbackRequiresExactlyOneEntry()
+    {
+        Assert.Equal(0u, ScdAudioDecoder.ResolveSoleAudioEntry(HeaderWithAudioCount(1)));
+        Assert.Null(ScdAudioDecoder.ResolveSoleAudioEntry(HeaderWithAudioCount(2)));
+    }
+
+    private static byte[] HeaderWithAudioCount(short count)
+    {
+        var data = new byte[0x50];
+        "SEDBSSCF"u8.CopyTo(data);
+        BitConverter.GetBytes((short)1).CopyTo(data, 0x30);
+        BitConverter.GetBytes((short)1).CopyTo(data, 0x32);
+        BitConverter.GetBytes(count).CopyTo(data, 0x34);
+        return data;
+    }
+    [Fact]
     public void DecodesSelectedMsAdpcmEntryToMono24Khz()
     {
         var scd = CreateAdpcmScd();

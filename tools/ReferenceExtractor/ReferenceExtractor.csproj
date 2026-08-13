@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <Compile Include="../../src/Tts/QwenNative.cs" Link="QwenNative.cs" />
+    <Compile Include="../../src/Tts/WindowsNativeLibrary.cs" Link="WindowsNativeLibrary.cs" />
     <Compile Include="../../src/Bootstrap/ReferenceExtractionProtocol.cs" Link="ReferenceExtractionProtocol.cs" />
     <Compile Include="../../src/Bootstrap/BaseHostTransport.cs" Link="BaseHostTransport.cs" />
   </ItemGroup>

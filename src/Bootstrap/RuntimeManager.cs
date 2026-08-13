@@ -83,6 +83,7 @@ public sealed class RuntimeManager : ITtsRuntime
     private int referenceProcessAbandoned;
     private int nativeFailureReported;
     private int baseHotLoadRescheduleSuppressed;
+    private int baseResidencyLeases;
     private int switching;
     private int runtimeDisposalFailed;
     private int disposed;
@@ -150,10 +151,11 @@ public sealed class RuntimeManager : ITtsRuntime
         }
     }
 
-    internal void SetTestBackendState(BackendSelection selection)
+    internal void SetTestBackendState(
+        BackendSelection selection, IReadOnlyList<BackendInfo>? detectedBackends = null)
     {
         ArgumentNullException.ThrowIfNull(selection);
-        DetectedBackends = [selection.Effective];
+        DetectedBackends = detectedBackends ?? [selection.Effective];
         Selection = selection;
     }
 
@@ -189,6 +191,25 @@ public sealed class RuntimeManager : ITtsRuntime
                 throw new ObjectDisposedException(nameof(RuntimeManager));
             Volatile.Write(ref baseHotLoadSafetyPredicate, predicate);
         }
+    }
+
+    internal void AcquireBaseResidencyLease()
+    {
+        if (Volatile.Read(ref disposed) != 0)
+            throw new ObjectDisposedException(nameof(RuntimeManager));
+        Interlocked.Increment(ref baseResidencyLeases);
+    }
+
+    internal async Task ReleaseBaseResidencyLeaseAsync(CancellationToken token)
+    {
+        var remaining = Interlocked.Decrement(ref baseResidencyLeases);
+        if (remaining < 0)
+        {
+            Interlocked.Exchange(ref baseResidencyLeases, 0);
+            throw new InvalidOperationException("Base residency lease was released more than once");
+        }
+        if (remaining != 0 || configuration.KeepBaseModelLoaded) return;
+        await DisableBaseHotLoadAsync(token).ConfigureAwait(false);
     }
 
     internal Task SetBaseHotLoadEnabledAsync(bool enabled, CancellationToken token)
@@ -598,7 +619,9 @@ public sealed class RuntimeManager : ITtsRuntime
             {
                 ThrowIfNativeOwnershipPoisoned();
                 NativeOperationStarted("backend-enumeration");
-                DetectedBackends = await Task.Run(() => QwenCppRuntime.EnumerateBackends(runtimePackDirectory), token).ConfigureAwait(false);
+                DetectedBackends = await Task.Run(() => QwenCppRuntime.EnumerateBackends(
+                    runtimePackDirectory, ownsProcessLease: false,
+                    pluginLifetimeLease: PluginLifetimeLease), token).ConfigureAwait(false);
                 BenchmarkIdentity = BackendBenchmark.Identity(runtimeVersion, ModelHash, designModelHash, configuration.Compute, DetectedBackends);
                 var selection = selector.Select(configuration, DetectedBackends, BenchmarkIdentity);
                 try
@@ -672,6 +695,46 @@ public sealed class RuntimeManager : ITtsRuntime
         finally { baseOwnershipGate.Release(); }
     }
 
+    public async Task<BackendSelection> RejectBackendAsync(
+        string backendName, Exception cause, CancellationToken token)
+    {
+        ThrowIfNativeOwnershipPoisoned();
+        await gate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            ThrowIfNativeOwnershipPoisoned();
+            var current = Selection
+                ?? throw new InvalidOperationException("TTS backend selection is not ready");
+            if (!String.Equals(current.Effective.Name, backendName, StringComparison.Ordinal))
+                return current;
+
+            unhealthy.Add(backendName);
+            var candidate = DetectedBackends
+                .Where(value => !unhealthy.Contains(value.Name))
+                .OrderBy(value => value.Type switch
+                {
+                    BackendType.Cuda => 0,
+                    BackendType.Vulkan => 1,
+                    BackendType.Gpu or BackendType.Accelerator => 2,
+                    BackendType.Cpu => 3,
+                    _ => 4,
+                })
+                .FirstOrDefault()
+                ?? throw new InvalidOperationException(
+                    $"No usable fallback remained after backend '{backendName}' failed", cause);
+            Selection = new(
+                current.Desired,
+                candidate,
+                candidate.Type == BackendType.Cpu,
+                $"Inference backend '{current.Effective.Description} ({current.Effective.Type})' failed: {cause.Message}. " +
+                $"Trying '{candidate.Description} ({candidate.Type})'; the configured device remains remembered.");
+            lastStableSelection = Selection;
+            SelectionChanged?.Invoke(Selection);
+            return Selection;
+        }
+        finally { gate.Release(); }
+    }
+
     public async Task RefreshBackendsAsync(CancellationToken token)
     {
         await CancelReferenceExtractionAsync().ConfigureAwait(false);
@@ -685,13 +748,11 @@ public sealed class RuntimeManager : ITtsRuntime
             {
                 ThrowIfNativeOwnershipPoisoned();
                 NativeOperationStarted("backend-enumeration");
-                IReadOnlyList<BackendInfo> detected;
-                if (useExternalBaseHost && baseHost?.IsReady == true && DetectedBackends.Count > 0)
-                    detected = DetectedBackends;
-                else
-                    detected = await Task.Run(
-                        () => QwenCppRuntime.EnumerateBackends(runtimePackDirectory), token)
-                        .ConfigureAwait(false);
+                var detected = await Task.Run(
+                    () => QwenCppRuntime.EnumerateBackends(runtimePackDirectory,
+                        ownsProcessLease: false,
+                        pluginLifetimeLease: PluginLifetimeLease,
+                        refreshSearchPaths: true), token).ConfigureAwait(false);
                 var identity = BackendBenchmark.Identity(
                     runtimeVersion, ModelHash, designModelHash, configuration.Compute, detected);
                 var selection = selector.Select(configuration, detected, identity);
@@ -879,13 +940,21 @@ public sealed class RuntimeManager : ITtsRuntime
 
     public async Task BenchmarkAndApplyAsync(string designPath, CancellationToken token)
     {
-        if (configuration.Compute == ComputePreference.Manual) return;
         await CancelReferenceExtractionAsync().ConfigureAwait(false);
         ThrowIfReferenceProcessAbandoned();
         await WaitForBaseOwnershipAsync(nameof(BenchmarkAndApplyAsync), token).ConfigureAwait(false);
         try
         {
             ThrowIfNativeOwnershipPoisoned();
+            if (configuration.Compute == ComputePreference.Manual)
+            {
+                var manualBenchmark = useExternalBaseHost
+                    ? await RunExternalBenchmarkAsync(designPath, token).ConfigureAwait(false)
+                    : await RunInProcessBenchmarkAsync(designPath, token).ConfigureAwait(false);
+                configuration.BackendBenchmark = manualBenchmark;
+                saveConfiguration();
+                return;
+            }
             if (useExternalBaseHost)
             {
                 var benchmarkBackend = Selection?.Effective.Name
@@ -906,28 +975,15 @@ public sealed class RuntimeManager : ITtsRuntime
                 var cachedHost = configuration.BackendBenchmark;
                 if (cachedHost is null || cachedHost.Identity != BenchmarkIdentity)
                 {
-                    NativeOperationStarted("base-host-benchmark");
-                    var measurements = await host.BenchmarkAsync(DetectedBackends, token)
-                        .ConfigureAwait(false);
-                    // Keep the existing VoiceDesign benchmark path for the
-                    // in-process design model. Base measurements above remain
-                    // authoritative for Base-host device selection.
                     try
                     {
-                        _ = await BackendBenchmark.RunAsync(BenchmarkIdentity, designPath, codecPath,
-                            DetectedBackends, configuration.Compute, token,
-                            PluginLifetimeLease).ConfigureAwait(false);
+                        cachedHost = await RunExternalBenchmarkAsync(designPath, token).ConfigureAwait(false);
                     }
                     catch (BackendBenchmarkCleanupException error)
                     {
                         ReportNativeFailure(error);
                         throw;
                     }
-                    var winnerHost = BackendBenchmark.SelectWinner(
-                        DetectedBackends, measurements, configuration.Compute)
-                        ?? throw new InvalidOperationException("No Base runtime host backend passed the benchmark");
-                    cachedHost = new BackendBenchmarkCache(
-                        BenchmarkIdentity, winnerHost.Name, DateTimeOffset.UtcNow, measurements);
                     configuration.BackendBenchmark = cachedHost;
                     saveConfiguration();
                 }
@@ -1058,7 +1114,9 @@ public sealed class RuntimeManager : ITtsRuntime
                     "Base runtime host is unavailable for the requested backend context");
             var reference = await host.ExtractReferenceAsync(monoPcm24Khz, transcript, token)
                 .ConfigureAwait(false);
-            if (!configuration.KeepBaseModelLoaded && !host.IsBusy)
+            if (!configuration.KeepBaseModelLoaded
+                && Volatile.Read(ref baseResidencyLeases) == 0
+                && !host.IsBusy)
             {
                 await WaitForBaseOwnershipAsync(nameof(ExtractReferenceAsync), CancellationToken.None)
                     .ConfigureAwait(false);
@@ -1737,6 +1795,7 @@ public sealed class RuntimeManager : ITtsRuntime
                         finally
                         {
                             if (!configuration.KeepBaseModelLoaded
+                                && Volatile.Read(ref baseResidencyLeases) == 0
                                 && ReferenceEquals(baseHost, host) && !host.IsBusy)
                             {
                                 try
@@ -1806,6 +1865,73 @@ public sealed class RuntimeManager : ITtsRuntime
         ?? new BaseRuntimeHostClient(
             referenceExtractorPath, talkerPath, codecPath,
             runtimePackDirectory, modelDirectory, referenceExtractionDirectory);
+
+    private IBaseRuntimeHost CreateBenchmarkHost(string designPath) => baseHostFactory?.Invoke(
+        referenceExtractorPath, designPath, codecPath,
+        runtimePackDirectory, modelDirectory, referenceExtractionDirectory)
+        ?? new BaseRuntimeHostClient(
+            referenceExtractorPath, designPath, codecPath,
+            runtimePackDirectory, modelDirectory, referenceExtractionDirectory);
+
+    private Task<BackendBenchmarkCache> RunInProcessBenchmarkAsync(
+        string designPath, CancellationToken token)
+    {
+        NativeOperationStarted("backend-benchmark");
+        return BackendBenchmark.RunAsync(BenchmarkIdentity, designPath, codecPath,
+            DetectedBackends, configuration.Compute, token, PluginLifetimeLease);
+    }
+
+    private async Task<BackendBenchmarkCache> RunExternalBenchmarkAsync(
+        string designPath, CancellationToken token)
+    {
+        var measurements = new List<BackendBenchmarkMeasurement>(DetectedBackends.Count);
+        foreach (var backend in DetectedBackends)
+        {
+            token.ThrowIfCancellationRequested();
+            var initialization = Stopwatch.StartNew();
+            IBaseRuntimeHost? host = null;
+            Exception? failure = null;
+            try
+            {
+                host = CreateBenchmarkHost(designPath);
+                await host.StartAsync(backend.Name, token).ConfigureAwait(false);
+                var result = await host.BenchmarkAsync([backend], token).ConfigureAwait(false);
+                if (result.Count != 1 || !String.Equals(result[0].BackendName, backend.Name,
+                        StringComparison.Ordinal))
+                    throw new InvalidDataException(
+                        $"Backend '{backend.Name}' helper returned an invalid benchmark result");
+                measurements.Add(result[0]);
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception error)
+            {
+                failure = error;
+            }
+            finally
+            {
+                if (host is not null)
+                {
+                    try { await host.DisposeAsync().ConfigureAwait(false); }
+                    catch (Exception cleanupError)
+                    {
+                        throw new BackendBenchmarkCleanupException(
+                            $"Backend '{backend.Name}' benchmark helper cleanup failed; restart is required",
+                            cleanupError);
+                    }
+                }
+            }
+            if (failure is not null)
+                measurements.Add(new(backend.Name, false, initialization.Elapsed.TotalSeconds,
+                    null, null, failure.Message));
+        }
+
+        var winner = BackendBenchmark.SelectWinner(DetectedBackends, measurements, configuration.Compute)
+            ?? throw new InvalidOperationException("No inference backend passed the isolated benchmark");
+        return new(BenchmarkIdentity, winner.Name, DateTimeOffset.UtcNow, measurements);
+    }
 
     private static bool IsBaseHostReadyForBackend(
         IBaseRuntimeHost host, string backendName) =>

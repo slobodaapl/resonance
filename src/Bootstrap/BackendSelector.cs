@@ -7,7 +7,8 @@ public sealed record BackendSelection(
     BackendInfo Desired,
     BackendInfo Effective,
     bool IsTemporaryCpuFallback,
-    string? Error);
+    string? Error,
+    bool NotifyError = true);
 
 public sealed class BackendSelector
 {
@@ -33,7 +34,22 @@ public sealed class BackendSelector
             ?? detected.FirstOrDefault(candidate =>
                 candidate.Type == configuration.DesiredBackendType
                 && candidate.Description == configuration.DesiredBackendDescription);
-        if (desired is not null) return new(desired, desired, false, null);
+        if (desired is not null)
+        {
+            var failedMeasurement = configuration.BackendBenchmark is { } benchmark
+                                    && benchmark.Identity == benchmarkIdentity
+                ? benchmark.Measurements.FirstOrDefault(value =>
+                    value.BackendName == desired.Name && !value.Successful)
+                : null;
+            if (failedMeasurement is null) return new(desired, desired, false, null);
+            return new(
+                desired,
+                cpu,
+                true,
+                $"Configured inference device '{desired.Description}' previously failed validation: " +
+                $"{failedMeasurement.Error}. Resonance is using CPU until you explicitly select or benchmark it again.",
+                false);
+        }
 
         var remembered = new BackendInfo(
             configuration.DesiredBackendName,
@@ -54,6 +70,9 @@ public sealed class BackendSelector
         configuration.DesiredBackendName = backend.Name;
         configuration.DesiredBackendDescription = backend.Description;
         configuration.DesiredBackendType = backend.Type;
+        if (configuration.BackendBenchmark?.Measurements.Any(value =>
+                value.BackendName == backend.Name && !value.Successful) == true)
+            configuration.BackendBenchmark = null;
     }
 
     private static BackendInfo ChooseAutomatic(ComputePreference preference, IReadOnlyList<BackendInfo> detected, BackendInfo cpu)

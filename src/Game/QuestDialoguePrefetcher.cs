@@ -42,7 +42,7 @@ public sealed partial class QuestDialoguePrefetcher(IDataManager dataManager, IC
         }
     }
 
-    public PrefetchUpdate Observe(string speaker, string text, int lookahead = 6)
+    public PrefetchUpdate Observe(string speaker, string text, int lookahead = Int32.MaxValue)
     {
         lock (gate)
         {

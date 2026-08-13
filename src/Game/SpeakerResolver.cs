@@ -28,9 +28,7 @@ public sealed class SpeakerResolver
 {
     private readonly IObjectTable objects;
     private readonly IDataManager? dataManager;
-    private readonly CastingProfileCatalog? catalog;
     private readonly Func<string?> currentTerritory;
-    private readonly HashSet<string> nonHumanoidEvidenceValues;
     private readonly Dictionary<nint, bool> targetable = [];
     private IGameObject? nextUnknown;
     private long observedEpoch = long.MinValue;
@@ -38,18 +36,11 @@ public sealed class SpeakerResolver
     public SpeakerResolver(
         IObjectTable objects,
         IDataManager? dataManager = null,
-        CastingProfileCatalog? catalog = null,
         Func<string?>? currentTerritory = null)
     {
         this.objects = objects;
         this.dataManager = dataManager;
-        this.catalog = catalog;
         this.currentTerritory = currentTerritory ?? (() => null);
-        nonHumanoidEvidenceValues = catalog?.Rules
-            .Where(rule => String.Equals(rule.SpeakerCategory, "non_humanoid", StringComparison.Ordinal))
-            .Select(rule => rule.Value)
-            .ToHashSet(StringComparer.Ordinal)
-            ?? [];
     }
 
     public ResolvedSpeaker Resolve(ActualTalkLine line, long sessionEpoch)
@@ -83,6 +74,18 @@ public sealed class SpeakerResolver
         var sceneEvidence = EmptyEvidence(stableKey, sceneLocal: true);
         return new(stableKey, null, line.Speaker, "neutral_adult", 0, true,
             sceneEvidence, new SpeakerMetadata(EvidenceSource: "scene-local"), "masculine");
+    }
+
+    public ResolvedSpeaker? ResolveNpcBase(uint npcBaseId, string displayedName)
+    {
+        if (npcBaseId == 0) return null;
+        var candidate = objects
+            .Where(value => value.IsValid() && value.BaseId == npcBaseId
+                && value.ObjectKind is ObjectKind.EventNpc or ObjectKind.BattleNpc)
+            .OrderBy(value => value.CurrentDistance)
+            .ThenBy(value => value.ObjectIndex)
+            .FirstOrDefault();
+        return candidate is null ? null : ResolveObject(candidate, displayedName);
     }
 
     private void ObserveUnknownActorTransitions(long sessionEpoch)
@@ -145,11 +148,14 @@ public sealed class SpeakerResolver
             var sex = customize.Sex == 1 ? "feminine" : "masculine";
             var race = EnglishRace(customize.Race);
             var tribe = EnglishTribe(customize.Tribe);
-            var modelChara = TryReadModelChara(candidate);
-            var category = race is not null && nonHumanoidEvidenceValues.Contains(race)
-                || tribe is not null && nonHumanoidEvidenceValues.Contains(tribe)
-                || modelChara is not null && nonHumanoidEvidenceValues.Contains(
-                    modelChara.Value.ToString(System.Globalization.CultureInfo.InvariantCulture))
+            var staticNpc = candidate.ObjectKind == ObjectKind.EventNpc
+                ? TryReadNpcBase(candidate.BaseId)
+                : null;
+            var modelChara = TryReadModelChara(candidate) ??
+                (staticNpc is { ModelChara.RowId: > 0 } npc ? npc.ModelChara.RowId : null);
+            var model = TryReadModelCharaRow(modelChara);
+            var category = model is { Type: 2 or 3 }
+                && (staticNpc?.Race.RowId ?? customize.Race) == 0
                 ? "non_humanoid"
                 : "humanoid";
             var heightBucket = Bucket(customize.Height, "short", "average", "tall");
@@ -177,10 +183,25 @@ public sealed class SpeakerResolver
                 Species: category == "non_humanoid" ? race : null,
                 Race: race,
                 ModelChara: modelChara?.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                Age: CastingProfileCatalog.InferVoiceAge(customize.BodyType, customize.Height),
                 Physique: physique,
                 BodyType: bodyType,
                 HeightBucket: heightBucket,
-                MuscleMassBucket: muscleBucket);
+                MuscleMassBucket: muscleBucket,
+                RaceId: customize.Race,
+                TribeId: customize.Tribe,
+                BodyTypeId: customize.BodyType,
+                HeightValue: customize.Height,
+                ModelCharaId: modelChara,
+                ModelFamilyId: model?.Model,
+                ModelType: model?.Type,
+                ModelBase: model?.Base,
+                ModelVariant: model?.Variant,
+                ModelHeadId: staticNpc?.ModelHead,
+                ModelBodyId: staticNpc?.ModelBody,
+                ModelHandsId: staticNpc?.ModelHands,
+                ModelLegsId: staticNpc?.ModelLegs,
+                ModelFeetId: staticNpc?.ModelFeet);
             var metadata = new SpeakerMetadata(
                 Gender: customize.Sex,
                 Race: customize.Race,
@@ -191,6 +212,7 @@ public sealed class SpeakerResolver
                 ModelCharaId: modelChara,
                 Sex: sex,
                 BodyType: bodyType,
+                Age: CastingProfileCatalog.InferVoiceAge(customize.BodyType, customize.Height),
                 Physique: physique,
                 EvidenceSource: "live");
             return (evidence, metadata, sex);
@@ -241,6 +263,29 @@ public sealed class SpeakerResolver
         catch (NullReferenceException) { return null; }
         catch (AccessViolationException) { return null; }
     }
+
+    private ENpcBase? TryReadNpcBase(uint baseId)
+    {
+        if (dataManager is null || baseId == 0) return null;
+        try
+        {
+            var sheet = dataManager.GetExcelSheet<ENpcBase>();
+            return sheet.TryGetRow(baseId, out var row) ? row : null;
+        }
+        catch { return null; }
+    }
+
+    private ModelChara? TryReadModelCharaRow(long? rowId)
+    {
+        if (dataManager is null || rowId is null or <= 0 || rowId > uint.MaxValue) return null;
+        try
+        {
+            var sheet = dataManager.GetExcelSheet<ModelChara>();
+            return sheet.TryGetRow((uint)rowId.Value, out var row) ? row : null;
+        }
+        catch { return null; }
+    }
+
 
     private SpeakerCastingEvidence EmptyEvidence(string stableKey, bool sceneLocal)
     {
