@@ -7,4 +7,8 @@ public static class TalkAdvancePolicy
 
     public static bool ShouldFreezeAutomaticAdvance(bool suppressionEnabled, bool presentationReady) =>
         suppressionEnabled && presentationReady;
+
+    public static bool CanStartSyntheticPlayback(
+        long expectedSerial, long? currentSerial, long? presentationReadySerial) =>
+        currentSerial == expectedSerial && presentationReadySerial == expectedSerial;
 }

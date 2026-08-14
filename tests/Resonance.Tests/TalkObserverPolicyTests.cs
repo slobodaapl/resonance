@@ -33,4 +33,14 @@ public sealed class TalkObserverPolicyTests
         bool suppressionEnabled, bool presentationReady, bool expected) =>
         Assert.Equal(expected,
             TalkAdvancePolicy.ShouldFreezeAutomaticAdvance(suppressionEnabled, presentationReady));
+
+    [Theory]
+    [InlineData(7L, 7L, 7L, true)]
+    [InlineData(7L, 7L, 0L, false)]
+    [InlineData(7L, 8L, 7L, false)]
+    [InlineData(7L, null, 7L, false)]
+    public void SyntheticPlaybackRequiresExactCurrentPresentationReadySerial(
+        long expectedSerial, long? currentSerial, long? presentationReadySerial, bool expected) =>
+        Assert.Equal(expected, TalkAdvancePolicy.CanStartSyntheticPlayback(
+            expectedSerial, currentSerial, presentationReadySerial));
 }

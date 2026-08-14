@@ -182,6 +182,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
         cutscenes.Started += OnCutsceneStarted;
         cutscenes.Ended += OnCutsceneEnded;
         talk.LineChanged += OnLineChanged;
+        talk.PresentationReady += OnTalkPresentationReady;
         talk.AutoAdvanceReceiveObserved += OnAutoAdvanceReceiveObserved;
         talk.AutoAdvanceUiObserved += OnAutoAdvanceUiObserved;
         talk.Advanced += OnTalkClosed;
@@ -1493,9 +1494,22 @@ public sealed class SessionCoordinator : IAsyncDisposable
         var current = talk.Current;
         if (current is null || session?.Epoch != line.SessionEpoch || line.ActualStatus != ActualStatus.Actual) return;
         // Playback authority: actual Talk remains visible and exact text still matches.
-        if (current.Text != line.Text || current.Speaker != line.SpeakerName) return;
+        if (current.Text != line.Text || current.Speaker != line.SpeakerName
+            || line.ActualTalkSerial is not { } serial
+            || !talk.IsPresentationReady(serial)) return;
         audio?.Play(line, configuration.Volume);
     }
+
+    private void OnTalkPresentationReady(ActualTalkLine talkLine) => QueueFrameworkAction(() =>
+    {
+        var current = session;
+        if (current is null || talk.Current?.Serial != talkLine.Serial) return;
+        var line = current.Lines.FirstOrDefault(value =>
+            value.ActualStatus == ActualStatus.Actual
+            && value.ActualTalkSerial == talkLine.Serial
+            && value.State == DubLineState.Buffered);
+        if (line is not null) OnLineBuffered(line);
+    }, "Talk presentation-ready framework dispatch failed");
 
     private async Task ObservePreparedPredictionAsync(
         DubLine line, IGameMixerAudioBackend mixer, float volume)
@@ -2707,6 +2721,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
         cutscenes.Started -= OnCutsceneStarted;
         cutscenes.Ended -= OnCutsceneEnded;
         talk.LineChanged -= OnLineChanged;
+        talk.PresentationReady -= OnTalkPresentationReady;
         talk.AutoAdvanceReceiveObserved -= OnAutoAdvanceReceiveObserved;
         talk.AutoAdvanceUiObserved -= OnAutoAdvanceUiObserved;
         talk.Advanced -= OnTalkClosed;

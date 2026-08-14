@@ -28,6 +28,7 @@ public sealed partial class TalkObserver : IDisposable
 
     public ActualTalkLine? Current { get; private set; }
     public event Action<ActualTalkLine>? LineChanged;
+    public event Action<ActualTalkLine>? PresentationReady;
     public event Action<ActualTalkLine?>? Advanced;
     public event Action<ActualTalkLine?>? Hidden;
     public event Action<ActualTalkLine?>? Finalized;
@@ -79,8 +80,12 @@ public sealed partial class TalkObserver : IDisposable
         {
             if (Current is { } current
                 && Volatile.Read(ref updateGeneration) > lineObservedUpdateGeneration
+                && presentationReadySerial != current.Serial
                 && IsPresentationReady(addon))
+            {
                 presentationReadySerial = current.Serial;
+                PresentationReady?.Invoke(current);
+            }
             if (diagnostics) EmitUiSnapshot(addon);
             return;
         }
@@ -295,6 +300,10 @@ public sealed partial class TalkObserver : IDisposable
         addon->ReceiveEvent(AtkEventType.MouseUp, 0, &eventValue, &eventData);
         return true;
     }
+
+    public bool IsPresentationReady(long serial) =>
+        visible && TalkAdvancePolicy.CanStartSyntheticPlayback(
+            serial, Current?.Serial, presentationReadySerial);
 
     private static unsafe bool IsPresentationReady(AddonTalk* addon)
     {
