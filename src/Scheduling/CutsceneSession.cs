@@ -7,7 +7,8 @@ public sealed record CutscenePrediction(
     string Text,
     string Language,
     string? OfficialVoiceGroupId = null,
-    ResolvedLineSpeaker? Resolution = null);
+    ResolvedLineSpeaker? Resolution = null,
+    string? SourceQuest = null);
 
 public sealed class CutsceneSession : IDisposable
 {
@@ -146,6 +147,7 @@ public sealed class CutsceneSession : IDisposable
             {
                 SessionEpoch = Epoch,
                 Sequence = sequence,
+                SourceQuest = prediction.SourceQuest,
                 PredictionKey = prediction.Key,
                 SpeakerKey = prediction.SpeakerKey,
                 SpeakerName = prediction.Speaker,
@@ -167,6 +169,15 @@ public sealed class CutsceneSession : IDisposable
             added.Add(line);
         }
         return added;
+        }
+    }
+
+    public void ReleaseLine(long sequence)
+    {
+        lock (gate)
+        {
+            if (!lines.Remove(sequence, out var line)) return;
+            line.Dispose();
         }
     }
 

@@ -25,6 +25,24 @@ public sealed class CutsceneVoiceManifestProvider(
         LastStatus = "not-queried";
     }
 
+    public bool? IsCurrentCutsceneUnskippable()
+    {
+        try
+        {
+            var cutsceneId = ReadCurrentCutsceneId();
+            if (cutsceneId is null) return null;
+            var workIndices = dataManager.GetExcelSheet<CutsceneWorkIndex>();
+            return workIndices.TryGetRow(cutsceneId.Value, out var workIndex)
+                ? workIndex.WorkIndex == 0
+                : null;
+        }
+        catch (Exception error)
+        {
+            log.Warning(error, "Current cutscene skippability could not be read");
+            return null;
+        }
+    }
+
     public CutsceneVoiceLine? Resolve(ActualTalkLine talk)
     {
         var cutsceneId = ReadCurrentCutsceneId();
@@ -33,13 +51,7 @@ public sealed class CutsceneVoiceManifestProvider(
             LastStatus = "no-active-play-cutscene-task";
             return null;
         }
-        var language = clientState.ClientLanguage.ToString().ToLowerInvariant();
-        var key = (cutsceneId.Value, language);
-        if (!cache.TryGetValue(key, out var manifest))
-        {
-            manifest = Load(cutsceneId.Value, language);
-            cache[key] = manifest;
-        }
+        var manifest = GetManifest(cutsceneId.Value);
         if (manifest is null)
         {
             LastStatus = $"manifest-unavailable:{cutsceneId.Value}";
@@ -67,6 +79,16 @@ public sealed class CutsceneVoiceManifestProvider(
                 : $"dialogue-not-in-manifest:{cutsceneId.Value}"
             : $"matched:{line.Key}";
         return line;
+    }
+
+    public CutsceneVoiceManifest? GetManifest(uint cutsceneId)
+    {
+        var language = clientState.ClientLanguage.ToString().ToLowerInvariant();
+        var key = (cutsceneId, language);
+        if (cache.TryGetValue(key, out var manifest)) return manifest;
+        manifest = Load(cutsceneId, language);
+        cache[key] = manifest;
+        return manifest;
     }
 
     public IReadOnlyList<CutsceneVoiceLine> GetSyntheticFuture(CutsceneVoiceLine current) =>

@@ -94,7 +94,7 @@ internal static class PackBuilder
                             $"Selected package {actor.ActorToken}/{language} is {duration:F3}s; expected >0–<20s");
                     var transcript = String.Join(' ', transcripts);
                     var reference = runtime.Extract(samples.ToArray());
-                    if (reference.Embedding.Length != 1024 || reference.Codebooks != 16)
+                    if (reference.Embedding.Length is not (1024 or 2048) || reference.Codebooks != 16)
                         throw new InvalidDataException("Native reference shape is incompatible with the pack schema");
                     var profileHash = HashProfile(language, quality.ModelHash, transcript,
                         reference.Embedding, reference.Codes);
@@ -124,13 +124,21 @@ internal static class PackBuilder
     private static Quality ResolveQuality(ModelManifest manifest, string directory, string quality)
     {
         var baseModel = manifest.Artifacts.Single(value => value.Id == $"base-{quality}");
-        var tokenizer = manifest.Artifacts.Single(value => value.Id == $"tokenizer-{quality}");
+        var quantization = ResolveQuantization(quality);
+        var tokenizer = manifest.Artifacts.Single(value => value.Id == $"tokenizer-{quantization}");
         var talker = Path.Combine(directory, baseModel.FileName);
         var codec = Path.Combine(directory, tokenizer.FileName);
         if (!File.Exists(talker)) throw new FileNotFoundException($"{quality} Base model is missing", talker);
         if (!File.Exists(codec)) throw new FileNotFoundException($"{quality} tokenizer is missing", codec);
         return new(quality, talker, codec, baseModel.Sha256);
     }
+
+    private static string ResolveQuantization(string quality) => quality switch
+    {
+        "q4" or "1.7b-q4" => "q4",
+        "q8" or "1.7b-q8" => "q8",
+        _ => throw new InvalidDataException($"Unknown Base quality '{quality}'"),
+    };
 
     private static SqliteConnection OpenDatabase(
         string path, int packVersion, int catalogVersion, int schemaVersion)
@@ -505,7 +513,8 @@ internal static class PackBuilder
             return new(
                 Required("sqpack"), Required("selection"), Required("catalog"), Required("models-manifest"),
                 Required("models-directory"),
-                (values.GetValueOrDefault("qualities") ?? "q4,q8").Split(',', StringSplitOptions.RemoveEmptyEntries),
+                (values.GetValueOrDefault("qualities") ?? "q4,q8,1.7b-q4,1.7b-q8")
+                .Split(',', StringSplitOptions.RemoveEmptyEntries),
                 values.GetValueOrDefault("backend") ?? "CPU",
                 values.TryGetValue("runtime-directory", out var runtimeDirectory)
                     ? Path.GetFullPath(runtimeDirectory)

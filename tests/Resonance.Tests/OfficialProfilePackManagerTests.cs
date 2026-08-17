@@ -26,15 +26,43 @@ public sealed class OfficialProfilePackManagerTests
     }
 
     [Fact]
+    public void CommittedOfficialProfilesCoverEveryBaseModelWithRuntimeCompatibleLatents()
+    {
+        var path = ProjectPath("release-assets", "official-profiles", "official-profiles.sqlite3");
+        var modelDimensions = BaseModelDimensions();
+        var coverage = modelDimensions.Keys.ToDictionary(
+            modelHash => modelHash, _ => new HashSet<(string GroupId, string Language)>(), StringComparer.Ordinal);
+        using var connection = new SqliteConnection($"Data Source={path};Mode=ReadOnly");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT group_id,language,model_hash,length(speaker_embedding),length(rvq_codes),rvq_length,codebooks
+            FROM official_profile
+            """;
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            var modelHash = reader.GetString(2);
+            Assert.True(coverage.TryGetValue(modelHash, out var modelCoverage), $"Unknown Base model hash {modelHash}");
+            Assert.True(modelCoverage.Add((reader.GetString(0), reader.GetString(1))));
+            Assert.Equal(modelDimensions[modelHash] * sizeof(float), reader.GetInt32(3));
+            Assert.Equal(16, reader.GetInt32(6));
+            Assert.InRange(reader.GetInt32(5), 1, 250);
+            Assert.Equal(reader.GetInt32(5) * reader.GetInt32(6) * sizeof(int), reader.GetInt32(4));
+        }
+        var baseline = coverage.Values.First();
+        Assert.NotEmpty(baseline);
+        foreach (var (modelHash, modelCoverage) in coverage)
+            Assert.True(modelCoverage.SetEquals(baseline), $"Official profile coverage differs for Base model {modelHash}");
+    }
+
+    [Fact]
     public void CommittedPackExactlyCoversCatalogFallbackMatrix()
     {
         var path = ProjectPath("release-assets", "official-profiles", "official-profiles.sqlite3");
         var catalog = CastingProfileCatalog.Load(ProjectPath("assets", "dub-profiles.json"));
-        using var models = JsonDocument.Parse(File.ReadAllText(ProjectPath("assets", "models.json")));
-        var modelHashes = models.RootElement.GetProperty("artifacts").EnumerateArray()
-            .Where(artifact => artifact.GetProperty("id").GetString() is "base-q4" or "base-q8")
-            .Select(artifact => artifact.GetProperty("sha256").GetString()!)
-            .ToHashSet(StringComparer.Ordinal);
+        var modelDimensions = BaseModelDimensions();
+        var modelHashes = modelDimensions.Keys.ToHashSet(StringComparer.Ordinal);
         var languages = new HashSet<string>(["english", "japanese", "german", "french"], StringComparer.Ordinal);
         var expected = catalog.Domains.SelectMany(domain => FallbackVariants(domain)
                 .SelectMany(variant => languages.SelectMany(language => modelHashes.Select(modelHash =>
@@ -66,7 +94,7 @@ public sealed class OfficialProfilePackManagerTests
             var codeBytes = (byte[])reader[7];
             var rvqLength = reader.GetInt32(8);
             var codebooks = reader.GetInt32(9);
-            Assert.Equal(4096, embeddingBytes.Length);
+            Assert.Equal(modelDimensions[row.Item6] * sizeof(float), embeddingBytes.Length);
             Assert.Equal(rvqLength * codebooks * sizeof(int), codeBytes.Length);
             Assert.InRange(rvqLength, 1, 192);
             Assert.Equal(16, codebooks);
@@ -100,6 +128,18 @@ public sealed class OfficialProfilePackManagerTests
             _ => throw new InvalidDataException($"Unknown fallback dimensions '{domain.FallbackDimensions}'"),
         };
 
+    private static Dictionary<string, int> BaseModelDimensions()
+    {
+        using var models = JsonDocument.Parse(File.ReadAllText(ProjectPath("assets", "models.json")));
+        return models.RootElement.GetProperty("artifacts").EnumerateArray()
+            .Where(artifact => artifact.GetProperty("id").GetString()!.StartsWith("base-", StringComparison.Ordinal))
+            .ToDictionary(artifact => artifact.GetProperty("sha256").GetString()!,
+                artifact => artifact.GetProperty("id").GetString()!.Contains("1.7b", StringComparison.Ordinal)
+                    ? 2048
+                    : 1024,
+                StringComparer.Ordinal);
+    }
+
     [Fact]
     public async Task DownloadsOnceAndImportsOnlyExactModelWithoutReplacingExistingOfficial()
     {
@@ -108,7 +148,7 @@ public sealed class OfficialProfilePackManagerTests
         try
         {
             var packDatabase = Path.Combine(root, "pack.sqlite3");
-            CreatePackDatabase(packDatabase, "model-q4", "model-q8");
+            CreatePackDatabase(packDatabase, 2048, "model-q4", "model-q8");
             var archive = Path.Combine(root, "pack.zip");
             using (var zip = ZipFile.Open(archive, ZipArchiveMode.Create))
                 zip.CreateEntryFromFile(packDatabase, "official-profiles.sqlite3", CompressionLevel.SmallestSize);
@@ -122,7 +162,6 @@ public sealed class OfficialProfilePackManagerTests
                 length = archiveBytes.Length,
                 sha256 = Hash(archiveBytes),
                 databaseSha256 = databaseHash,
-                profileCount = 2,
             });
             var handler = new PackHandler(manifest, archiveBytes);
             using var http = new HttpClient(handler);
@@ -189,7 +228,7 @@ public sealed class OfficialProfilePackManagerTests
         try
         {
             var localDatabase = Path.Combine(root, "data", "official-profile-pack", "official-profiles.sqlite3");
-            CreatePackDatabase(localDatabase, "model-q4");
+            CreatePackDatabase(localDatabase, 1024, "model-q4");
             using (var connection = new SqliteConnection($"Data Source={localDatabase}"))
             {
                 connection.Open();
@@ -203,7 +242,7 @@ public sealed class OfficialProfilePackManagerTests
                 JsonSerializer.Serialize(new
                 {
                     SchemaVersion = 1, PackVersion = 8, Url = "https://example.invalid/local.zip",
-                    Length = 1, Sha256 = new string('a', 64), DatabaseSha256 = localHash, ProfileCount = 2,
+                    Length = 1, Sha256 = new string('a', 64), DatabaseSha256 = localHash,
                 }), TestContext.Current.CancellationToken);
             using var database = new Database(Path.Combine(root, "user.sqlite3"));
             var voices = new VoiceRegistry(database);
@@ -214,7 +253,7 @@ public sealed class OfficialProfilePackManagerTests
             var remote = JsonSerializer.SerializeToUtf8Bytes(new
             {
                 SchemaVersion = 1, PackVersion = 7, Url = "https://example.invalid/remote.zip",
-                Length = 1, Sha256 = new string('b', 64), DatabaseSha256 = new string('c', 64), ProfileCount = 2,
+                Length = 1, Sha256 = new string('b', 64), DatabaseSha256 = new string('c', 64),
             });
             var handler = new PackHandler(remote, [0]);
             using var http = new HttpClient(handler);
@@ -240,7 +279,7 @@ public sealed class OfficialProfilePackManagerTests
         finally { Directory.Delete(root, true); }
     }
 
-    private static void CreatePackDatabase(string path, params string[] modelHashes)
+    private static void CreatePackDatabase(string path, int embeddingLength, params string[] modelHashes)
     {
         using var connection = new SqliteConnection($"Data Source={path}");
         connection.Open();
@@ -266,7 +305,7 @@ public sealed class OfficialProfilePackManagerTests
         foreach (var modelHash in modelHashes)
         {
             var reference = new VoiceReference(
-                Enumerable.Repeat(0.1f, 1024).ToArray(), new int[16 * 187], 187, 16, "Reference");
+                Enumerable.Repeat(0.1f, embeddingLength).ToArray(), new int[16 * 187], 187, 16, "Reference");
             var profile = VoiceRegistry.CreateProfile(VoiceProfileKind.Official, "english", modelHash,
                 null, null, null, reference, "source");
             command.Parameters.Clear();

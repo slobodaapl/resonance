@@ -177,7 +177,7 @@ public sealed class OfficialProfilePackManager : IDisposable
                     manifest.DatabaseSha256, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("Official profile pack database failed SHA-256 verification");
             ValidateDatabase(databasePartial, manifest.PackVersion, manifest.CatalogVersion,
-                manifest.SchemaVersion, manifest.ProfileCount);
+                manifest.SchemaVersion);
             File.Move(databasePartial, DatabasePath, true);
             await WriteManifestAtomicAsync(manifest, token).ConfigureAwait(false);
         }
@@ -321,10 +321,10 @@ public sealed class OfficialProfilePackManager : IDisposable
     {
         var embeddingBytes = (byte[])reader[7];
         var codeBytes = (byte[])reader[8];
-        if (embeddingBytes.Length != 1024 * sizeof(float) || codeBytes.Length == 0
+        if (embeddingBytes.Length is not (1024 * sizeof(float) or 2048 * sizeof(float)) || codeBytes.Length == 0
             || codeBytes.Length % sizeof(int) != 0)
             throw new InvalidDataException("Fallback profile pack contains an invalid latent shape");
-        var embedding = new float[1024];
+        var embedding = new float[embeddingBytes.Length / sizeof(float)];
         var codes = new int[codeBytes.Length / sizeof(int)];
         Buffer.BlockCopy(embeddingBytes, 0, embedding, 0, embeddingBytes.Length);
         Buffer.BlockCopy(codeBytes, 0, codes, 0, codeBytes.Length);
@@ -344,16 +344,16 @@ public sealed class OfficialProfilePackManager : IDisposable
     {
         var embeddingBytes = (byte[])reader[6];
         var codeBytes = (byte[])reader[7];
-        if (embeddingBytes.Length != 1024 * sizeof(float) || codeBytes.Length == 0
+        if (embeddingBytes.Length is not (1024 * sizeof(float) or 2048 * sizeof(float)) || codeBytes.Length == 0
             || codeBytes.Length % sizeof(int) != 0)
             throw new InvalidDataException("Official profile pack contains an invalid latent shape");
-        var embedding = new float[1024];
+        var embedding = new float[embeddingBytes.Length / sizeof(float)];
         var codes = new int[codeBytes.Length / sizeof(int)];
         Buffer.BlockCopy(embeddingBytes, 0, embedding, 0, embeddingBytes.Length);
         Buffer.BlockCopy(codeBytes, 0, codes, 0, codeBytes.Length);
         var rvqLength = reader.GetInt32(8);
         var codebooks = reader.GetInt32(9);
-        if (codebooks != 16 || rvqLength is < 1 or > 192 || codes.Length != rvqLength * codebooks
+        if (codebooks != 16 || rvqLength is < 1 or > 250 || codes.Length != rvqLength * codebooks
             || embedding.Any(value => !float.IsFinite(value)))
             throw new InvalidDataException("Official profile pack contains invalid reference metadata");
         return new(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
@@ -365,8 +365,7 @@ public sealed class OfficialProfilePackManager : IDisposable
         string path,
         int expectedPackVersion,
         int? expectedCatalogVersion = null,
-        int? expectedSchemaVersion = null,
-        int? expectedProfileCount = null)
+        int? expectedSchemaVersion = null)
     {
         using var connection = OpenReadOnly(path);
         using var command = connection.CreateCommand();
@@ -382,12 +381,6 @@ public sealed class OfficialProfilePackManager : IDisposable
             throw new InvalidDataException("Official profile pack database metadata is incompatible");
         var schemaVersion = reader.GetInt32(0);
         reader.Close();
-        if (expectedProfileCount is { } profileCount)
-        {
-            command.CommandText = "SELECT COUNT(*) FROM official_profile";
-            if (Convert.ToInt32(command.ExecuteScalar()) != profileCount)
-                throw new InvalidDataException("Official profile pack profile count does not match its manifest");
-        }
         if (schemaVersion == CurrentSchemaVersion)
         {
             if (!TableExists(connection, "scene_node") || !TableExists(connection, "scene_edge"))
@@ -478,7 +471,7 @@ public sealed class OfficialProfilePackManager : IDisposable
     private static void ValidateManifest(RemoteManifest manifest)
     {
         if (manifest.SchemaVersion is not (1 or CurrentSchemaVersion) || manifest.PackVersion <= 0
-            || manifest.ProfileCount <= 0 || manifest.Length <= 0 || manifest.Length > MaximumArchiveBytes
+            || manifest.Length <= 0 || manifest.Length > MaximumArchiveBytes
             || manifest.CatalogVersion is <= 0
             || manifest.DatabaseLength is <= 0 or > MaximumDatabaseBytes
             || !Uri.TryCreate(manifest.Url, UriKind.Absolute, out var url) || url.Scheme != Uri.UriSchemeHttps
@@ -514,8 +507,9 @@ public sealed class OfficialProfilePackManager : IDisposable
         float[] Embedding, int[] Codes, int RvqLength, int Codebooks, string ProfileHash);
 
     private sealed record RemoteManifest(int SchemaVersion, int PackVersion, string Url,
-        long Length, string Sha256, string DatabaseSha256, int ProfileCount,
-        int? CatalogVersion = null, long? DatabaseLength = null);
+        long Length, string Sha256, string DatabaseSha256,
+        int? CatalogVersion = null, long? DatabaseLength = null,
+        int? ProfileCount = null);
     private sealed record PackProfile(string GroupId, string Label, string ActorToken,
         string Language, string ModelHash, string Transcript, float[] Embedding, int[] Codes,
         int RvqLength, int Codebooks, string SourceMetadata, string ProfileHash);

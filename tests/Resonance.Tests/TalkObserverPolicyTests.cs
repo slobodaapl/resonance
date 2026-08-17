@@ -25,6 +25,30 @@ public sealed class TalkObserverPolicyTests
             TalkAdvancePolicy.IsPresentationReady(manualAdvanceVisible, automaticAdvanceVisible));
 
     [Theory]
+    [InlineData(false, true, true)]
+    [InlineData(true, true, false)]
+    [InlineData(false, false, false)]
+    [InlineData(true, false, false)]
+    [InlineData(null, true, false)]
+    [InlineData(false, null, false)]
+    public void GameControlsPacingOnlyForKnownAutomaticOnlyPresentation(
+        bool? manualAdvanceVisible, bool? automaticAdvanceVisible, bool expected) =>
+        Assert.Equal(expected,
+            TalkAdvancePolicy.IsAutomaticOnlyPresentation(
+                manualAdvanceVisible, automaticAdvanceVisible));
+
+    [Theory]
+    [InlineData(true, true, true)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(null, true, false)]
+    public void GameControlledPacingRequiresUnskippableAutomaticOnlyCutscene(
+        bool? cutsceneUnskippable, bool automaticOnlyPresentation, bool expected) =>
+        Assert.Equal(expected,
+            TalkAdvancePolicy.ShouldPreserveGameControlledPacing(
+                cutsceneUnskippable, automaticOnlyPresentation));
+
+    [Theory]
     [InlineData(false, false, false)]
     [InlineData(false, true, false)]
     [InlineData(true, false, false)]

@@ -132,10 +132,10 @@ public sealed class BootstrapService : IAsyncDisposable
         try
         {
             var manifest = await AssetManager.LoadManifestAsync(manifestPath, token).ConfigureAwait(false);
-            var quality = configuration.Quality == QualityPreset.High ? "q8" : "q4";
-            var baseModel = manifest.Artifacts.Single(value => value.Id == $"base-{quality}");
-            var tokenizer = manifest.Artifacts.Single(value => value.Id == $"tokenizer-{quality}");
-            var design = manifest.Artifacts.Single(value => value.Id == $"voicedesign-{quality}");
+            var selectedAssets = ModelQualitySelection.Resolve(configuration.Quality);
+            var baseModel = manifest.Artifacts.Single(value => value.Id == selectedAssets.Base);
+            var tokenizer = manifest.Artifacts.Single(value => value.Id == selectedAssets.Tokenizer);
+            var design = manifest.Artifacts.Single(value => value.Id == selectedAssets.VoiceDesign);
             if (baseModel.Abi != QwenNative.AbiVersion || tokenizer.Abi != QwenNative.AbiVersion
                 || design.Abi != QwenNative.AbiVersion)
                 throw new InvalidDataException("Selected model assets do not match the native runtime ABI");

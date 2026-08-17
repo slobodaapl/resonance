@@ -305,6 +305,42 @@ public sealed class DubSchedulerStreamingTests
     }
 
     [Fact]
+    public async Task PredictionProcessedSignalObservesCompletedBufferedAudio()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "resonance-prediction-processed-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            using var database = new Database(Path.Combine(root, "test.sqlite3"));
+            var cache = new LineCache(database, Path.Combine(root, "cache"), () => 0);
+            await using var scheduler = new DubScheduler(
+                new LanguageRecordingRuntime(),
+                (_, _) => ValueTask.FromResult(VoiceResolution.Ready(new VoiceReference([], [], 0, 0, ""))),
+                cache, "model", "english");
+            var processed = new TaskCompletionSource<DubLine>(TaskCreationOptions.RunContinuationsAsynchronously);
+            scheduler.LineProcessed += line => processed.TrySetResult(line);
+            using var prediction = new DubLine
+            {
+                SessionEpoch = 7,
+                Sequence = 1,
+                SpeakerKey = "official:test",
+                SpeakerName = "Test",
+                Text = "Cache-only prediction",
+                ActualStatus = ActualStatus.Predicted,
+            };
+
+            scheduler.Enqueue(prediction);
+            var completed = await processed.Task.WaitAsync(
+                TimeSpan.FromSeconds(3), TestContext.Current.CancellationToken);
+
+            Assert.Same(prediction, completed);
+            Assert.Equal(DubLineState.Buffered, completed.State);
+            Assert.True(completed.Audio.ProducerCompleted);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public void AtomicAudioReplacementRejectsTerminalLineAndInvalidatesCandidate()
     {
         using var line = new DubLine

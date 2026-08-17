@@ -31,6 +31,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
         string Text,
         IReadOnlyList<string> NextPredictionKeys);
 
+    private sealed record TalkAdvanceContext(long TalkSerial, bool? CutsceneUnskippable);
+
     private sealed record FutureDialogue(
         string Key,
         string ActorToken,
@@ -47,6 +49,9 @@ public sealed class SessionCoordinator : IAsyncDisposable
         bool CanWork);
 
     private const string DebugLineSource = "Resonance inference debug";
+    private const string PreDubLineSource = "Resonance pre-dub";
+    private const int PreDubSceneLimit = 2;
+    private const int PreDubCandidateLimit = 32;
     private static readonly TimeSpan TeardownFrameworkWait = TimeSpan.FromSeconds(5);
     private readonly CutsceneDetector cutscenes;
     private readonly TalkObserver talk;
@@ -55,6 +60,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
     private readonly IFramework framework;
     private readonly SpeakerResolver speakers;
     private readonly QuestDialoguePrefetcher prefetcher;
+    private readonly MsqProgressReader msqProgress;
     private readonly CutsceneVoiceManifestProvider cutsceneVoices;
     private readonly LipSyncService lipSync;
     private readonly VoiceRegistry voices;
@@ -89,7 +95,14 @@ public sealed class SessionCoordinator : IAsyncDisposable
     private RuntimeManager? runtimeManager;
     private CastingDomainPool? domainPool;
     private CutsceneSession? session;
+    private CutsceneSession? preDubSession;
+    private string? preDubPlanKey;
+    private string? completedPreDubPlanKey;
+    private int preDubLinesRemaining;
+    private bool preDubFailed;
     private int suppressAutomaticAdvance;
+    private TalkAdvanceContext? talkAdvanceContext;
+    private long gameControlledAdvanceSerial;
     private long nextEpoch;
     private int disposed;
     private PendingAutoAdvance? pendingAutoAdvance;
@@ -144,7 +157,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
 
     public SessionCoordinator(CutsceneDetector cutscenes, TalkObserver talk, IClientState client, ICondition condition,
         IFramework framework,
-        SpeakerResolver speakers, QuestDialoguePrefetcher prefetcher,
+        SpeakerResolver speakers, QuestDialoguePrefetcher prefetcher, MsqProgressReader msqProgress,
         CutsceneVoiceManifestProvider cutsceneVoices,
         LipSyncService lipSync,
         Database database, VoiceRegistry voices, BootstrapService bootstrap,
@@ -163,6 +176,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
         this.framework = framework;
         this.speakers = speakers;
         this.prefetcher = prefetcher;
+        this.msqProgress = msqProgress;
         this.cutsceneVoices = cutsceneVoices;
         this.lipSync = lipSync;
         this.voices = voices;
@@ -198,8 +212,15 @@ public sealed class SessionCoordinator : IAsyncDisposable
         // ordering without dropping the Talk line that exposed the gap.
     }
 
-    public bool ShouldSuppressAutomaticAdvance =>
-        session is not null && Volatile.Read(ref suppressAutomaticAdvance) != 0;
+    public bool ShouldSuppressAutomaticAdvance
+    {
+        get
+        {
+            if (session is null || Volatile.Read(ref suppressAutomaticAdvance) == 0) return false;
+            return talk.Current is not { } current
+                   || !ShouldPreserveGameControlledPacing(current.Serial);
+        }
+    }
 
     public AudioBackendStatus GetAudioBackendStatus()
     {
@@ -217,7 +238,22 @@ public sealed class SessionCoordinator : IAsyncDisposable
     {
         profileCache.Clear();
         ScheduleDebugBaseVoiceRefresh(CurrentLanguage());
+        completedPreDubPlanKey = null;
+        if (!cutscenes.IsInCutscene) cutsceneVoices.Reset();
+        SchedulePreDubOnFramework();
     }, "Official profile pack cache refresh failed");
+
+    public void NotifyPreDubConfigurationChanged() => QueueFrameworkAction(() =>
+    {
+        if (configuration.Enabled && configuration.PreDubUpcomingCutscenes)
+        {
+            SchedulePreDubOnFramework();
+            return;
+        }
+        CancelPreDubOnFramework();
+        UpdateBaseHotLoadSafetyOnFramework();
+        RequestBaseHotLoadRestore();
+    }, "Pre-dub configuration refresh failed");
 
     private void OnRuntimeReady(RuntimeManager manager) => QueueFrameworkAction(
         () => OnRuntimeReadyOnFramework(manager), "Runtime-ready framework dispatch failed");
@@ -291,9 +327,11 @@ public sealed class SessionCoordinator : IAsyncDisposable
                     Volatile.Write(ref suppressAutomaticAdvance, 0);
             }, "Failed-line auto-advance release dispatch failed");
         };
+        scheduler.LineProcessed += OnSchedulerLineProcessed;
         scheduler.BecameIdle += () => QueueFrameworkAction(
             OnSchedulerIdle, "Scheduler-idle framework dispatch failed");
         UpdateBaseHotLoadSafetyOnFramework();
+        SchedulePreDubOnFramework();
     }
 
     private void OnVoiceDesignReady(string designPath, string codecPath)
@@ -508,6 +546,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
     private void OnCutsceneStartedOnFramework()
     {
         if (Volatile.Read(ref disposed) != 0) return;
+        CancelPreDubOnFramework();
         InvalidateBaseHotLoadSafetyOnFramework();
         domainPool?.Pause();
         domainPool?.ResetActivation();
@@ -535,6 +574,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
         EndSceneAudioBackend();
         UpdateBaseHotLoadSafetyOnFramework();
         RequestBaseHotLoadRestore();
+        SchedulePreDubOnFramework();
     }
 
     private void OnTerritoryChanged(uint territory) => QueueFrameworkAction(
@@ -550,6 +590,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
             OnCutsceneStartedOnFramework();
             return;
         }
+        CancelPreDubOnFramework();
         InvalidateBaseHotLoadSafetyOnFramework();
         domainPool?.Pause();
         domainPool?.ResetActivation();
@@ -558,6 +599,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
         if (!cutscenes.IsInCutscene) EndSceneAudioBackend();
         UpdateBaseHotLoadSafetyOnFramework();
         RequestBaseHotLoadRestore();
+        SchedulePreDubOnFramework();
     }
 
     private void OnLogout(int _, int __) => QueueFrameworkAction(
@@ -569,6 +611,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
         InvalidateBaseHotLoadSafetyOnFramework();
         domainPool?.Pause();
         domainPool?.ResetActivation();
+        CancelPreDubOnFramework();
         CancelSession();
         EndSceneAudioBackend();
     }
@@ -582,12 +625,14 @@ public sealed class SessionCoordinator : IAsyncDisposable
         if (flag != ConditionFlag.InCombat) return;
         if (value)
         {
+            CancelPreDubOnFramework();
             InvalidateBaseHotLoadSafetyOnFramework();
         }
         else
         {
             UpdateBaseHotLoadSafetyOnFramework();
             RequestBaseHotLoadRestore();
+            SchedulePreDubOnFramework();
         }
     }
 
@@ -611,10 +656,153 @@ public sealed class SessionCoordinator : IAsyncDisposable
         RequestBaseHotLoadRestore();
     }
 
+    private void SchedulePreDubOnFramework()
+    {
+        var manager = runtimeManager;
+        if (Volatile.Read(ref disposed) != 0 || !configuration.Enabled
+            || !configuration.PreDubUpcomingCutscenes
+            || cutscenes.IsInCutscene || condition[ConditionFlag.InCombat]
+            || scheduler is null || manager is null || !manager.IsReady
+            || bootstrap.State != BootstrapState.Ready || manager.IsSwitching
+            || Volatile.Read(ref debugRunning) != 0 || Volatile.Read(ref debugPlaybackActive) != 0
+            || Volatile.Read(ref exclusiveOperationActive) != 0)
+            return;
+
+        IReadOnlyList<uint> candidates;
+        try { candidates = msqProgress.GetUpcomingTrackedCutscenes(PreDubCandidateLimit); }
+        catch (Exception error)
+        {
+            log.Warning(error, "MSQ pre-dub frontier could not be read");
+            return;
+        }
+
+        var scenes = new List<(uint CutsceneId, CutsceneVoiceLine[] Lines)>();
+        foreach (var cutsceneId in candidates)
+        {
+            var manifest = cutsceneVoices.GetManifest(cutsceneId);
+            if (manifest is null) continue;
+            var synthetic = manifest.Lines
+                .Where(line => !line.IsVoiced && !line.IsPlayerChoice)
+                .ToArray();
+            if (synthetic.Length == 0) continue;
+            scenes.Add((cutsceneId, synthetic));
+            if (scenes.Count == PreDubSceneLimit) break;
+        }
+        if (scenes.Count == 0) return;
+
+        var language = CurrentLanguage();
+        var planKey = $"{manager.ModelHash}\0{language}\0{String.Join(",", scenes.Select(scene => scene.CutsceneId))}";
+        if (preDubSession is not null)
+        {
+            if (String.Equals(preDubPlanKey, planKey, StringComparison.Ordinal)) return;
+            CancelPreDubOnFramework();
+        }
+        if (String.Equals(completedPreDubPlanKey, planKey, StringComparison.Ordinal)) return;
+
+        var unresolved = 0;
+        var predictions = scenes.SelectMany(scene => scene.Lines.Select(line => (scene.CutsceneId, Line: line)))
+            .Select(value =>
+            {
+                var group = value.Line.OfficialGroupId is { Length: > 0 }
+                    ? officialVoiceCatalog.GetGroup(value.Line.OfficialGroupId)
+                    : officialVoiceCatalog.Resolve(
+                        value.Line.ActorNpcBaseId, value.Line.ActorToken, language);
+                if (group is null)
+                {
+                    unresolved++;
+                    return null;
+                }
+                return new CutscenePrediction(
+                    $"pre-dub:{value.CutsceneId}:{value.Line.NodeId}",
+                    OfficialVoiceCatalog.CanonicalSpeakerKey(group.Id),
+                    group.Label,
+                    value.Line.Text,
+                    language,
+                    group.Id,
+                    SourceQuest: PreDubLineSource);
+            })
+            .Where(value => value is not null)
+            .Select(value => value!)
+            .ToArray();
+        if (predictions.Length == 0)
+        {
+            log.Debug(
+                "MSQ pre-dub found synthetic scenes but no stable voices Scenes={Scenes} Lines={Lines}",
+                String.Join(",", scenes.Select(scene => scene.CutsceneId)), unresolved);
+            return;
+        }
+
+        domainPool?.Pause();
+        var preDub = new CutsceneSession(
+            Interlocked.Increment(ref nextEpoch), client.TerritoryType);
+        var added = preDub.ReconcilePredictions(predictions, preserveExisting: false);
+        if (added.Count == 0)
+        {
+            preDub.Dispose();
+            return;
+        }
+        preDubSession = preDub;
+        preDubPlanKey = planKey;
+        preDubLinesRemaining = added.Count;
+        preDubFailed = false;
+        EnsureCutsceneBaseResidency();
+        InvalidateBaseHotLoadSafetyOnFramework();
+        foreach (var line in added) scheduler.Enqueue(line);
+        log.Information(
+            "MSQ pre-dub scheduled Scenes={Scenes} Lines={Lines} DeferredActors={DeferredActors}",
+            String.Join(",", scenes.Select(scene => scene.CutsceneId)), added.Count, unresolved);
+    }
+
+    private void OnSchedulerLineProcessed(DubLine line)
+    {
+        if (!String.Equals(line.SourceQuest, PreDubLineSource, StringComparison.Ordinal)) return;
+        QueueFrameworkAction(() => OnPreDubLineProcessedOnFramework(line),
+            "Pre-dub completion framework dispatch failed");
+    }
+
+    private void OnPreDubLineProcessedOnFramework(DubLine line)
+    {
+        var current = preDubSession;
+        if (current is null || current.Epoch != line.SessionEpoch) return;
+        if (line.State != DubLineState.Buffered) preDubFailed = true;
+        current.ReleaseLine(line.Sequence);
+        if (--preDubLinesRemaining > 0) return;
+
+        var completedKey = preDubPlanKey;
+        var failed = preDubFailed;
+        current.Dispose();
+        preDubSession = null;
+        preDubPlanKey = null;
+        preDubLinesRemaining = 0;
+        preDubFailed = false;
+        if (!failed) completedPreDubPlanKey = completedKey;
+        ReleaseCutsceneBaseResidency();
+        UpdateBaseHotLoadSafetyOnFramework();
+        RequestBaseHotLoadRestore();
+        if (failed)
+            log.Warning("MSQ pre-dub stopped with one or more uncached lines; retry deferred until next safe-state change");
+        else
+            log.Information("MSQ pre-dub completed Plan={Plan}", completedKey ?? String.Empty);
+    }
+
+    private void CancelPreDubOnFramework()
+    {
+        var current = preDubSession;
+        if (current is null) return;
+        scheduler?.InvalidateEpoch(current.Epoch);
+        current.Dispose();
+        preDubSession = null;
+        preDubPlanKey = null;
+        preDubLinesRemaining = 0;
+        preDubFailed = false;
+        ReleaseCutsceneBaseResidency();
+    }
+
     private void UpdateBaseHotLoadSafetyOnFramework()
     {
         var safe = !cutscenes.IsInCutscene
                    && !condition[ConditionFlag.InCombat]
+                   && preDubSession is null
                    && scheduler?.HasUrgentWork != true
                    && bootstrap.State == BootstrapState.Ready
                    && runtimeManager?.IsSwitching != true
@@ -681,6 +869,9 @@ public sealed class SessionCoordinator : IAsyncDisposable
         if (session is null || scheduler is null) return;
         Interlocked.Increment(ref talkIdleGeneration);
         InvalidateBaseHotLoadSafetyOnFramework();
+        Volatile.Write(ref gameControlledAdvanceSerial, 0);
+        Volatile.Write(ref talkAdvanceContext,
+            new(line.Serial, cutsceneVoices.IsCurrentCutsceneUnskippable()));
         // Own autoplay from the first observed frame. CUTB/native detection
         // releases it for player choices or genuine native VO; synthetic
         // resolution must not race the game's text-speed timer.
@@ -751,6 +942,22 @@ public sealed class SessionCoordinator : IAsyncDisposable
             return;
         }
         QueueLineHandling(line, capturedSession, capturedResolved, language, firstTerritory, declaredVoice);
+    }
+
+    private bool ShouldPreserveGameControlledPacing(long talkSerial)
+    {
+        if (Volatile.Read(ref gameControlledAdvanceSerial) == talkSerial) return true;
+        var context = Volatile.Read(ref talkAdvanceContext);
+        if (context is null || context.TalkSerial != talkSerial
+            || !TalkAdvancePolicy.ShouldPreserveGameControlledPacing(
+                context.CutsceneUnskippable,
+                talk.IsAutomaticOnlyPresentation(talkSerial))) return false;
+        Volatile.Write(ref gameControlledAdvanceSerial, talkSerial);
+        if (configuration.AutoAdvanceDiagnostics)
+            log.Information(
+                "Preserving game-controlled pacing for unskippable automatic-only Talk line Serial={Serial}",
+                talkSerial);
+        return true;
     }
 
     private void QueueLineHandling(ActualTalkLine line, CutsceneSession capturedSession,
@@ -1332,7 +1539,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
         var inCombat = condition[ConditionFlag.InCombat];
         var manager = runtimeManager;
         var designer = voiceDesigner;
-        var canWork = !inCutscene && !inCombat && scheduler?.HasUrgentWork != true
+        var canWork = !inCutscene && !inCombat && preDubSession is null
+                      && scheduler?.HasUrgentWork != true
                       && bootstrap.State == BootstrapState.Ready
                       && manager?.IsSwitching != true
                       && manager?.IsReady == true
@@ -1478,6 +1686,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
 
     private void OnLineBuffered(DubLine line)
     {
+        if (String.Equals(line.SourceQuest, PreDubLineSource, StringComparison.Ordinal)) return;
         if (line.ActualStatus == ActualStatus.Predicted)
         {
             if (gameMixerBackend is { } mixer)
@@ -1539,7 +1748,9 @@ public sealed class SessionCoordinator : IAsyncDisposable
             || line.NativeVoiceStatus == NativeVoiceStatus.NativeVoiced
             || line.ActualTalkSerial is not { } serial
             || !cutscenes.IsInCutscene
-            || session is not { } current) return;
+            || session is not { } current
+            || talk.Current?.Serial != serial
+            || ShouldPreserveGameControlledPacing(serial)) return;
         Interlocked.Exchange(ref pendingAutoAdvance,
             new(current.Epoch, line.Sequence, serial, line.SpeakerName, line.Text,
                 line.NextPredictionKeys));
@@ -1563,6 +1774,12 @@ public sealed class SessionCoordinator : IAsyncDisposable
         if (current is null || current.Epoch != pending.SessionEpoch
             || current.CancellationToken.IsCancellationRequested
             || !configuration.AutoAdvanceDubbedCutsceneDialogue)
+        {
+            Interlocked.CompareExchange(ref pendingAutoAdvance, null, pending);
+            CancelAutoAdvanceRetry();
+            return;
+        }
+        if (ShouldPreserveGameControlledPacing(pending.TalkSerial))
         {
             Interlocked.CompareExchange(ref pendingAutoAdvance, null, pending);
             CancelAutoAdvanceRetry();
@@ -1758,6 +1975,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
         CancelAutoAdvanceRetry();
         Volatile.Write(ref autoAdvanceDispatching, 0);
         Volatile.Write(ref suppressAutomaticAdvance, 0);
+        Volatile.Write(ref talkAdvanceContext, null);
+        Volatile.Write(ref gameControlledAdvanceSerial, 0);
         audio?.Stop();
         lipSync.Stop();
         CancelActualLines();
@@ -2048,6 +2267,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
         Interlocked.Exchange(ref pendingAutoAdvance, null);
         CancelAutoAdvanceRetry();
         Volatile.Write(ref autoAdvanceDispatching, 0);
+        Volatile.Write(ref talkAdvanceContext, null);
+        Volatile.Write(ref gameControlledAdvanceSerial, 0);
         audio?.Stop();
         lipSync.Stop(avoidFrameworkDispatch);
         IsSpeaking = false;
@@ -2160,6 +2381,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
             await debugGate.WaitAsync(linked.Token).ConfigureAwait(false);
             entered = true;
             Volatile.Write(ref exclusiveOperationActive, 1);
+            CancelPreDubOnFramework();
             InvalidateBaseHotLoadSafetyOnFramework();
             domainPool?.Pause();
             if (domainPool is { } pool)
@@ -2210,6 +2432,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
                 if (CanRestoreAfterExclusiveOperation())
                 {
                     RequestBaseHotLoadRestore();
+                    QueueFrameworkAction(SchedulePreDubOnFramework,
+                        "Pre-dub restore after exclusive operation failed");
                 }
                 debugGate.Release();
             }
@@ -2520,6 +2744,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
             // scheduler-idle callback that arrives during that drain must not
             // start a new official build beside the debug inference.
             Volatile.Write(ref debugRunning, 1);
+            CancelPreDubOnFramework();
             InvalidateBaseHotLoadSafetyOnFramework();
             if (Volatile.Read(ref disposed) != 0)
                 throw new ObjectDisposedException(nameof(SessionCoordinator));
@@ -2631,7 +2856,11 @@ public sealed class SessionCoordinator : IAsyncDisposable
                 catch (Exception error) { log.Warning(error, "Failed to restore casting-domain activation after debug inference"); }
             }
             if (Volatile.Read(ref disposed) == 0)
+            {
                 RequestBaseHotLoadRestore();
+                QueueFrameworkAction(SchedulePreDubOnFramework,
+                    "Pre-dub restore after debug inference failed");
+            }
             debugGate.Release();
         }
     }
@@ -2695,6 +2924,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
             catch (Exception error) { Record(resource, error); }
         }
 
+        BestEffortSync("Initial pre-dub cancellation", CancelPreDubOnFramework);
         BestEffortSync("Initial session cancellation", () => CancelSession(avoidFrameworkDispatch: true));
         BestEffortSync("Debug inference cancellation", () => CancelDebugInference(disposingFromFrameworkThread));
         try { officialObservationShutdown.Cancel(throwOnFirstException: false); }
@@ -2733,7 +2963,11 @@ public sealed class SessionCoordinator : IAsyncDisposable
         bootstrap.Ready -= OnRuntimeReady;
         bootstrap.VoiceDesignReady -= OnVoiceDesignReady;
         if (runtimeManager is not null) runtimeManager.SelectionChanged -= OnBackendSelectionChanged;
-        if (scheduler is not null) scheduler.BecameIdle -= OnSchedulerIdle;
+        if (scheduler is not null)
+        {
+            scheduler.LineProcessed -= OnSchedulerLineProcessed;
+            scheduler.BecameIdle -= OnSchedulerIdle;
+        }
         Task[] coordinatorOperations;
         Task[] frameworkDispatchOperations;
         var disposingFromFrameworkDispatch = disposingFromFrameworkThread;

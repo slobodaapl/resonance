@@ -33,6 +33,7 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
     private readonly Func<BackendInfo, CancellationToken, Task>? setBackend;
     private readonly Func<CancellationToken, Task>? rebuildBackendBenchmark;
     private readonly Action cancelDebug;
+    private readonly Action preDubConfigurationChanged;
     private string selectedDomain = "generic_world";
     private string selectedLanguage = "english";
     private string selectedSex = "masculine";
@@ -67,6 +68,7 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
         Func<string, string, string, CancellationToken, Task> runVoiceDesignDebug,
         Func<string, string, string, CancellationToken, Task> runBaseDebug,
         Action cancelDebug,
+        Action preDubConfigurationChanged,
         Action save,
         Action<Exception> reportError,
         Func<AudioBackendStatus>? audioBackendStatus = null,
@@ -94,6 +96,7 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
         this.setBackend = setBackend;
         this.rebuildBackendBenchmark = rebuildBackendBenchmark;
         this.cancelDebug = cancelDebug;
+        this.preDubConfigurationChanged = preDubConfigurationChanged;
         this.save = save;
         this.reportError = reportError;
         debugLanguage = CurrentLanguageName();
@@ -120,10 +123,15 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
     private void DrawSettings()
     {
         var enabled = configuration.Enabled;
-        if (ImGui.Checkbox("Enabled", ref enabled)) { configuration.Enabled = enabled; save(); }
+        if (ImGui.Checkbox("Enabled", ref enabled))
+        {
+            configuration.Enabled = enabled;
+            save();
+            preDubConfigurationChanged();
+        }
 
         var quality = (int)configuration.Quality;
-        var qualityNames = new[] { "Balanced — Q4", "High — Q8" };
+        var qualityNames = new[] { "Q4 0.6B", "Q8 0.6B", "Q4 1.7B", "Q8 1.7B" };
         if (ImGui.Combo("Quality (restart required)", ref quality, qualityNames, qualityNames.Length))
         {
             configuration.Quality = (QualityPreset)quality;
@@ -219,6 +227,14 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
             : "Voice playback follows FFXIV's output device and voice-volume settings");
         var casting = configuration.BackgroundCasting;
         if (ImGui.Checkbox("Background casting", ref casting)) { configuration.BackgroundCasting = casting; save(); }
+        var preDub = configuration.PreDubUpcomingCutscenes;
+        if (ImGui.Checkbox("Pre-dub upcoming MSQ cutscenes", ref preDub))
+        {
+            configuration.PreDubUpcomingCutscenes = preDub;
+            save();
+            preDubConfigurationChanged();
+        }
+        ImGui.TextWrapped("Prepares up to two upcoming undubbed MSQ cutscenes during safe downtime. Pauses during combat and cutscenes.");
         var autoAdvance = configuration.AutoAdvanceDubbedCutsceneDialogue;
         if (ImGui.Checkbox("Auto-advance prepared dubbed cutscene dialogue", ref autoAdvance))
         {

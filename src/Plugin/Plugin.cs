@@ -198,6 +198,7 @@ public sealed class Plugin : IDalamudPlugin
                 new SpeakerResolver(ObjectTable, DataManager,
                     () => EnglishTerritoryName(ClientState.TerritoryType)),
                 new QuestDialoguePrefetcher(DataManager, ClientState),
+                new MsqProgressReader(DataManager, ClientState),
                 new CutsceneVoiceManifestProvider(
                     DataManager, ClientState, Log, new CutscenePlanStore(dataDirectory)),
                 createdLipSync,
@@ -223,6 +224,7 @@ public sealed class Plugin : IDalamudPlugin
                 createdCoordinator.RunVoiceDesignDebugAsync,
                 createdCoordinator.RunBaseDebugAsync,
                 createdCoordinator.CancelDebugInference,
+                createdCoordinator.NotifyPreDubConfigurationChanged,
                 SaveConfiguration, ReportError,
                 createdCoordinator.GetAudioBackendStatus,
                 createdCoordinator.SetBackendAsync,

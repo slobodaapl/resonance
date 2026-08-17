@@ -6,12 +6,22 @@ namespace Resonance.Tests;
 public sealed class ConfigurationMigrationIntegrationTests
 {
     [Fact]
-    public void RuntimeOptionsDefaultOff()
+    public void RuntimeOptionDefaultsAreIntentional()
     {
+        Assert.True(new Configuration().PreDubUpcomingCutscenes);
         Assert.False(new Configuration().AutoAdvanceDiagnostics);
         Assert.False(new Configuration().KeepBaseModelLoaded);
         Assert.False(new Configuration().DisableVoicePackAutoUpdate);
         Assert.False(new Configuration().ExportDebugBaseWav);
+    }
+
+    [Fact]
+    public void MissingPreDubSettingDeserializesEnabled()
+    {
+        var configuration = System.Text.Json.JsonSerializer.Deserialize<Configuration>("{}");
+
+        Assert.NotNull(configuration);
+        Assert.True(configuration.PreDubUpcomingCutscenes);
     }
 
     [Fact]

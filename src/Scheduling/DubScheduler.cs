@@ -36,6 +36,7 @@ public sealed class DubScheduler : IAsyncDisposable
     public event Action<DubLine>? LineBuffered;
     public event Action<DubLine>? PredictionStreamable;
     public event Action<DubLine, Exception>? LineFailed;
+    public event Action<DubLine>? LineProcessed;
     public event Action? BecameIdle;
     public bool HasUrgentWork
     {
@@ -271,6 +272,7 @@ public sealed class DubScheduler : IAsyncDisposable
                         && !queue.UnorderedItems.Any(item => item.Element.ActualStatus == ActualStatus.Actual
                             && !item.Element.IsTerminal);
                 }
+                LineProcessed?.Invoke(line);
                 if (idle && Volatile.Read(ref disposed) == 0) BecameIdle?.Invoke();
             }
         }

@@ -4,7 +4,7 @@
   "Punchline": "Fully local AI dubbing for unvoiced FFXIV cutscenes.",
   "Description": "Dubs otherwise-unvoiced cutscene dialogue locally with persistent character voices. Official voice audio always wins.",
   "InternalName": "Resonance",
-  "AssemblyVersion": "1.3.0.0",
+  "AssemblyVersion": "1.4.0.0",
   "ApplicableVersion": "any",
   "DalamudApiLevel": 15,
   "Tags": ["accessibility", "audio", "cutscene", "tts"]

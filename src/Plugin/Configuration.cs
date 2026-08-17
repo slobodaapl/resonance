@@ -13,8 +13,10 @@ public enum ComputePreference
 
 public enum QualityPreset
 {
-    Balanced,
-    High,
+    Q4Base06B,
+    Q8Base06B,
+    Q4Base17B,
+    Q8Base17B,
 }
 
 [Serializable]
@@ -22,7 +24,7 @@ public sealed class Configuration : IPluginConfiguration
 {
     public int Version { get; set; } = 2;
     public bool Enabled { get; set; } = true;
-    public QualityPreset Quality { get; set; } = QualityPreset.Balanced;
+    public QualityPreset Quality { get; set; } = QualityPreset.Q4Base06B;
     public ComputePreference Compute { get; set; } = ComputePreference.AutoPerformance;
     // User intent. Never rewritten by automatic error fallback.
     public string? DesiredBackendName { get; set; }
@@ -38,6 +40,7 @@ public sealed class Configuration : IPluginConfiguration
     /// </summary>
     public bool KeepBaseModelLoaded { get; set; }
     public bool BackgroundCasting { get; set; } = true;
+    public bool PreDubUpcomingCutscenes { get; set; } = true;
     public bool AutoAdvanceDubbedCutsceneDialogue { get; set; }
     public bool AutoAdvanceDiagnostics { get; set; }
     public bool DisableVoicePackAutoUpdate { get; set; }

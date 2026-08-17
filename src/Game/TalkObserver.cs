@@ -305,6 +305,15 @@ public sealed partial class TalkObserver : IDisposable
         visible && TalkAdvancePolicy.CanStartSyntheticPlayback(
             serial, Current?.Serial, presentationReadySerial);
 
+    public unsafe bool IsAutomaticOnlyPresentation(long serial)
+    {
+        var addon = (AddonTalk*)addonAddress;
+        return visible && Current?.Serial == serial && addon != null && addon->IsVisible
+               && TalkAdvancePolicy.IsAutomaticOnlyPresentation(
+                   ReadTalkNodeVisibility(addon, 8),
+                   ReadTalkNodeVisibility(addon, 9));
+    }
+
     private static unsafe bool IsPresentationReady(AddonTalk* addon)
     {
         var manualAdvance = addon->UldManager.SearchNodeById(8);

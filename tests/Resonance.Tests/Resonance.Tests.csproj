@@ -31,6 +31,7 @@
     <Compile Include="..\..\src\Audio\GameMixerAudioBackend.cs" Link="Source\GameMixerAudioBackend.cs" />
     <Compile Include="..\..\src\Bootstrap\BackendSelector.cs" Link="Source\BackendSelector.cs" />
     <Compile Include="..\..\src\Bootstrap\AssetManager.cs" Link="Source\AssetManager.cs" />
+    <Compile Include="..\..\src\Bootstrap\ModelQualitySelection.cs" Link="Source\ModelQualitySelection.cs" />
     <Compile Include="..\..\src\Bootstrap\OfficialProfilePackManager.cs" Link="Source\OfficialProfilePackManager.cs" />
     <Compile Include="..\..\src\Bootstrap\AssetManifest.cs" Link="Source\AssetManifest.cs" />
     <Compile Include="..\..\src\Bootstrap\BackendBenchmark.cs" Link="Source\BackendBenchmark.cs" />
@@ -53,6 +54,7 @@
     <Compile Include="..\..\src\Game\OfficialVoiceCatalog.cs" Link="Source\OfficialVoiceCatalog.cs" />
     <Compile Include="..\..\src\Game\CutsceneVoiceManifest.cs" Link="Source\CutsceneVoiceManifest.cs" />
     <Compile Include="..\..\src\Game\CutscenePlanStore.cs" Link="Source\CutscenePlanStore.cs" />
+    <Compile Include="..\..\src\Game\MsqCutsceneSelector.cs" Link="Source\MsqCutsceneSelector.cs" />
     <Compile Include="..\..\src\Plugin\LegacyCastingMigration.cs" Link="Source\LegacyCastingMigration.cs" />
     <Compile Include="..\..\src\Scheduling\CutsceneSession.cs" Link="Source\CutsceneSession.cs" />
     <Compile Include="..\..\src\Scheduling\AutoAdvancePolicy.cs" Link="Source\AutoAdvancePolicy.cs" />

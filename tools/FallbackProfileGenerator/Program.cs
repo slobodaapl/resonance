@@ -45,45 +45,52 @@ internal static class Generator
         RehashExistingFallbacks(database, catalog.Version);
         using var design = NativeRuntime.Load(options.VoiceDesignModel, qualities[0].Codec, options.Backend,
             options.RuntimeDirectory, voiceDesign: true);
-        using var q4 = NativeRuntime.Load(qualities[0].Talker, qualities[0].Codec, options.Backend,
-            options.RuntimeDirectory, voiceDesign: false);
-        using var q8 = NativeRuntime.Load(qualities[1].Talker, qualities[1].Codec, options.Backend,
-            options.RuntimeDirectory, voiceDesign: false);
-        var runtimes = new[] { (Quality: qualities[0], Runtime: q4), (Quality: qualities[1], Runtime: q8) };
-
-        var variants = catalog.Domains.SelectMany(Variants).ToArray();
-        var total = variants.Length * Languages.Length;
-        var complete = 0;
-        foreach (var variant in variants)
-        foreach (var language in Languages)
+        var runtimes = new List<(Quality Quality, NativeRuntime Runtime)>();
+        try
         {
-            if (runtimes.All(item => Exists(database, variant.Domain.Id, variant.Id, language, item.Quality.Hash)))
+            foreach (var quality in qualities)
+                runtimes.Add((quality, NativeRuntime.Load(quality.Talker, quality.Codec, options.Backend,
+                    options.RuntimeDirectory, voiceDesign: false)));
+
+            var variants = catalog.Domains.SelectMany(Variants).ToArray();
+            var total = variants.Length * Languages.Length;
+            var complete = 0;
+            foreach (var variant in variants)
+            foreach (var language in Languages)
             {
+                if (runtimes.All(item => Exists(database, variant.Domain.Id, variant.Id, language,
+                        item.Quality.Hash)))
+                {
+                    complete++;
+                    continue;
+                }
+                var instruction = BuildInstruction(variant, language);
+                var text = ReferenceTexts[language];
+                var seed = StableSeed($"fallback\0{catalog.Version}\0{variant.Domain.Id}\0{variant.Id}\0{language}");
+                var audio = design.Synthesize(text, language, instruction, seed);
+                foreach (var (quality, runtime) in runtimes)
+                {
+                    if (Exists(database, variant.Domain.Id, variant.Id, language, quality.Hash)) continue;
+                    var designed = runtime.Extract(audio) with { Text = text };
+                    var final = ApplyAuthenticAnchor(database, variant, language, quality.Hash, designed);
+                    var profileHash = HashProfile(language, quality.Hash, final.Text, final.Embedding, final.Codes,
+                        variant.Domain.Id, catalog.Version);
+                    Upsert(database, variant, language, quality.Hash, final, profileHash);
+                }
                 complete++;
-                continue;
+                if (complete % 10 == 0 || complete == total)
+                    Console.WriteLine($"{complete}/{total} {variant.Domain.Id}/{variant.Id}/{language}");
             }
-            var instruction = BuildInstruction(variant, language);
-            var text = ReferenceTexts[language];
-            var seed = StableSeed($"fallback\0{catalog.Version}\0{variant.Domain.Id}\0{variant.Id}\0{language}");
-            var audio = design.Synthesize(text, language, instruction, seed);
-            foreach (var (quality, runtime) in runtimes)
-            {
-                if (Exists(database, variant.Domain.Id, variant.Id, language, quality.Hash)) continue;
-                var designed = runtime.Extract(audio) with { Text = text };
-                var final = ApplyAuthenticAnchor(database, variant, language, quality.Hash, designed);
-                var profileHash = HashProfile(language, quality.Hash, final.Text, final.Embedding, final.Codes,
-                    variant.Domain.Id, catalog.Version);
-                Upsert(database, variant, language, quality.Hash, final, profileHash);
-            }
-            complete++;
-            if (complete % 10 == 0 || complete == total)
-                Console.WriteLine($"{complete}/{total} {variant.Domain.Id}/{variant.Id}/{language}");
+            using var command = database.CreateCommand();
+            command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;";
+            command.ExecuteNonQuery();
+            Console.WriteLine($"fallback_rows={Scalar(database, "SELECT COUNT(*) FROM fallback_profile")}");
+            return 0;
         }
-        using var command = database.CreateCommand();
-        command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;";
-        command.ExecuteNonQuery();
-        Console.WriteLine($"fallback_rows={Scalar(database, "SELECT COUNT(*) FROM fallback_profile")}");
-        return 0;
+        finally
+        {
+            foreach (var runtime in runtimes) runtime.Runtime.Dispose();
+        }
     }
 
     private static IEnumerable<Variant> Variants(Domain domain) => domain.FallbackDimensions switch
@@ -284,7 +291,7 @@ internal static class Generator
     private static JsonSerializerOptions JsonOptions() => new() { PropertyNameCaseInsensitive = true };
 
     private sealed record Options(string Catalog, string Database, string Models, string RuntimeDirectory,
-        string VoiceDesignModel, string Backend, int PackVersion)
+        string VoiceDesignModel, string[] Qualities, string Backend, int PackVersion)
     {
         internal static Options Parse(string[] args)
         {
@@ -294,7 +301,9 @@ internal static class Generator
             var models = Required("--models");
             return new(Required("--catalog"), Required("--database"), models, Required("--runtime"),
                 Path.Combine(models, "qwen-talker-1.7b-voicedesign-Q4_K_M.gguf"),
-                values.GetValueOrDefault("--backend") ?? "CUDA0", Int32.Parse(values.GetValueOrDefault("--pack-version") ?? "3"));
+                (values.GetValueOrDefault("--qualities") ?? "q4,q8,1.7b-q4,1.7b-q8")
+                .Split(',', StringSplitOptions.RemoveEmptyEntries),
+                values.GetValueOrDefault("--backend") ?? "CUDA0", Int32.Parse(values.GetValueOrDefault("--pack-version") ?? "5"));
         }
     }
 
@@ -302,11 +311,21 @@ internal static class Generator
     {
         var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(Path.GetDirectoryName(options.Catalog)!, "models.json")));
         string Hash(string id) => manifest.RootElement.GetProperty("artifacts").EnumerateArray().Single(x => x.GetProperty("id").GetString() == id).GetProperty("sha256").GetString()!;
-        return
-        [
-            new("q4", Path.Combine(options.Models, "qwen-talker-0.6b-base-Q4_K_M.gguf"), Path.Combine(options.Models, "qwen-tokenizer-12hz-Q4_K_M.gguf"), Hash("base-q4")),
-            new("q8", Path.Combine(options.Models, "qwen-talker-0.6b-base-Q8_0.gguf"), Path.Combine(options.Models, "qwen-tokenizer-12hz-Q8_0.gguf"), Hash("base-q8")),
-        ];
+        string FileName(string id) => manifest.RootElement.GetProperty("artifacts").EnumerateArray()
+            .Single(x => x.GetProperty("id").GetString() == id).GetProperty("fileName").GetString()!;
+        return options.Qualities.Select(quality =>
+        {
+            var baseId = $"base-{quality}";
+            var quantization = quality switch
+            {
+                "q4" or "1.7b-q4" => "q4",
+                "q8" or "1.7b-q8" => "q8",
+                _ => throw new InvalidDataException($"Unknown Base quality '{quality}'"),
+            };
+            var tokenizerId = $"tokenizer-{quantization}";
+            return new Quality(quality, Path.Combine(options.Models, FileName(baseId)),
+                Path.Combine(options.Models, FileName(tokenizerId)), Hash(baseId));
+        }).ToArray();
     }
 
     private sealed record Catalog(int Version, Domain[] Domains);

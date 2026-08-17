@@ -33,19 +33,17 @@ jobs:
           database_hash="$(sha256sum "$database" | cut -d ' ' -f 1)"
           database_length="$(stat -c '%s' "$database")"
           schema_version="$(sqlite3 "$database" 'select schema_version from pack_metadata limit 1')"
-          profile_count="$(sqlite3 "$database" 'select (select count(*) from official_profile)+(select count(*) from fallback_profile)')"
           pack_version="$(sqlite3 "$database" 'select pack_version from pack_metadata limit 1')"
           catalog_version="$(sqlite3 "$database" 'select catalog_version from pack_metadata limit 1')"
-          model_hashes="$(jq '{q4: (.artifacts[] | select(.id == "base-q4") | .sha256), q8: (.artifacts[] | select(.id == "base-q8") | .sha256)}' assets/models.json)"
+          model_hashes="$(jq '[.artifacts[] | select(.id | startswith("base-")) | {key: .id, value: .sha256}] | from_entries' assets/models.json)"
           jq -n \
             --argjson packVersion "$pack_version" \
             --argjson catalogVersion "$catalog_version" \
-            --argjson profileCount "$profile_count" \
             --arg databaseSha256 "$database_hash" \
             --argjson modelHashes "$model_hashes" \
             --argjson schemaVersion "$schema_version" \
             --argjson databaseLength "$database_length" \
-            '{SchemaVersion: $schemaVersion, PackVersion: $packVersion, CatalogVersion: $catalogVersion, ProfileCount: $profileCount, DatabaseSha256: $databaseSha256, DatabaseLength: $databaseLength, ModelHashes: $modelHashes}' \
+            '{SchemaVersion: $schemaVersion, PackVersion: $packVersion, CatalogVersion: $catalogVersion, DatabaseSha256: $databaseSha256, DatabaseLength: $databaseLength, ModelHashes: $modelHashes}' \
             > package/official-profile-pack.json
           touch -t 198001010000 package/official-profiles.sqlite3 package/official-profile-pack.json
           (cd package && zip -X -9 ../Resonance-Official-Profiles.zip official-profiles.sqlite3 official-profile-pack.json)
@@ -58,11 +56,10 @@ jobs:
             --argjson length "$archive_length" \
             --arg sha256 "$archive_hash" \
             --arg databaseSha256 "$database_hash" \
-            --argjson profileCount "$profile_count" \
             --argjson schemaVersion "$schema_version" \
             --argjson catalogVersion "$catalog_version" \
             --argjson databaseLength "$database_length" \
-            '{SchemaVersion: $schemaVersion, PackVersion: $packVersion, Url: $url, Length: $length, Sha256: $sha256, DatabaseSha256: $databaseSha256, ProfileCount: $profileCount, CatalogVersion: $catalogVersion, DatabaseLength: $databaseLength}' \
+            '{SchemaVersion: $schemaVersion, PackVersion: $packVersion, Url: $url, Length: $length, Sha256: $sha256, DatabaseSha256: $databaseSha256, CatalogVersion: $catalogVersion, DatabaseLength: $databaseLength}' \
             > official-profile-pack.json
 
       - name: Publish stable profile-pack release

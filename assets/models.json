@@ -43,6 +43,26 @@
       "stage": 0
     },
     {
+      "id": "base-1.7b-q4",
+      "fileName": "qwen-talker-1.7b-base-Q4_K_M.gguf",
+      "url": "https://huggingface.co/CC-TM/Qwen3-TTS-GGUF/resolve/9c57e72bc889ca381fe5e463dd9e22e8201e01fa/qwen-talker-1.7b-base-Q4_K_M.gguf",
+      "length": 1219245248,
+      "sha256": "ea393ebaf2167ea23ce9fc18b093822851358a950d7075cd47ab4f6ce23e887d",
+      "abi": 6,
+      "license": "Apache-2.0",
+      "stage": 0
+    },
+    {
+      "id": "base-1.7b-q8",
+      "fileName": "qwen-talker-1.7b-base-Q8_0.gguf",
+      "url": "https://huggingface.co/CC-TM/Qwen3-TTS-GGUF/resolve/9c57e72bc889ca381fe5e463dd9e22e8201e01fa/qwen-talker-1.7b-base-Q8_0.gguf",
+      "length": 2079448256,
+      "sha256": "4b9a33a236908dd9435a42f7a396e38038329d053b704342a6413c08544c4fda",
+      "abi": 6,
+      "license": "Apache-2.0",
+      "stage": 0
+    },
+    {
       "id": "tokenizer-q8",
       "fileName": "qwen-tokenizer-12hz-Q8_0.gguf",
       "url": "https://huggingface.co/CC-TM/Qwen3-TTS-GGUF/resolve/9c57e72bc889ca381fe5e463dd9e22e8201e01fa/qwen-tokenizer-12hz-Q8_0.gguf",

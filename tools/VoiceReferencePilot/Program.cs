@@ -187,7 +187,13 @@ static unsafe void BuildProfiles(
     foreach (var quality in qualities)
     {
         var baseModel = manifest.Artifacts.Single(value => value.Id == $"base-{quality}");
-        var tokenizer = manifest.Artifacts.Single(value => value.Id == $"tokenizer-{quality}");
+        var quantization = quality switch
+        {
+            "q4" or "1.7b-q4" => "q4",
+            "q8" or "1.7b-q8" => "q8",
+            _ => throw new InvalidDataException($"Unknown Base quality '{quality}'"),
+        };
+        var tokenizer = manifest.Artifacts.Single(value => value.Id == $"tokenizer-{quantization}");
         using var runtime = new PilotRuntime(
             Path.Combine(modelsDirectory, baseModel.FileName),
             Path.Combine(modelsDirectory, tokenizer.FileName), backend, runtimeDirectory);
