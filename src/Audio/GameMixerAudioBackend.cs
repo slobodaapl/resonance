@@ -68,18 +68,28 @@ public sealed class FfxivGameMixerAudioBackend : IGameMixerAudioBackend
         Func<CancellationToken, Task<NativeScdTemplate>>? loadNativeScdTemplate = null)
     {
         this.resourceOverride = resourceOverride ?? throw new ArgumentNullException(nameof(resourceOverride));
-        this.soundPlayer = soundPlayer ?? throw new ArgumentNullException(nameof(soundPlayer));
-        this.outputDrainGuard = outputDrainGuard ?? DefaultOutputDrainGuard;
-        this.mappingGrace = mappingGrace ?? GameMixerAssetStore.DefaultGrace;
-        this.loadNativeScdTemplate = loadNativeScdTemplate;
-        if (this.outputDrainGuard < TimeSpan.Zero || this.outputDrainGuard > TimeSpan.FromSeconds(1))
-            throw new ArgumentOutOfRangeException(nameof(outputDrainGuard));
-        if (this.mappingGrace < TimeSpan.Zero || this.mappingGrace > TimeSpan.FromMinutes(1))
-            throw new ArgumentOutOfRangeException(nameof(mappingGrace));
-        assets = new GameMixerAssetStore(pluginDataDirectory, this.mappingGrace);
-        diagnostic = resourceOverride.IsAvailable
-            ? "Resonance SCD resource override ready"
-            : resourceOverride.UnavailableReason ?? "Resonance SCD resource override unavailable";
+        try
+        {
+            this.soundPlayer = soundPlayer ?? throw new ArgumentNullException(nameof(soundPlayer));
+            this.outputDrainGuard = outputDrainGuard ?? DefaultOutputDrainGuard;
+            this.mappingGrace = mappingGrace ?? GameMixerAssetStore.DefaultGrace;
+            this.loadNativeScdTemplate = loadNativeScdTemplate;
+            if (this.outputDrainGuard < TimeSpan.Zero || this.outputDrainGuard > TimeSpan.FromSeconds(1))
+                throw new ArgumentOutOfRangeException(nameof(outputDrainGuard));
+            if (this.mappingGrace < TimeSpan.Zero || this.mappingGrace > TimeSpan.FromMinutes(1))
+                throw new ArgumentOutOfRangeException(nameof(mappingGrace));
+            assets = new GameMixerAssetStore(pluginDataDirectory, this.mappingGrace);
+            diagnostic = resourceOverride.IsAvailable
+                ? "Resonance SCD resource override ready"
+                : resourceOverride.UnavailableReason ?? "Resonance SCD resource override unavailable";
+        }
+        catch
+        {
+            // The backend owns the override from the moment it is supplied,
+            // including construction failures before the backend is returned.
+            this.resourceOverride.Dispose();
+            throw;
+        }
     }
 
     public bool IsAvailable => Volatile.Read(ref disposed) == 0 && resourceOverride.IsAvailable;
@@ -228,9 +238,12 @@ public sealed class FfxivGameMixerAudioBackend : IGameMixerAudioBackend
             try { runTask.GetAwaiter().GetResult(); }
             catch (Exception error) { MarkFaulted($"FFXIV game-mixer shutdown failed: {error.Message}"); }
         }
-        resourceOverride.Dispose();
-        assets.Dispose();
-        lifetimeCancellation.Dispose();
+        try { resourceOverride.Dispose(); }
+        finally
+        {
+            assets.Dispose();
+            lifetimeCancellation.Dispose();
+        }
     }
 
     private void ReleasePreparedAssets()

@@ -193,20 +193,37 @@ public sealed class Plugin : IDalamudPlugin
             {
                 Log.Warning(error, "FFXIV native voice output unavailable");
             }
-            createdCoordinator = coordinator = new SessionCoordinator(
-                createdCutscenes, createdTalk, ClientState, Condition, Framework,
-                new SpeakerResolver(ObjectTable, DataManager,
-                    () => EnglishTerritoryName(ClientState.TerritoryType)),
-                new QuestDialoguePrefetcher(DataManager, ClientState),
-                new MsqProgressReader(DataManager, ClientState),
-                new CutsceneVoiceManifestProvider(
-                    DataManager, ClientState, Log, new CutscenePlanStore(dataDirectory)),
-                createdLipSync,
-                createdDatabase, createdVoices, createdBootstrap,
-                Path.Combine(dataDirectory, "line-cache"),
-                Path.Combine(dataDirectory, "debug-audio"),
-                catalog, officialVoiceCatalog, EnglishTerritoryName,
-                Configuration, Log, createdGameMixer);
+            try
+            {
+                createdCoordinator = coordinator = new SessionCoordinator(
+                    createdCutscenes, createdTalk, ClientState, Condition, Framework,
+                    new SpeakerResolver(ObjectTable, DataManager,
+                        () => EnglishTerritoryName(ClientState.TerritoryType)),
+                    new QuestDialoguePrefetcher(DataManager, ClientState),
+                    new MsqProgressReader(DataManager, ClientState),
+                    new CutsceneVoiceManifestProvider(
+                        DataManager, ClientState, Log, new CutscenePlanStore(dataDirectory)),
+                    createdLipSync,
+                    createdDatabase, createdVoices, createdBootstrap,
+                    Path.Combine(dataDirectory, "line-cache"),
+                    Path.Combine(dataDirectory, "debug-audio"),
+                    catalog, officialVoiceCatalog, EnglishTerritoryName,
+                    Configuration, Log, createdGameMixer);
+            }
+            finally
+            {
+                if (createdCoordinator is null && createdGameMixer is not null)
+                {
+                    try { createdGameMixer.Dispose(); }
+                    catch (Exception error)
+                    {
+                        Log.Warning(error, "Unowned FFXIV native voice output teardown failed");
+                    }
+                }
+            }
+
+            // SessionCoordinator owns the backend after its constructor returns.
+            createdGameMixer = null;
             startupLipSync = null;
             ipc = new IpcService(PluginInterface, createdBootstrap, createdCoordinator);
 
@@ -228,7 +245,7 @@ public sealed class Plugin : IDalamudPlugin
                 SaveConfiguration, ReportError,
                 createdCoordinator.GetAudioBackendStatus,
                 createdCoordinator.SetBackendAsync,
-            createdCoordinator.RebuildBackendBenchmarkAsync);
+                createdCoordinator.RebuildBackendBenchmarkAsync);
             windows.AddWindow(createdWindow);
             if (Interlocked.Exchange(ref openSettingsRequested, 0) != 0)
                 createdWindow.IsOpen = true;

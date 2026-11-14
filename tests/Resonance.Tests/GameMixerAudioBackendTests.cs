@@ -22,6 +22,18 @@ public sealed class GameMixerAudioBackendTests
                 "cut/ex5/sound/voicem/manfst0000.scd", "abc", 42));
 
     [Fact]
+    public void FailedConstructionDisposesOwnedResourceOverride()
+    {
+        var resource = new TestResourceOverride();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => new FfxivGameMixerAudioBackend(
+            Path.GetTempPath(), resource, new TestSoundPlayer(),
+            outputDrainGuard: TimeSpan.FromSeconds(-1)));
+
+        Assert.Equal(1, resource.DisposeCount);
+    }
+
+    [Fact]
     public void ScdHasOneBoundedMonoVoiceAudioEntryAndContentAddressedPath()
     {
         var source = Enumerable.Repeat(0.1f, 1_000).ToArray();
@@ -431,6 +443,7 @@ public sealed class GameMixerAudioBackendTests
     {
         public int RegisterCount { get; private set; }
         public int UnregisterCount { get; private set; }
+        public int DisposeCount { get; private set; }
         public bool RegisterSucceeds { get; init; } = true;
         public bool Available { get; set; } = true;
         public bool IsAvailable => Available;
@@ -444,7 +457,7 @@ public sealed class GameMixerAudioBackendTests
             return false;
         }
         public void Unregister(string virtualPath) => UnregisterCount++;
-        public void Dispose() { }
+        public void Dispose() => DisposeCount++;
     }
 
     private sealed class TestSoundPlayer : IGameMixerSoundPlayer

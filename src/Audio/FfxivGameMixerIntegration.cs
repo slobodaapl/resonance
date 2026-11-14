@@ -170,6 +170,28 @@ public sealed unsafe class ResonanceScdResourceOverride : IGameResourceOverride
     public void Dispose()
     {
         if (Interlocked.Exchange(ref disposed, 1) != 0) return;
+
+        var failures = new List<Exception>();
+        void BestEffort(Action cleanup)
+        {
+            try { cleanup(); }
+            catch (Exception error) { failures.Add(error); }
+        }
+
+        // Stop callbacks before releasing path storage. Every hook is
+        // attempted independently so one unload-time failure cannot strand
+        // the remaining hooks.
+        BestEffort(() => readSqPackHook?.Disable());
+        BestEffort(() => soundOnLoadHook?.Disable());
+        BestEffort(() => createFileHook?.Disable());
+        BestEffort(() => getResourceSyncHook?.Disable());
+        BestEffort(() => getResourceAsyncHook?.Disable());
+        BestEffort(() => readSqPackHook?.Dispose());
+        BestEffort(() => soundOnLoadHook?.Dispose());
+        BestEffort(() => createFileHook?.Dispose());
+        BestEffort(() => getResourceSyncHook?.Dispose());
+        BestEffort(() => getResourceAsyncHook?.Dispose());
+
         lock (mappingGate)
         {
             foreach (var mapping in mappings.Values) Marshal.FreeHGlobal(mapping.Utf8Path);
@@ -177,18 +199,11 @@ public sealed unsafe class ResonanceScdResourceOverride : IGameResourceOverride
             mappings.Clear();
             retiredPaths.Clear();
         }
-        readSqPackHook?.Disable();
-        soundOnLoadHook?.Disable();
-        createFileHook?.Disable();
-        getResourceSyncHook?.Disable();
-        getResourceAsyncHook?.Disable();
-        readSqPackHook?.Dispose();
-        soundOnLoadHook?.Dispose();
-        createFileHook?.Dispose();
-        getResourceSyncHook?.Dispose();
-        getResourceAsyncHook?.Dispose();
         foreach (var pointer in createFilePath.Values) Marshal.FreeHGlobal(pointer);
         createFilePath.Dispose();
+
+        if (failures.Count > 0)
+            throw new AggregateException("Resonance SCD resource hook teardown failed", failures);
     }
 
     private byte SoundOnLoadDetour(
