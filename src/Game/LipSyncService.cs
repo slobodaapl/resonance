@@ -1,4 +1,5 @@
 using Dalamud.Plugin.Services;
+using Dalamud.Game.ClientState.Objects.Types;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using Resonance.Scheduling;
 
@@ -8,14 +9,17 @@ public sealed class LipSyncService : IAsyncDisposable
 {
     private const ushort SpeakNone = 0;
     private const ushort SpeakNormalMiddle = 630;
+    // Replay the 60-frame lip clip before it ends; same-ID override writes do not restart it.
+    private static readonly TimeSpan RestartInterval = TimeSpan.FromSeconds(1.5);
     private readonly IFramework framework;
     private readonly IObjectTable objects;
     private readonly object gate = new();
     private readonly object disposeGate = new();
     private readonly CancellationTokenSource shutdown = new();
     private readonly HashSet<Task> tasks = [];
-    private CancellationTokenSource? active;
-    private nint activeActor;
+    private DubLine? activeLine;
+    private DialogueActor? activeActor;
+    private TimeSpan sinceRestart;
     private int disposed;
     private Task? disposeTask;
 
@@ -23,73 +27,93 @@ public sealed class LipSyncService : IAsyncDisposable
     {
         this.framework = framework;
         this.objects = objects;
+        framework.Update += OnUpdate;
     }
 
     public void Start(DubLine line)
     {
         Stop();
-        if (line.ActorAddress == 0 || Volatile.Read(ref disposed) != 0) return;
-        var cancellation = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token);
+        if (line.Actor is not { Address: not 0 } actor || Volatile.Read(ref disposed) != 0) return;
         lock (gate)
         {
-            if (Volatile.Read(ref disposed) != 0)
-            {
-                cancellation.Dispose();
-                return;
-            }
-            active = cancellation;
-            activeActor = line.ActorAddress;
+            if (Volatile.Read(ref disposed) != 0) return;
+            activeLine = line;
+            activeActor = actor;
+            sinceRestart = RestartInterval;
+            TrackFramework(framework.Run(() => ApplyIfCurrent(line, TimeSpan.Zero), shutdown.Token));
         }
-        Track(KeepAliveAsync(line.ActorAddress, cancellation));
     }
 
-    public void Stop(bool avoidFrameworkDispatch = false)
+    public void Stop(bool avoidFrameworkDispatch = false) => StopCore(null, avoidFrameworkDispatch);
+
+    public void Stop(DubLine line) => StopCore(line, false);
+
+    private void StopCore(DubLine? expected, bool avoidFrameworkDispatch)
     {
-        CancellationTokenSource? cancellation;
-        nint actor;
+        DialogueActor? actor;
         lock (gate)
         {
-            cancellation = active;
+            if (expected is not null && !ReferenceEquals(activeLine, expected)) return;
             actor = activeActor;
-            active = null;
-            activeActor = 0;
+            activeLine = null;
+            activeActor = null;
+            if (actor is not null && !avoidFrameworkDispatch && Volatile.Read(ref disposed) == 0)
+                TrackFramework(framework.Run(() => ClearIfInactive(actor), shutdown.Token));
         }
-        try { cancellation?.Cancel(); }
-        catch (ObjectDisposedException) { }
-        if (actor != 0 && !avoidFrameworkDispatch && Volatile.Read(ref disposed) == 0)
-            TrackFramework(framework.Run(() => SetIfPresent(actor, SpeakNone), shutdown.Token));
     }
 
-    private async Task KeepAliveAsync(nint actor, CancellationTokenSource cancellation)
+    private void OnUpdate(IFramework frame) => ApplyIfCurrent(null, frame.UpdateDelta);
+
+    private void ApplyIfCurrent(DubLine? expected, TimeSpan elapsed)
     {
-        var token = cancellation.Token;
-        try
+        lock (gate)
         {
-            while (!token.IsCancellationRequested)
+            if (Volatile.Read(ref disposed) != 0 || activeLine is not { } line
+                || expected is not null && !ReferenceEquals(line, expected)
+                || activeActor is not { } actor) return;
+            if (line.Token.IsCancellationRequested || line.IsTerminal)
             {
-                await framework.Run(() => SetIfPresent(actor, SpeakNormalMiddle), token).ConfigureAwait(false);
-                await Task.Delay(TimeSpan.FromSeconds(1.5), token).ConfigureAwait(false);
+                activeLine = null;
+                activeActor = null;
+                SetIfPresent(actor, SpeakNone);
+            }
+            else
+            {
+                sinceRestart += elapsed;
+                var restart = sinceRestart >= RestartInterval;
+                if (SetIfPresent(actor, SpeakNormalMiddle, restart) && restart)
+                    sinceRestart = TimeSpan.Zero;
             }
         }
-        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
-        finally { cancellation.Dispose(); }
     }
 
-    private static unsafe void Set(nint actor, ushort timeline)
+    private static unsafe void Set(nint actor, ushort timeline, bool restart)
     {
         if (actor == 0) return;
         ((Character*)actor)->Timeline.SetLipsOverrideTimeline(timeline);
+        // Cutscene Mode.None ignores LipsOverride; start the lip-slot timeline directly.
+        if (restart) ((Character*)actor)->Timeline.TimelineSequencer.PlayTimeline(timeline);
     }
 
-    private void SetIfPresent(nint actor, ushort timeline)
+    private void ClearIfInactive(DialogueActor actor)
     {
-        if (objects.Any(value => value.IsValid() && value.Address == actor)) Set(actor, timeline);
+        lock (gate)
+        {
+            // A delayed stop must not clear a new line speaking through the same actor.
+            if (activeActor != actor) SetIfPresent(actor, SpeakNone);
+        }
     }
 
-    private void Track(Task task)
+    private bool SetIfPresent(DialogueActor actor, ushort timeline, bool restart = false)
     {
-        lock (gate) tasks.Add(task);
-        _ = ObserveTaskAsync(task);
+        var current = objects.SearchById(actor.GameObjectId);
+        if (current is ICharacter && current.IsValid()
+            && actor.Matches(current.BaseId, current.GameObjectId, current.Address, (byte)current.ObjectKind))
+        {
+            Set(current.Address, timeline, restart);
+            return true;
+        }
+        return false;
     }
 
     private void TrackFramework(Task task)
@@ -123,22 +147,20 @@ public sealed class LipSyncService : IAsyncDisposable
 
     private async Task DisposeCoreAsync(bool avoidFrameworkDispatch)
     {
-        CancellationTokenSource? cancellation;
-        nint actor;
+        DialogueActor? actor;
         lock (gate)
         {
             if (Interlocked.Exchange(ref disposed, 1) != 0) return;
-            cancellation = active;
-            active = null;
+            activeLine = null;
             actor = activeActor;
-            activeActor = 0;
+            activeActor = null;
         }
+        framework.Update -= OnUpdate;
         try { shutdown.Cancel(); }
         catch (ObjectDisposedException) { }
-        cancellation?.Cancel();
-        if (actor != 0 && !avoidFrameworkDispatch)
+        if (actor is not null && !avoidFrameworkDispatch)
         {
-            try { TrackFramework(framework.Run(() => SetIfPresent(actor, SpeakNone), shutdown.Token)); }
+            try { TrackFramework(framework.Run(() => ClearIfInactive(actor))); }
             catch { }
         }
         while (true)
@@ -149,7 +171,6 @@ public sealed class LipSyncService : IAsyncDisposable
             try { await Task.WhenAll(pending).ConfigureAwait(false); }
             catch { }
         }
-        cancellation?.Dispose();
         shutdown.Dispose();
     }
 }

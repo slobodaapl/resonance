@@ -26,13 +26,13 @@ public sealed class CutscenePlanStore(string dataDirectory)
         connection.Open();
         if (!TableExists(connection, "scene_node") || !TableExists(connection, "scene_edge")) return null;
 
-        var textByHash = new Dictionary<string, string>(StringComparer.Ordinal);
+        var textByHash = new Dictionary<string, (string Key, string Text)>(StringComparer.Ordinal);
         foreach (var sheetName in CutsceneVoiceManifestParser.ExtractDialogueSheetNames(cutb))
         {
             var sheet = loadSheet(sheetName);
             if (sheet is null) continue;
             foreach (var (key, text) in sheet)
-                textByHash.TryAdd(HashSheetKey(sheetName, key), text);
+                textByHash.TryAdd(HashSheetKey(sheetName, key), (key, text));
         }
 
         var lines = new List<CutsceneVoiceLine>();
@@ -51,7 +51,7 @@ public sealed class CutscenePlanStore(string dataDirectory)
             {
                 var nodeId = reader.GetString(0);
                 var keyHash = reader.GetString(1);
-                if (!textByHash.TryGetValue(keyHash, out var text))
+                if (!textByHash.TryGetValue(keyHash, out var source))
                     throw new InvalidDataException(
                         $"Scene plan node '{nodeId}' has no matching local dialogue key");
                 var occurrence = reader.GetInt32(2);
@@ -60,9 +60,9 @@ public sealed class CutscenePlanStore(string dataDirectory)
                 var actorHash = reader.IsDBNull(5) ? null : reader.GetString(5);
                 var npcBaseId = reader.IsDBNull(6) ? null : checked((uint?)reader.GetInt64(6));
                 lines.Add(new CutsceneVoiceLine(
-                    keyHash, group ?? String.Empty, text, kind == "native", null,
+                    keyHash, group ?? String.Empty, source.Text, kind == "native", null,
                     occurrence, occurrence, kind == "choice", group, actorHash, npcBaseId)
-                    { NodeId = nodeId });
+                    { NodeId = nodeId, SourceKey = source.Key });
             }
         }
         if (lines.Count == 0) return null;
@@ -97,9 +97,8 @@ public sealed class CutscenePlanStore(string dataDirectory)
     {
         var ids = lines.Select(line => line.NodeId).ToHashSet(StringComparer.Ordinal);
         if (ids.Count != lines.Count) throw new InvalidDataException("Scene plan contains duplicate node IDs");
-        if (!edges.Any(edge => edge.CurrentNodeId is null && edge.NextNodeId is not null)
-            || !edges.Any(edge => edge.CurrentNodeId is not null && edge.NextNodeId is null))
-            throw new InvalidDataException("Scene plan has no complete start/end boundary");
+        if (!edges.Any(edge => edge.CurrentNodeId is null && edge.NextNodeId is not null))
+            throw new InvalidDataException("Scene plan has no start boundary");
         foreach (var edge in edges)
         {
             if (edge.CurrentNodeId is null && edge.NextNodeId is null)

@@ -23,9 +23,9 @@ internal static class PackBuilder
                             await File.ReadAllTextAsync(options.Selection), inputJson)
                         ?? throw new InvalidDataException("Selected source document is empty");
         if (selection.SchemaVersion < 2
-            || !String.Equals(selection.Eligibility, "undubbed-occurrence", StringComparison.Ordinal))
+            || selection.Eligibility is not ("undubbed-occurrence" or "native-recordings"))
             throw new InvalidDataException(
-                "Selection was not filtered to actors with undubbed occurrences");
+                "Selection must contain sources selected from native recordings");
         var catalog = JsonSerializer.Deserialize<Catalog>(await File.ReadAllTextAsync(options.Catalog), inputJson)
                       ?? throw new InvalidDataException("Official catalog is empty");
         var groups = catalog.Groups
@@ -49,7 +49,7 @@ internal static class PackBuilder
 
         foreach (var quality in qualities)
         {
-            Console.WriteLine($"loading {quality.Id}: {quality.TalkerPath}");
+            Console.WriteLine($"[profiles] loading {quality.Id}: {quality.TalkerPath}");
             var pending = selection.Actors.Sum(actor => actor.Languages.Count(pair =>
             {
                 if (!groups.TryGetValue(NormalizeToken(actor.ActorToken), out var candidateGroup))
@@ -58,7 +58,7 @@ internal static class PackBuilder
             }));
             if (pending == 0)
             {
-                Console.WriteLine($"{quality.Id}: all profiles already present");
+                Console.WriteLine($"[profiles] {quality.Id}: all profiles already present");
                 continue;
             }
             using var runtime = NativeReferenceRuntime.Load(
@@ -102,7 +102,7 @@ internal static class PackBuilder
                         transcript, reference, profileHash, "{}");
                     completed++;
                     if (completed % 25 == 0 || completed == expected)
-                        Console.WriteLine($"{quality.Id}: {completed}/{expected}");
+                        Console.WriteLine($"[profiles] {quality.Id}: {completed}/{expected}");
                 }
             }
         }
@@ -117,7 +117,7 @@ internal static class PackBuilder
                 """;
             checkpoint.ExecuteNonQuery();
         }
-        Console.WriteLine($"profiles={profileCount} database={options.OutputDatabase}");
+        Console.WriteLine($"[profiles] profiles={profileCount} database={options.OutputDatabase}");
         return 0;
     }
 
@@ -221,6 +221,13 @@ internal static class PackBuilder
         if (schema is not null && Convert.ToInt32(schema) == GraphSchemaVersion
             && schemaVersion == LegacySchemaVersion)
             schemaVersion = GraphSchemaVersion;
+        // Existing fallback references retain their casting catalog version.
+        command.CommandText = """
+            SELECT catalog_version FROM pack_metadata
+            WHERE EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='fallback_profile') LIMIT 1
+            """;
+        var fallbackCatalogVersion = command.ExecuteScalar();
+        if (fallbackCatalogVersion is not null) catalogVersion = Convert.ToInt32(fallbackCatalogVersion);
         command.CommandText = "DELETE FROM pack_metadata; INSERT INTO pack_metadata VALUES($schema,$pack,$catalog,$utc);";
         command.Parameters.AddWithValue("$schema", schemaVersion);
         command.Parameters.AddWithValue("$pack", packVersion);
@@ -260,10 +267,8 @@ internal static class PackBuilder
         foreach (var graph in nodeKeys.Select(value => (value.CutsceneId, value.Language)).Distinct())
         {
             if (!plan.Edges.Any(edge => edge.CutsceneId == graph.CutsceneId
-                                       && edge.Language == graph.Language && edge.CurrentNodeId is null)
-                || !plan.Edges.Any(edge => edge.CutsceneId == graph.CutsceneId
-                                           && edge.Language == graph.Language && edge.NextNodeId is null))
-                throw new InvalidDataException("Every scene graph requires explicit start and end edges");
+                                       && edge.Language == graph.Language && edge.CurrentNodeId is null))
+                throw new InvalidDataException("Every scene graph requires an explicit start edge");
         }
         using var transaction = database.BeginTransaction();
         Execute(database, transaction, "DELETE FROM scene_edge; DELETE FROM scene_node;");

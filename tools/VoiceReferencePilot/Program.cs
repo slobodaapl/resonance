@@ -29,10 +29,6 @@ var enumeration = JsonSerializer.Deserialize<EnumerationResult>(await File.ReadA
 var game = new GameData(sqpack);
 if (actorToken == "*")
 {
-    if (enumeration.UndubbedActorTokens is null)
-        throw new InvalidDataException(
-            "Enumeration lacks undubbed actor coverage; regenerate it before batch selection");
-    var eligibleActors = enumeration.UndubbedActorTokens.ToHashSet(StringComparer.OrdinalIgnoreCase);
     var shardParts = language.Split('/', StringSplitOptions.TrimEntries);
     var shardIndex = shardParts.Length == 2 ? Int32.Parse(shardParts[0]) : 0;
     var shardCount = shardParts.Length == 2 ? Int32.Parse(shardParts[1]) : 1;
@@ -41,7 +37,6 @@ if (actorToken == "*")
     var actors = new List<SelectedActor>();
     var failures = new List<string>();
     var batchActors = enumeration.Actors.OrderBy(value => value.ActorToken, StringComparer.Ordinal)
-        .Where(value => eligibleActors.Contains(value.ActorToken))
         .Where((_, index) => index % shardCount == shardIndex);
     foreach (var currentActor in batchActors)
     {
@@ -66,9 +61,9 @@ if (actorToken == "*")
     }
     Directory.CreateDirectory(Path.GetDirectoryName(output)!);
     await File.WriteAllTextAsync(output, JsonSerializer.Serialize(
-        new BatchSelection(2, "undubbed-occurrence", minimumSeconds, maximumSeconds, actors, failures),
+        new BatchSelection(2, "native-recordings", minimumSeconds, maximumSeconds, actors, failures),
         new JsonSerializerOptions { WriteIndented = true }));
-    Console.WriteLine($"shard={shardIndex}/{shardCount} eligible={eligibleActors.Count} actors={actors.Count} "
+    Console.WriteLine($"shard={shardIndex}/{shardCount} eligible={enumeration.Actors.Count} actors={actors.Count} "
                       + $"profiles={actors.Sum(value => value.Languages.Count)} "
                       + $"failures={failures.Count} output={output}");
     return;

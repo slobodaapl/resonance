@@ -6,6 +6,45 @@ namespace Resonance.Tests;
 
 public sealed class CutscenePlanStoreTests
 {
+    [Theory]
+    [InlineData("english", "Archbishop Thordan VII", "Go. Azys Lla awaits.")]
+    [InlineData("japanese", "トールダン7世", "行け……「魔大陸」へ……。")]
+    [InlineData("german", "Papst Thordan VII.", "Los! Auf nach Azys Lla!")]
+    [InlineData("french", "archevêque Thordan VII", "En route pour Azys Lla...")]
+    public void PackedThordanLineRetainsNativeVoiceWithLocalDialogue(
+        string language, string displayed, string text)
+    {
+        var root = CreateRoot();
+        try
+        {
+            const string sheet = "cut_scene/030/VoiceMan_03004";
+            const string key = "TEXT_VOICEMAN_03004_600090_THORDAN";
+            CreatePack(root, connection =>
+            {
+                InsertNode(connection, 856, language, "thordan-line", sheet, key, 8);
+                using var command = connection.CreateCommand();
+                command.CommandText = """
+                    UPDATE scene_node SET official_group_id='thordan',node_kind='native',
+                      actor_token_hash='e0d5052806315cc203c24cfbc7ec7b526fd4a859b7ff76d240fca28898d0c3e2'
+                    WHERE node_id='thordan-line'
+                    """;
+                command.ExecuteNonQuery();
+                InsertEdge(connection, 856, language, null, "thordan-line");
+                InsertEdge(connection, 856, language, "thordan-line", null);
+            });
+            var manifest = new CutscenePlanStore(root).TryLoad(
+                856, "ex1/test", language, Encoding.UTF8.GetBytes(sheet + "\0"),
+                name => name == sheet ? new Dictionary<string, string> { [key] = text } : null);
+
+            Assert.NotNull(manifest);
+            var match = Assert.Single(manifest.MatchFrontier(displayed, text,
+                manifest.StartNodes.Select(line => line.NodeId).ToArray()));
+            Assert.True(match.IsVoiced);
+            Assert.Equal("thordan", match.OfficialGroupId);
+        }
+        finally { TestDirectory.Delete(root); }
+    }
+
     [Fact]
     public void HashOnlyPackJoinsLocalRowsAndPreservesDiamondEdges()
     {

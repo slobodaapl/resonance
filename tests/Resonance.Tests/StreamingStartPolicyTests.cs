@@ -34,4 +34,11 @@ public sealed class StreamingStartPolicyTests
     {
         Assert.False(StreamingStartPolicy.ShouldStart(true, 0, 0, 0.5, 10));
     }
+
+    [Fact]
+    public void FirstLineCanStreamBeforeRuntimeMeasurementsExist()
+    {
+        Assert.True(StreamingStartPolicy.ShouldStart(false, 0.3, 20, Double.PositiveInfinity, 1));
+        Assert.False(StreamingStartPolicy.ShouldStart(false, 0.08, 20, Double.PositiveInfinity, 1));
+    }
 }

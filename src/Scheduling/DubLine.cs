@@ -1,4 +1,5 @@
 using Resonance.Audio;
+using Resonance.Game;
 using Resonance.Tts;
 
 namespace Resonance.Scheduling;
@@ -28,7 +29,7 @@ public sealed record ResolvedLineSpeaker(
     CastingResolution Casting,
     string VoiceSex,
     string VoiceArchetype,
-    nint ActorAddress,
+    DialogueActor? Actor,
     string? CastingSlotId = null,
     string? Language = null);
 
@@ -48,18 +49,18 @@ public sealed class DubLine : IDisposable
     public string? VoiceProfileHash { get; set; }
     public string? PredictionKey { get; set; }
     public string? OfficialVoiceGroupId { get; set; }
-    public string? NextPredictionKey { get; set; }
-    public IReadOnlyList<string> NextPredictionKeys { get; set; } = [];
     public long? SpeakerId { get; set; }
     public bool TransientSpeaker { get; set; }
     public bool DirectSynthesisCompleted { get; set; }
     public bool ApplyBaseCloneCorrection { get; set; }
     public bool CanStartStreaming { get; set; }
     public bool PlaybackAssetReady { get; set; }
+    public DialogueSpeechPlan? SpeechPlan { get; set; }
+    public string AudioCacheVariant { get; set; } = string.Empty;
     public string VoiceArchetype { get; set; } = "neutral_adult";
     public string VoiceSex { get; set; } = "masculine";
     public string? Language { get; set; }
-    public nint ActorAddress { get; set; }
+    public DialogueActor? Actor { get; set; }
     public SpeakerCastingEvidence? CastingEvidence { get; set; }
     public CastingResolution? Casting { get; set; }
     public string? CastingSlotId { get; set; }
@@ -92,13 +93,15 @@ public sealed class DubLine : IDisposable
         VoiceSex = speaker.VoiceSex;
         VoiceArchetype = speaker.VoiceArchetype;
         if (!String.IsNullOrWhiteSpace(speaker.Language)) Language = speaker.Language;
-        ActorAddress = speaker.ActorAddress;
+        Actor = speaker.Actor;
         if (!preservePreparedAudio)
         {
             ReplaceAudio(new StreamingAudioBuffer());
             VoiceProfileId = null;
             VoiceProfileHash = null;
             ApplyBaseCloneCorrection = false;
+            SpeechPlan = null;
+            AudioCacheVariant = string.Empty;
             DirectSynthesisCompleted = false;
             CanStartStreaming = false;
             PlaybackAssetReady = false;

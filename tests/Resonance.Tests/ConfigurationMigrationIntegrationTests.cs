@@ -5,6 +5,26 @@ namespace Resonance.Tests;
 
 public sealed class ConfigurationMigrationIntegrationTests
 {
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void AudioProcessingPreservesExistingDefaultsAndPersistsIndependentSwitches(bool filter, bool normalization)
+    {
+        var configuration = System.Text.Json.JsonSerializer.Deserialize<Configuration>("{}")!;
+        Assert.True(configuration.EnableVoiceCorrection);
+        Assert.True(configuration.EnableLineNormalization);
+
+        configuration.EnableVoiceCorrection = filter;
+        configuration.EnableLineNormalization = normalization;
+        var restored = System.Text.Json.JsonSerializer.Deserialize<Configuration>(
+            System.Text.Json.JsonSerializer.Serialize(configuration))!;
+
+        Assert.Equal(filter, restored.GetAudioProcessingOptions().CorrectionFilter);
+        Assert.Equal(normalization, restored.GetAudioProcessingOptions().LineNormalization);
+    }
+
     [Fact]
     public void RuntimeOptionDefaultsAreIntentional()
     {

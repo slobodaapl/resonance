@@ -4,6 +4,22 @@ namespace Resonance.Tests;
 
 public sealed class TalkObserverPolicyTests
 {
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(3, true)]
+    [InlineData(4, false)]
+    [InlineData(0, false)]
+    public void OnlyNativeConfirmInputsAdvanceDialogue(int inputId, bool expected) =>
+        Assert.Equal(expected, TalkAdvancePolicy.IsAdvanceInput(inputId));
+
+    [Theory]
+    [InlineData(7L, 7L, true)]
+    [InlineData(7L, 8L, false)]
+    [InlineData(7L, null, true)]
+    [InlineData(null, 8L, false)]
+    public void QueuedCloseCannotCancelANewerPresentation(long? closedSerial, long? currentSerial, bool expected) =>
+        Assert.Equal(expected, TalkAdvancePolicy.CanClosePresentation(closedSerial, currentSerial));
+
     [Fact]
     public void OnlyAutomaticTimerTicksAreSuppressed()
     {
@@ -25,30 +41,6 @@ public sealed class TalkObserverPolicyTests
             TalkAdvancePolicy.IsPresentationReady(manualAdvanceVisible, automaticAdvanceVisible));
 
     [Theory]
-    [InlineData(false, true, true)]
-    [InlineData(true, true, false)]
-    [InlineData(false, false, false)]
-    [InlineData(true, false, false)]
-    [InlineData(null, true, false)]
-    [InlineData(false, null, false)]
-    public void GameControlsPacingOnlyForKnownAutomaticOnlyPresentation(
-        bool? manualAdvanceVisible, bool? automaticAdvanceVisible, bool expected) =>
-        Assert.Equal(expected,
-            TalkAdvancePolicy.IsAutomaticOnlyPresentation(
-                manualAdvanceVisible, automaticAdvanceVisible));
-
-    [Theory]
-    [InlineData(true, true, true)]
-    [InlineData(true, false, false)]
-    [InlineData(false, true, false)]
-    [InlineData(null, true, false)]
-    public void GameControlledPacingRequiresUnskippableAutomaticOnlyCutscene(
-        bool? cutsceneUnskippable, bool automaticOnlyPresentation, bool expected) =>
-        Assert.Equal(expected,
-            TalkAdvancePolicy.ShouldPreserveGameControlledPacing(
-                cutsceneUnskippable, automaticOnlyPresentation));
-
-    [Theory]
     [InlineData(false, false, false)]
     [InlineData(false, true, false)]
     [InlineData(true, false, false)]
@@ -67,4 +59,25 @@ public sealed class TalkObserverPolicyTests
         long expectedSerial, long? currentSerial, long? presentationReadySerial, bool expected) =>
         Assert.Equal(expected, TalkAdvancePolicy.CanStartSyntheticPlayback(
             expectedSerial, currentSerial, presentationReadySerial));
+
+    [Fact]
+    public void NativePresentationChangeRejectsAdvanceBeforeCachedSerialCatchesUp()
+    {
+        Assert.False(TalkAdvancePolicy.CanStartSyntheticPlayback(
+            7, 7, 7, observedPresentation: 10, nativePresentation: 11));
+    }
+
+    [Fact]
+    public void ChangedLiveTextRejectsAdvanceEvenWhenCachedSerialStillMatches()
+    {
+        Assert.False(TalkAdvancePolicy.CanStartSyntheticPlayback(
+            7, 7, 7, observedPresentation: 10, nativePresentation: 10, liveContentMatches: false));
+    }
+
+    [Fact]
+    public void UnchangedLivePresentationAllowsAdvanceAfterReadiness()
+    {
+        Assert.True(TalkAdvancePolicy.CanStartSyntheticPlayback(
+            7, 7, 7, observedPresentation: 10, nativePresentation: 10, liveContentMatches: true));
+    }
 }

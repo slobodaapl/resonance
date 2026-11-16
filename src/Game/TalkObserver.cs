@@ -9,16 +9,23 @@ using Lumina.Text.ReadOnly;
 
 namespace Resonance.Game;
 
-public sealed record ActualTalkLine(long Serial, string Speaker, string Text, DateTimeOffset ObservedAt);
+public sealed record ActualTalkLine(long Serial, string Speaker, string Text, DateTimeOffset ObservedAt,
+    DialogueActor? Actor = null, DialogueRow? Row = null, DialogueVoice? NativeVoice = null)
+{
+    public string? RowKey => Row?.Key;
+}
 
 public sealed partial class TalkObserver : IDisposable
 {
     private readonly IAddonLifecycle lifecycle;
     private readonly IGameGui gameGui;
+    private readonly NativeTalkIdentity identity;
     private readonly Func<bool> diagnosticsEnabled;
     private readonly Func<bool> suppressAutomaticAdvance;
     private string lastSpeaker = string.Empty;
     private string lastText = string.Empty;
+    private long lastPresentation;
+    private long nativeVoiceStartedSerial;
     private bool visible;
     private long serial;
     private long updateGeneration;
@@ -29,22 +36,27 @@ public sealed partial class TalkObserver : IDisposable
     public ActualTalkLine? Current { get; private set; }
     public event Action<ActualTalkLine>? LineChanged;
     public event Action<ActualTalkLine>? PresentationReady;
+    public event Action<ActualTalkLine>? NativeVoiceStarted;
     public event Action<ActualTalkLine?>? Advanced;
     public event Action<ActualTalkLine?>? Hidden;
     public event Action<ActualTalkLine?>? Finalized;
     public event Action<AutoAdvanceReceiveSnapshot>? AutoAdvanceReceiveObserved;
     public event Action<AutoAdvanceUiSnapshot>? AutoAdvanceUiObserved;
 
-    public TalkObserver(IAddonLifecycle lifecycle, IGameGui gameGui, Func<bool> diagnosticsEnabled,
+    public TalkObserver(IAddonLifecycle lifecycle, IGameGui gameGui, IGameInteropProvider interop,
+        ISigScanner scanner, IPluginLog log, Func<bool> diagnosticsEnabled,
         Func<bool>? suppressAutomaticAdvance = null)
     {
         this.lifecycle = lifecycle;
         this.gameGui = gameGui;
+        identity = new NativeTalkIdentity(lifecycle, interop, scanner, log);
         this.diagnosticsEnabled = diagnosticsEnabled;
         this.suppressAutomaticAdvance = suppressAutomaticAdvance ?? (() => false);
         lifecycle.RegisterListener(AddonEvent.PreUpdate, "Talk", OnPreUpdate);
         lifecycle.RegisterListener(AddonEvent.PostDraw, "Talk", OnObserved);
         lifecycle.RegisterListener(AddonEvent.PostUpdate, "Talk", OnObserved);
+        lifecycle.RegisterListener(AddonEvent.PostSetup, "Talk", OnObserved);
+        lifecycle.RegisterListener(AddonEvent.PostRefresh, "Talk", OnObserved);
         lifecycle.RegisterListener(AddonEvent.PreReceiveEvent, "Talk", OnReceiveEvent);
         lifecycle.RegisterListener(AddonEvent.PreFinalize, "Talk", OnFinalize);
     }
@@ -76,8 +88,11 @@ public sealed partial class TalkObserver : IDisposable
             : new ReadOnlySeString(addon->AtkTextNode220->NodeText).ToString());
         if (speaker.Length == 0) speaker = "Narrator";
         var text = Normalize(new ReadOnlySeString(addon->String268).ToString());
-        if (text.Length == 0 || (speaker == lastSpeaker && text == lastText))
+        var presentation = identity.Read(args.Addon.Address);
+        if (text.Length == 0 || (speaker == lastSpeaker && text == lastText
+            && (presentation?.Sequence ?? 0) == lastPresentation))
         {
+            if (text.Length != 0) ObserveNativeVoice();
             if (Current is { } current
                 && Volatile.Read(ref updateGeneration) > lineObservedUpdateGeneration
                 && presentationReadySerial != current.Serial
@@ -92,11 +107,22 @@ public sealed partial class TalkObserver : IDisposable
 
         lastSpeaker = speaker;
         lastText = text;
-        Current = new ActualTalkLine(Interlocked.Increment(ref serial), speaker, text, DateTimeOffset.UtcNow);
+        lastPresentation = presentation?.Sequence ?? 0;
+        Current = new ActualTalkLine(Interlocked.Increment(ref serial), speaker, text,
+            DateTimeOffset.UtcNow, presentation?.Actor, presentation?.Row, presentation?.NativeVoice);
         lineObservedUpdateGeneration = Volatile.Read(ref updateGeneration);
         presentationReadySerial = 0;
         if (diagnostics) EmitUiSnapshot(addon);
         LineChanged?.Invoke(Current);
+        ObserveNativeVoice();
+    }
+
+    private void ObserveNativeVoice()
+    {
+        if (Current is not { NativeVoice: { } voice } current
+            || nativeVoiceStartedSerial == current.Serial || !identity.IsVoicePlaying(voice)) return;
+        nativeVoiceStartedSerial = current.Serial;
+        NativeVoiceStarted?.Invoke(current);
     }
 
     private unsafe void OnReceiveEvent(AddonEvent _, AddonArgs args)
@@ -113,6 +139,7 @@ public sealed partial class TalkObserver : IDisposable
         var data = (AtkEventData*)receive.AtkEventData;
         if (data == null) return;
         var advances = type == AtkEventType.InputReceived
+                       && TalkAdvancePolicy.IsAdvanceInput(data->InputData.InputId)
                        || type == AtkEventType.MouseClick
                        && ((byte)data->MouseData.Modifier & 0b0001_0000) == 0;
         if (advances && Current?.Serial == presentationReadySerial) Advanced?.Invoke(Current);
@@ -276,6 +303,7 @@ public sealed partial class TalkObserver : IDisposable
         Current = null;
         lastSpeaker = string.Empty;
         lastText = string.Empty;
+        lastPresentation = 0;
     }
 
     private static string Normalize(string value) => Whitespace().Replace(value, " ").Trim();
@@ -286,7 +314,13 @@ public sealed partial class TalkObserver : IDisposable
         var addon = (AddonTalk*)addonAddress;
         if (!visible || addon == null || !addon->IsVisible || current is null
             || current.Serial != serial || current.Speaker != speaker || current.Text != text) return false;
-        if (current.Serial != presentationReadySerial) return false;
+        if (!IsPresentationReady(serial)) return false;
+
+        if (identity.TryAdvance((nint)addon) is { } advanced)
+        {
+            if (advanced) Advanced?.Invoke(current);
+            return advanced;
+        }
 
         var eventValue = new AtkEvent
         {
@@ -295,23 +329,25 @@ public sealed partial class TalkObserver : IDisposable
             State = new() { StateFlags = (AtkEventStateFlags)132 },
         };
         AtkEventData eventData = default;
-        addon->ReceiveEvent(AtkEventType.MouseDown, 0, &eventValue, &eventData);
-        addon->ReceiveEvent(AtkEventType.MouseClick, 0, &eventValue, &eventData);
-        addon->ReceiveEvent(AtkEventType.MouseUp, 0, &eventValue, &eventData);
+        // One confirm cannot deliver trailing mouse events to the next Talk presentation.
+        eventData.InputData.InputId = 1;
+        addon->ReceiveEvent(AtkEventType.InputReceived, 0, &eventValue, &eventData);
         return true;
     }
 
-    public bool IsPresentationReady(long serial) =>
+    public unsafe bool IsPresentationReady(long serial) =>
         visible && TalkAdvancePolicy.CanStartSyntheticPlayback(
-            serial, Current?.Serial, presentationReadySerial);
+            serial, Current?.Serial, presentationReadySerial, lastPresentation,
+            identity.Read(addonAddress)?.Sequence ?? 0, LiveContentMatches((AddonTalk*)addonAddress));
 
-    public unsafe bool IsAutomaticOnlyPresentation(long serial)
+    private unsafe bool LiveContentMatches(AddonTalk* addon)
     {
-        var addon = (AddonTalk*)addonAddress;
-        return visible && Current?.Serial == serial && addon != null && addon->IsVisible
-               && TalkAdvancePolicy.IsAutomaticOnlyPresentation(
-                   ReadTalkNodeVisibility(addon, 8),
-                   ReadTalkNodeVisibility(addon, 9));
+        if (addon == null || !addon->IsVisible || Current is not { } current) return false;
+        var speaker = Normalize(addon->AtkTextNode220 == null ? String.Empty
+            : new ReadOnlySeString(addon->AtkTextNode220->NodeText).ToString());
+        if (speaker.Length == 0) speaker = "Narrator";
+        return speaker == current.Speaker
+            && Normalize(new ReadOnlySeString(addon->String268).ToString()) == current.Text;
     }
 
     private static unsafe bool IsPresentationReady(AddonTalk* addon)
@@ -328,6 +364,7 @@ public sealed partial class TalkObserver : IDisposable
 
     public void Dispose()
     {
+        identity.Dispose();
         lifecycle.UnregisterListener(OnPreUpdate);
         lifecycle.UnregisterListener(OnObserved);
         lifecycle.UnregisterListener(OnReceiveEvent);

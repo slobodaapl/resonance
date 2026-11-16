@@ -441,6 +441,9 @@ internal sealed class BaseRuntimeHostClient : IBaseRuntimeHost
         CancellationToken token)
     {
         ThrowIfDisposed();
+        request = request.WithoutDialogueCues();
+        token.ThrowIfCancellationRequested();
+        if (String.IsNullOrWhiteSpace(request.Text)) { sink.Complete(); return; }
         await EnsureStartedAsync(null, token).ConfigureAwait(false);
         Interlocked.Exchange(ref synthesisActive, 1);
         try

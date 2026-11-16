@@ -273,3 +273,783 @@ diff --git a/ggml/src/ggml-backend-dl.cpp b/ggml/src/ggml-backend-dl.cpp
  
      SetErrorMode(old_mode);
  
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -98,6 +98,7 @@
+     )
+     target_include_directories(${target} SYSTEM PRIVATE
+         ${CMAKE_SOURCE_DIR}/ggml/include
++        ${CMAKE_SOURCE_DIR}/ggml/src
+     )
+     if(MSVC)
+         target_compile_options(${target} PRIVATE /W4 /wd4100 /wd4505)
+diff --git a/src/attention-forward.h b/src/attention-forward.h
+new file mode 100644
+--- /dev/null
++++ b/src/attention-forward.h
+@@ -0,0 +1,36 @@
++#pragma once
++
++#include "talker-weights.h"
++
++static void attention_project(struct ggml_context * ctx, const TalkerAttention & attn,
++                              struct ggml_tensor * h, struct ggml_tensor ** q,
++                              struct ggml_tensor ** k, struct ggml_tensor ** v) {
++    if (h->ne[1] == 1 && attn.qkv_proj_w) {
++        struct ggml_tensor * all = ggml_mul_mat(ctx, attn.qkv_proj_w, h);
++        const int64_t nq = attn.q_proj_w->ne[1], nk = attn.k_proj_w->ne[1], nv = attn.v_proj_w->ne[1];
++        *q = ggml_view_1d(ctx, all, nq, 0);
++        *k = ggml_view_1d(ctx, all, nk, nq * sizeof(float));
++        *v = ggml_view_1d(ctx, all, nv, (nq + nk) * sizeof(float));
++    } else {
++        *q = ggml_mul_mat(ctx, attn.q_proj_w, h);
++        *k = ggml_mul_mat(ctx, attn.k_proj_w, h);
++        *v = ggml_mul_mat(ctx, attn.v_proj_w, h);
++    }
++}
++
++
++static void attention_qk_norm(struct ggml_context * ctx, const TalkerAttention & attn,
++                           struct ggml_tensor ** q, struct ggml_tensor ** k, float eps) {
++    if (attn.qk_norm_w && (*q)->ne[2] == 1 && (*q)->view_src && (*q)->view_src == (*k)->view_src) {
++        const int64_t hd = (*q)->ne[0], nq = (*q)->ne[1], nk = (*k)->ne[1];
++        GGML_ASSERT((*q)->view_offs == 0 && (*k)->view_offs == hd * nq * sizeof(float));
++        struct ggml_tensor * qk = ggml_view_3d(ctx, (*q)->view_src, hd, nq + nk, 1,
++                                             hd * sizeof(float), hd * (nq + nk) * sizeof(float), 0);
++        qk = ggml_mul(ctx, ggml_rms_norm(ctx, qk, eps), attn.qk_norm_w);
++        *q = ggml_view_3d(ctx, qk, hd, nq, 1, hd * sizeof(float), hd * nq * sizeof(float), 0);
++        *k = ggml_view_3d(ctx, qk, hd, nk, 1, hd * sizeof(float), hd * nk * sizeof(float), hd * nq * sizeof(float));
++    } else {
++        *q = ggml_mul(ctx, ggml_rms_norm(ctx, *q, eps), attn.q_norm_w);
++        *k = ggml_mul(ctx, ggml_rms_norm(ctx, *k, eps), attn.k_norm_w);
++    }
++}
+diff --git a/src/talker-weights.h b/src/talker-weights.h
+--- a/src/talker-weights.h
++++ b/src/talker-weights.h
+@@ -44,6 +44,8 @@
+ #include <vector>
+ 
+ struct TalkerAttention {
++    struct ggml_tensor * qkv_proj_w = nullptr;
++    struct ggml_tensor * qk_norm_w = nullptr;
+     struct ggml_tensor * q_proj_w;
+     struct ggml_tensor * k_proj_w;
+     struct ggml_tensor * v_proj_w;
+@@ -51,6 +53,77 @@
+     struct ggml_tensor * q_norm_w;
+     struct ggml_tensor * k_norm_w;
+ };
++
++static void attention_load_qkv(WeightCtx * wctx, const GGUFModel & gf,
++                           const std::string & prefix, TalkerAttention & attn, bool pack) {
++    const char * suffixes[] = {"attn_q.weight", "attn_k.weight", "attn_v.weight"};
++    struct ggml_tensor * src[3];
++    int64_t indices[3];
++    for (int i = 0; i < 3; ++i) {
++        const std::string name = prefix + suffixes[i];
++        indices[i] = gguf_find_tensor(gf.gguf, name.c_str());
++        src[i] = ggml_get_tensor(gf.meta, name.c_str());
++        if (indices[i] < 0 || !src[i]) qt_throw("[GGUF] tensor '%s' not found", name.c_str());
++    }
++    const bool compatible = ggml_n_dims(src[0]) == 2 && ggml_n_dims(src[1]) == 2 && ggml_n_dims(src[2]) == 2 &&
++        src[0]->type == src[1]->type && src[0]->type == src[2]->type &&
++        src[0]->ne[0] == src[1]->ne[0] && src[0]->ne[0] == src[2]->ne[0] &&
++        (src[0]->type == GGML_TYPE_Q8_0 || src[0]->type == GGML_TYPE_Q4_K);
++    if (!pack || !compatible) {
++        attn.q_proj_w = gf_load_tensor(wctx, gf, prefix + suffixes[0]);
++        attn.k_proj_w = gf_load_tensor(wctx, gf, prefix + suffixes[1]);
++        attn.v_proj_w = gf_load_tensor(wctx, gf, prefix + suffixes[2]);
++        return;
++    }
++    struct ggml_tensor * packed = ggml_new_tensor_2d(wctx->ctx, src[0]->type, src[0]->ne[0],
++        src[0]->ne[1] + src[1]->ne[1] + src[2]->ne[1]);
++    attn.qkv_proj_w = packed;
++    ggml_set_name(packed, (prefix + "attn_qkv.weight").c_str());
++    struct ggml_tensor ** views[] = {&attn.q_proj_w, &attn.k_proj_w, &attn.v_proj_w};
++    size_t offset = 0;
++    for (int i = 0; i < 3; ++i) {
++        const size_t size = ggml_nbytes(src[i]);
++        const void * data = gf.mapping + gf.data_offset + gguf_get_tensor_offset(gf.gguf, indices[i]);
++        wctx->pending.push_back({packed, data, size, offset});
++        *views[i] = ggml_view_2d(wctx->ctx, packed, src[i]->ne[0], src[i]->ne[1], packed->nb[1], offset);
++        ggml_set_name(*views[i], (prefix + suffixes[i]).c_str());
++        offset += size;
++    }
++    GGML_ASSERT(offset == ggml_nbytes(packed));
++}
++
++static void attention_load_qk_norm(WeightCtx * wctx, const GGUFModel & gf,
++                               const std::string & prefix, TalkerAttention & attn, bool pack) {
++    struct ggml_tensor * q = ggml_get_tensor(gf.meta, (prefix + "attn_q_norm.weight").c_str());
++    struct ggml_tensor * k = ggml_get_tensor(gf.meta, (prefix + "attn_k_norm.weight").c_str());
++    if (!pack || !attn.qkv_proj_w || !q || !k || q->type != GGML_TYPE_F32 || k->type != GGML_TYPE_F32 ||
++        q->ne[0] <= 0 || q->ne[0] != k->ne[0] || ggml_nelements(q) != q->ne[0] || ggml_nelements(k) != k->ne[0] ||
++        attn.q_proj_w->ne[1] % q->ne[0] != 0 || attn.k_proj_w->ne[1] % q->ne[0] != 0) {
++        attn.q_norm_w = gf_load_tensor(wctx, gf, prefix + "attn_q_norm.weight");
++        attn.k_norm_w = gf_load_tensor(wctx, gf, prefix + "attn_k_norm.weight");
++        return;
++    }
++    const int64_t hd = q->ne[0];
++    const int64_t heads[] = {attn.q_proj_w->ne[1] / hd, attn.k_proj_w->ne[1] / hd};
++    struct ggml_tensor * packed = ggml_new_tensor_2d(wctx->ctx, GGML_TYPE_F32, hd, heads[0] + heads[1]);
++    attn.qk_norm_w = packed;
++    ggml_set_name(packed, (prefix + "attn_qk_norm.weight").c_str());
++    const char * suffixes[] = {"attn_q_norm.weight", "attn_k_norm.weight"};
++    struct ggml_tensor ** views[] = {&attn.q_norm_w, &attn.k_norm_w};
++    size_t offset = 0;
++    for (int i = 0; i < 2; ++i) {
++        const std::string name = prefix + suffixes[i];
++        const int64_t index = gguf_find_tensor(gf.gguf, name.c_str());
++        struct ggml_tensor * src = ggml_get_tensor(gf.meta, name.c_str());
++        GGML_ASSERT(index >= 0 && src && src->type == GGML_TYPE_F32 && ggml_nelements(src) == hd);
++        *views[i] = ggml_view_1d(wctx->ctx, packed, hd, offset);
++        const void * data = gf.mapping + gf.data_offset + gguf_get_tensor_offset(gf.gguf, index);
++        for (int h = 0; h < heads[i]; ++h) {
++            wctx->pending.push_back({packed, data, ggml_nbytes(src), offset});
++            offset += ggml_nbytes(src);
++        }
++    }
++}
+ 
+ struct TalkerMLP {
+     struct ggml_tensor * gate_proj_w;
+@@ -122,10 +195,13 @@
+         return false;
+     }
+ 
++    const char * backend_name = ggml_backend_name(backend);
++    const bool pack_attention = strncmp(backend_name, "CUDA", 4) == 0;
++
+     tw->layers.resize((size_t) tw->num_hidden_layers);
+ 
+     // 8 top-level + per layer (2 norms + 4 attn + 2 qk norms + 3 mlp) = 11
+-    int       n_tensors = 8 + tw->num_hidden_layers * 11 + 8;
++    int       n_tensors = 8 + tw->num_hidden_layers * 13 + 8;
+     WeightCtx wctx;
+     wctx_init(&wctx, n_tensors);
+ 
+@@ -148,19 +224,11 @@
+         snprintf(name, sizeof(name), "talker.blk.%d.ffn_norm.weight", l);
+         layer.post_attn_norm_w = gf_load_tensor(&wctx, gf, name);
+ 
+-        snprintf(name, sizeof(name), "talker.blk.%d.attn_q.weight", l);
+-        layer.attn.q_proj_w = gf_load_tensor(&wctx, gf, name);
+-        snprintf(name, sizeof(name), "talker.blk.%d.attn_k.weight", l);
+-        layer.attn.k_proj_w = gf_load_tensor(&wctx, gf, name);
+-        snprintf(name, sizeof(name), "talker.blk.%d.attn_v.weight", l);
+-        layer.attn.v_proj_w = gf_load_tensor(&wctx, gf, name);
++        attention_load_qkv(&wctx, gf, "talker.blk." + std::to_string(l) + ".", layer.attn, pack_attention);
+         snprintf(name, sizeof(name), "talker.blk.%d.attn_output.weight", l);
+         layer.attn.o_proj_w = gf_load_tensor(&wctx, gf, name);
+ 
+-        snprintf(name, sizeof(name), "talker.blk.%d.attn_q_norm.weight", l);
+-        layer.attn.q_norm_w = gf_load_tensor(&wctx, gf, name);
+-        snprintf(name, sizeof(name), "talker.blk.%d.attn_k_norm.weight", l);
+-        layer.attn.k_norm_w = gf_load_tensor(&wctx, gf, name);
++        attention_load_qk_norm(&wctx, gf, "talker.blk." + std::to_string(l) + ".", layer.attn, pack_attention);
+ 
+         snprintf(name, sizeof(name), "talker.blk.%d.ffn_gate.weight", l);
+         layer.mlp.gate_proj_w = gf_load_tensor(&wctx, gf, name);
+diff --git a/src/code-predictor-weights.h b/src/code-predictor-weights.h
+--- a/src/code-predictor-weights.h
++++ b/src/code-predictor-weights.h
+@@ -90,6 +90,9 @@
+         return false;
+     }
+ 
++    const char * backend_name = ggml_backend_name(backend);
++    const bool pack_attention = strncmp(backend_name, "CUDA", 4) == 0;
++
+     cw->layers.resize((size_t) cw->num_hidden_layers);
+     cw->codec_embedding.resize((size_t) cw->num_acoustic_codebooks);
+     cw->lm_head.resize((size_t) cw->num_acoustic_codebooks);
+@@ -97,7 +100,7 @@
+     int n_tensors = 1                                 // final norm
+                     + 2                               // mtp_proj weight + bias (when present)
+                     + 2 * cw->num_acoustic_codebooks  // 15 embeds + 15 heads
+-                    + cw->num_hidden_layers * 11      // 11 per layer
++                    + cw->num_hidden_layers * 13      // 11 per layer
+                     + 8;                              // headroom
+     WeightCtx wctx;
+     wctx_init(&wctx, n_tensors);
+@@ -128,19 +131,11 @@
+         snprintf(name, sizeof(name), "code_pred.blk.%d.ffn_norm.weight", l);
+         layer.post_attn_norm_w = gf_load_tensor(&wctx, gf, name);
+ 
+-        snprintf(name, sizeof(name), "code_pred.blk.%d.attn_q.weight", l);
+-        layer.attn.q_proj_w = gf_load_tensor(&wctx, gf, name);
+-        snprintf(name, sizeof(name), "code_pred.blk.%d.attn_k.weight", l);
+-        layer.attn.k_proj_w = gf_load_tensor(&wctx, gf, name);
+-        snprintf(name, sizeof(name), "code_pred.blk.%d.attn_v.weight", l);
+-        layer.attn.v_proj_w = gf_load_tensor(&wctx, gf, name);
++        attention_load_qkv(&wctx, gf, "code_pred.blk." + std::to_string(l) + ".", layer.attn, pack_attention);
+         snprintf(name, sizeof(name), "code_pred.blk.%d.attn_output.weight", l);
+         layer.attn.o_proj_w = gf_load_tensor(&wctx, gf, name);
+ 
+-        snprintf(name, sizeof(name), "code_pred.blk.%d.attn_q_norm.weight", l);
+-        layer.attn.q_norm_w = gf_load_tensor(&wctx, gf, name);
+-        snprintf(name, sizeof(name), "code_pred.blk.%d.attn_k_norm.weight", l);
+-        layer.attn.k_norm_w = gf_load_tensor(&wctx, gf, name);
++        attention_load_qk_norm(&wctx, gf, "code_pred.blk." + std::to_string(l) + ".", layer.attn, pack_attention);
+ 
+         snprintf(name, sizeof(name), "code_pred.blk.%d.ffn_gate.weight", l);
+         layer.mlp.gate_proj_w = gf_load_tensor(&wctx, gf, name);
+diff --git a/src/talker-forward.h b/src/talker-forward.h
+--- a/src/talker-forward.h
++++ b/src/talker-forward.h
+@@ -1,4 +1,7 @@
+ #pragma once
++
++#include "attention-forward.h"
++#include "ggml-impl.h"
+ // talker-forward.h: prefill + decode forwards of the Talker LM, KV
+ // cached. Eager prefill graph for the Talker LM.
+ //
+@@ -144,9 +147,8 @@
+     h                      = ggml_mul(ctx, h, layer.input_norm_w);
+ 
+     // Q/K/V projections
+-    struct ggml_tensor * q = ggml_mul_mat(ctx, layer.attn.q_proj_w, h);  // [n_q_heads*hd, T]
+-    struct ggml_tensor * k = ggml_mul_mat(ctx, layer.attn.k_proj_w, h);  // [n_kv*hd, T]
+-    struct ggml_tensor * v = ggml_mul_mat(ctx, layer.attn.v_proj_w, h);  // [n_kv*hd, T]
++    struct ggml_tensor * q, * k, * v;
++    attention_project(ctx, layer.attn, h, &q, &k, &v);
+ 
+     q = ggml_reshape_3d(ctx, q, hd, n_q_heads, T);                       // [hd, n_q_heads, T]
+     k = ggml_reshape_3d(ctx, k, hd, n_kv, T);
+@@ -155,10 +157,7 @@
+     // Per-head QK-norm: RMS over hd, then multiply by [hd] gain. The
+     // norm operates on ne[0] = hd, identical layout for q (16 heads) and
+     // k (8 heads), so the same code path covers both.
+-    q = ggml_rms_norm(ctx, q, eps);
+-    q = ggml_mul(ctx, q, layer.attn.q_norm_w);
+-    k = ggml_rms_norm(ctx, k, eps);
+-    k = ggml_mul(ctx, k, layer.attn.k_norm_w);
++    attention_qk_norm(ctx, layer.attn, &q, &k, eps);
+ 
+     // RoPE NEOX (half-split). In TTS-only mode the three mrope axes share
+     // position ids, so the multimodal interleaved cos/sin collapses to
+@@ -518,19 +517,15 @@
+     h                      = ggml_mul(ctx, h, layer.input_norm_w);
+ 
+     // Q/K/V projections, batched over the N columns
+-    struct ggml_tensor * q = ggml_mul_mat(ctx, layer.attn.q_proj_w, h);  // [n_q_heads*hd, N]
+-    struct ggml_tensor * k = ggml_mul_mat(ctx, layer.attn.k_proj_w, h);  // [n_kv*hd, N]
+-    struct ggml_tensor * v = ggml_mul_mat(ctx, layer.attn.v_proj_w, h);  // [n_kv*hd, N]
++    struct ggml_tensor * q, * k, * v;
++    attention_project(ctx, layer.attn, h, &q, &k, &v);
+ 
+     q = ggml_reshape_3d(ctx, q, hd, n_q_heads, N);                       // [hd, n_q_heads, N]
+     k = ggml_reshape_3d(ctx, k, hd, n_kv, N);
+     v = ggml_reshape_3d(ctx, v, hd, n_kv, N);
+ 
+     // Per-head QK-norm: RMS over hd, then multiply by [hd] gain.
+-    q = ggml_rms_norm(ctx, q, eps);
+-    q = ggml_mul(ctx, q, layer.attn.q_norm_w);
+-    k = ggml_rms_norm(ctx, k, eps);
+-    k = ggml_mul(ctx, k, layer.attn.k_norm_w);
++    attention_qk_norm(ctx, layer.attn, &q, &k, eps);
+ 
+     // RoPE NEOX: positions [N] map to dim 2 of [hd, heads, N], one
+     // absolute position per set.
+@@ -702,6 +697,7 @@
+         return false;
+     }
+ 
++    gf->uid = ggml_graph_next_uid();
+     tg->gf      = gf;
+     tg->ids_in  = ids_in;
+     tg->overlay = overlay;
+diff --git a/src/code-predictor-forward.h b/src/code-predictor-forward.h
+--- a/src/code-predictor-forward.h
++++ b/src/code-predictor-forward.h
+@@ -1,4 +1,7 @@
+ #pragma once
++
++#include "attention-forward.h"
++#include "ggml-impl.h"
+ // code-predictor-forward.h: run the 5-layer Qwen3 code predictor over a
+ // growing context to produce the 15 acoustic codes of one audio frame
+ // for every active slot in one batched pass, KV cached per slot.
+@@ -118,18 +121,14 @@
+     struct ggml_tensor * h = ggml_rms_norm(ctx, x, eps);
+     h                      = ggml_mul(ctx, h, layer.input_norm_w);
+ 
+-    struct ggml_tensor * q = ggml_mul_mat(ctx, layer.attn.q_proj_w, h);
+-    struct ggml_tensor * k = ggml_mul_mat(ctx, layer.attn.k_proj_w, h);
+-    struct ggml_tensor * v = ggml_mul_mat(ctx, layer.attn.v_proj_w, h);
++    struct ggml_tensor * q, * k, * v;
++    attention_project(ctx, layer.attn, h, &q, &k, &v);
+ 
+     q = ggml_reshape_3d(ctx, q, hd, n_q_heads, TN);
+     k = ggml_reshape_3d(ctx, k, hd, n_kv, TN);
+     v = ggml_reshape_3d(ctx, v, hd, n_kv, TN);
+ 
+-    q = ggml_rms_norm(ctx, q, eps);
+-    q = ggml_mul(ctx, q, layer.attn.q_norm_w);
+-    k = ggml_rms_norm(ctx, k, eps);
+-    k = ggml_mul(ctx, k, layer.attn.k_norm_w);
++    attention_qk_norm(ctx, layer.attn, &q, &k, eps);
+ 
+     // RoPE over the flattened token axis: positions [T * N] repeat the
+     // same in-frame offsets for every slot.
+@@ -143,9 +142,9 @@
+     // [hd, T, heads, N] and lands at the kv_rows [T, 1, N] destinations,
+     // broadcast across the n_kv head dim.
+     struct ggml_tensor * k_perm =
+-        ggml_cont(ctx, ggml_permute(ctx, ggml_reshape_4d(ctx, k, hd, n_kv, T, N), 0, 2, 1, 3));
++        ggml_permute(ctx, ggml_reshape_4d(ctx, k, hd, n_kv, T, N), 0, 2, 1, 3);
+     struct ggml_tensor * v_perm =
+-        ggml_cont(ctx, ggml_permute(ctx, ggml_reshape_4d(ctx, v, hd, n_kv, T, N), 0, 2, 1, 3));
++        ggml_permute(ctx, ggml_reshape_4d(ctx, v, hd, n_kv, T, N), 0, 2, 1, 3);
+ 
+     struct ggml_tensor * k_sets = ggml_view_4d(ctx, k4, hd, k4->ne[1], n_kv, N, k4->nb[1], k4->nb[2], k4->nb[3], 0);
+     struct ggml_tensor * v_sets = ggml_view_4d(ctx, v4, hd, v4->ne[1], n_kv, N, v4->nb[1], v4->nb[2], v4->nb[3], 0);
+@@ -412,6 +411,7 @@
+     }
+     code_predictor_bake_upload(bake, N, kv->max_seq_len);
+ 
++    gf->uid = ggml_graph_next_uid();
+     cp->gf     = gf;
+     cp->logits = logits;
+     cp->N      = N;
+diff --git a/src/kv-cache.h b/src/kv-cache.h
+--- a/src/kv-cache.h
++++ b/src/kv-cache.h
+@@ -5,7 +5,7 @@
+ // and set count and never reallocates. Reset just rewinds cur_len.
+ //
+ // Layout per layer, both K and V :
+-//   4D ggml_tensor [hd, max_seq_len, n_kv, n_sets] f32, contiguous on hd
++//   4D ggml_tensor [hd, max_seq_len, n_kv, n_sets] f32 or f16, contiguous on hd
+ // plus one 3D view [hd, max_seq_len, n_kv] per set for the per-sequence
+ // prefill path and device side set copies. The batched decode graph
+ // views the 4D tensor directly with ne3 = N over sets [0, N).
+@@ -63,7 +63,8 @@
+                           int            head_dim,
+                           int            max_seq_len,
+                           int            n_sets,
+-                          ggml_backend_t backend) {
++                          ggml_backend_t backend,
++                          enum ggml_type type = GGML_TYPE_F32) {
+     kv->n_layers    = n_layers;
+     kv->n_kv_heads  = n_kv_heads;
+     kv->head_dim    = head_dim;
+@@ -88,8 +89,8 @@
+     }
+ 
+     for (int l = 0; l < n_layers; l++) {
+-        kv->k4[(size_t) l] = ggml_new_tensor_4d(kv->ctx, GGML_TYPE_F32, head_dim, max_seq_len, n_kv_heads, n_sets);
+-        kv->v4[(size_t) l] = ggml_new_tensor_4d(kv->ctx, GGML_TYPE_F32, head_dim, max_seq_len, n_kv_heads, n_sets);
++        kv->k4[(size_t) l] = ggml_new_tensor_4d(kv->ctx, type, head_dim, max_seq_len, n_kv_heads, n_sets);
++        kv->v4[(size_t) l] = ggml_new_tensor_4d(kv->ctx, type, head_dim, max_seq_len, n_kv_heads, n_sets);
+         char name[64];
+         snprintf(name, sizeof(name), "kv_k_l%d", l);
+         ggml_set_name(kv->k4[(size_t) l], name);
+@@ -122,7 +123,7 @@
+     ggml_backend_buffer_clear(kv->buffer, 0);
+ 
+     size_t bytes_per_layer =
+-        (size_t) head_dim * (size_t) max_seq_len * (size_t) n_kv_heads * (size_t) n_sets * sizeof(float);
++        (size_t) head_dim * (size_t) max_seq_len * (size_t) n_kv_heads * (size_t) n_sets * ggml_type_size(type);
+     size_t total_mb = (size_t) (2 * n_layers) * bytes_per_layer / (1024 * 1024);
+     fprintf(stderr, "[KVCache] Allocated: %d layers, %d KV heads, head_dim %d, max_seq_len %d, %d sets -> %zu MB\n",
+             n_layers, n_kv_heads, head_dim, max_seq_len, n_sets, total_mb);
+diff --git a/src/pipeline-tts.cpp b/src/pipeline-tts.cpp
+--- a/src/pipeline-tts.cpp
++++ b/src/pipeline-tts.cpp
+@@ -259,12 +259,17 @@
+         return false;
+     }
+ 
++    // CUDA flash attention already converts these caches to FP16 at every step.
++    const bool fp16_kv = pt->use_flash_attn && !pt->clamp_fp16 &&
++        strncmp(ggml_backend_name(pt->backend), "CUDA", 4) == 0;
++    const enum ggml_type kv_type = fp16_kv ? GGML_TYPE_F16 : GGML_TYPE_F32;
++
+     // KV caches, one set per slot: the talker holds the LM context up
+     // to 4096 positions (the longest ICL prompt observed is ~250 +
+     // max_new_tokens ~ 1500, so 4096 has 60% headroom). Predictor holds
+     // one frame of 16 sub-steps per slot.
+     if (!kv_cache_init(&pt->talker_kv, pt->talker.num_hidden_layers, pt->talker.num_key_value_heads,
+-                       pt->talker.head_dim, 4096, pt->max_batch, pt->backend)) {
++                       pt->talker.head_dim, 4096, pt->max_batch, pt->backend, kv_type)) {
+         ggml_backend_sched_free(pt->sched);
+         pt->sched = NULL;
+         pipeline_codec_free(&pt->codec);
+@@ -275,7 +280,7 @@
+     }
+     if (!kv_cache_init(&pt->code_predictor_kv, pt->code_predictor.num_hidden_layers,
+                        pt->code_predictor.num_key_value_heads, pt->code_predictor.head_dim, pt->num_code_groups,
+-                       pt->max_batch, pt->backend)) {
++                       pt->max_batch, pt->backend, kv_type)) {
+         kv_cache_free(&pt->talker_kv);
+         ggml_backend_sched_free(pt->sched);
+         pt->sched = NULL;
+diff --git a/ggml/src/ggml-impl.h b/ggml/src/ggml-impl.h
+--- a/ggml/src/ggml-impl.h
++++ b/ggml/src/ggml-impl.h
+@@ -30,7 +30,7 @@
+ 
+ void ggml_print_backtrace(void);
+ 
+-uint64_t ggml_graph_next_uid(void);
++GGML_API uint64_t ggml_graph_next_uid(void);
+ 
+ #ifndef MIN
+ #    define MIN(a, b) ((a) < (b) ? (a) : (b))
+diff --git a/ggml/src/ggml-cuda/ggml-cuda.cu b/ggml/src/ggml-cuda/ggml-cuda.cu
+--- a/ggml/src/ggml-cuda/ggml-cuda.cu
++++ b/ggml/src/ggml-cuda/ggml-cuda.cu
+@@ -3133,12 +3133,53 @@
+ }
+ 
+ // try and fuse nodes and return the number of nodes to skip
++
++static int ggml_cuda_try_fuse_rms_norm_quantize(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph * graph, int i) {
++    if (i + 2 >= graph->n_nodes) return 0;
++    const ggml_tensor * norm = graph->nodes[i];
++    const ggml_tensor * mul = graph->nodes[i + 1];
++    if (norm->op != GGML_OP_RMS_NORM || mul->op != GGML_OP_MUL) return 0;
++    const ggml_tensor * raw = norm->src[0];
++    const ggml_tensor * gain = mul->src[0] == norm ? mul->src[1] : mul->src[1] == norm ? mul->src[0] : nullptr;
++    if (!gain || raw->type != GGML_TYPE_F32 || gain->type != GGML_TYPE_F32 ||
++        norm->type != GGML_TYPE_F32 || mul->type != GGML_TYPE_F32 ||
++        !ggml_is_contiguous(raw) || !ggml_is_contiguous(gain) || ggml_nrows(raw) != 1 ||
++        (raw->ne[0] != 1024 && raw->ne[0] != 2048) || ggml_nelements(gain) != raw->ne[0]) return 0;
++    float eps;
++    memcpy(&eps, norm->op_params, sizeof(eps));
++    for (int n_ops : {5, 3}) {
++        const ggml_op ops[] = {GGML_OP_RMS_NORM, GGML_OP_MUL, GGML_OP_MUL_MAT, GGML_OP_MUL_MAT, GGML_OP_GLU};
++        const int output = i + n_ops - 1;
++        if (output >= graph->n_nodes || !ggml_can_fuse_subgraph(graph, i, n_ops, ops, &output, 1) ||
++            !ggml_cuda_check_fusion_memory_ranges(graph, i, n_ops, &output, 1)) continue;
++        ggml_tensor * first = graph->nodes[i + 2];
++        ggml_tensor * mm = n_ops == 5 ? graph->nodes[i + 3] : first;
++        if (mm->src[1] != mul || !ggml_cuda_should_fuse_mul_mat_vec_q(mm) ||
++            (mm->src[0]->type != GGML_TYPE_Q8_0 && mm->src[0]->type != GGML_TYPE_Q4_K) ||
++            mm->src[0]->ne[2] != 1 || mm->src[0]->ne[3] != 1) continue;
++        ggml_cuda_mm_fusion_args_host fusion{};
++        if (n_ops == 5) {
++            const ggml_tensor * glu = graph->nodes[output];
++            if (!ggml_cuda_should_fuse_mul_mat(mm, first, glu)) continue;
++            fusion.gate = first->src[0];
++            fusion.glu_op = ggml_get_glu_op(glu);
++        }
++        ggml_cuda_mul_mat_vec_q_rms_norm(*cuda_ctx, mm->src[0], raw, gain, eps,
++                                         graph->nodes[output], n_ops == 5 ? &fusion : nullptr);
++        return n_ops - 1;
++    }
++    return 0;
++}
++
+ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph * cgraph, int i) {
+ 
+     static bool disable_fusion = getenv("GGML_CUDA_DISABLE_FUSION") != nullptr && std::atoi(getenv("GGML_CUDA_DISABLE_FUSION"));
+     if (disable_fusion) {
+         return 0;
+     }
++
++    const int rms_quant_skip = ggml_cuda_try_fuse_rms_norm_quantize(cuda_ctx, cgraph, i);
++    if (rms_quant_skip) return rms_quant_skip;
+ 
+     ggml_tensor * node = cgraph->nodes[i];
+ 
+diff --git a/ggml/src/ggml-cuda/mmvq.cu b/ggml/src/ggml-cuda/mmvq.cu
+--- a/ggml/src/ggml-cuda/mmvq.cu
++++ b/ggml/src/ggml-cuda/mmvq.cu
+@@ -1142,9 +1142,9 @@
+     }
+ }
+ 
+-void ggml_cuda_mul_mat_vec_q(
++static void ggml_cuda_mul_mat_vec_q_impl(
+         ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, const ggml_tensor * ids, ggml_tensor * dst,
+-        const ggml_cuda_mm_fusion_args_host * fusion) {
++        const ggml_cuda_mm_fusion_args_host * fusion, const ggml_tensor * rms_gain = nullptr, float rms_eps = 0.0f) {
+     GGML_ASSERT(        src1->type == GGML_TYPE_F32);
+     GGML_ASSERT(        dst->type  == GGML_TYPE_F32);
+     GGML_ASSERT(!ids || ids->type  == GGML_TYPE_I32); // Optional, used for batched GGML_MUL_MAT_ID.
+@@ -1225,7 +1225,13 @@
+         const int64_t s11 = src1->nb[1] / ts_src1;
+         const int64_t s12 = src1->nb[2] / ts_src1;
+         const int64_t s13 = src1->nb[3] / ts_src1;
++        if (rms_gain) {
++            GGML_ASSERT(ne10 == ne10_padded && ne11 == 1 && ne12 == 1 && ne13 == 1);
++            quantize_rms_norm_q8_1_cuda(src1_d, (const float *) rms_gain->data,
++                                        src1_q8_1.get(), (int) ne10, rms_eps, stream);
++        } else {
+         quantize_row_q8_1_cuda(src1_d, nullptr, src1_q8_1.get(), src0->type, ne10, s11, s12, s13, ne10_padded, ne11, ne12, ne13, stream);
++        }
+     }
+ 
+     const int64_t s01 = src0->nb[1] / ts_src0;
+@@ -1257,6 +1263,18 @@
+         ne03,              ne3,           s03, s13,              s3,               ids_stride, stream);
+ }
+ 
++void ggml_cuda_mul_mat_vec_q(ggml_backend_cuda_context & ctx,
++        const ggml_tensor * src0, const ggml_tensor * src1, const ggml_tensor * ids, ggml_tensor * dst,
++        const ggml_cuda_mm_fusion_args_host * fusion) {
++    ggml_cuda_mul_mat_vec_q_impl(ctx, src0, src1, ids, dst, fusion);
++}
++
++void ggml_cuda_mul_mat_vec_q_rms_norm(ggml_backend_cuda_context & ctx,
++        const ggml_tensor * weights, const ggml_tensor * raw, const ggml_tensor * gain,
++        float eps, ggml_tensor * dst, const ggml_cuda_mm_fusion_args_host * fusion) {
++    ggml_cuda_mul_mat_vec_q_impl(ctx, weights, raw, nullptr, dst, fusion, gain, eps);
++}
++
+ void ggml_cuda_op_mul_mat_vec_q(
+     ggml_backend_cuda_context & ctx,
+     const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst, const char * src0_dd_i, const float * src1_ddf_i,
+diff --git a/ggml/src/ggml-cuda/mmvq.cuh b/ggml/src/ggml-cuda/mmvq.cuh
+--- a/ggml/src/ggml-cuda/mmvq.cuh
++++ b/ggml/src/ggml-cuda/mmvq.cuh
+@@ -16,3 +16,7 @@
+     const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst, const char * src0_dd_i, const float * src1_ddf_i,
+     const char * src1_ddq_i, float * dst_dd_i, const int64_t row_low, const int64_t row_high, const int64_t src1_ncols,
+     const int64_t src1_padded_row_size, cudaStream_t stream);
++
++void ggml_cuda_mul_mat_vec_q_rms_norm(ggml_backend_cuda_context & ctx,
++    const ggml_tensor * weights, const ggml_tensor * raw, const ggml_tensor * gain,
++    float eps, ggml_tensor * dst, const ggml_cuda_mm_fusion_args_host * fusion);
+diff --git a/ggml/src/ggml-cuda/quantize.cu b/ggml/src/ggml-cuda/quantize.cu
+--- a/ggml/src/ggml-cuda/quantize.cu
++++ b/ggml/src/ggml-cuda/quantize.cu
+@@ -49,6 +49,39 @@
+     }
+ 
+     y[ib].ds = make_half2(d, sum);
++}
++
++static __global__ void rms_norm_quantize_q8_1(const float * x, const float * gain,
++                                           block_q8_1 * out, int ncols, float eps) {
++    ggml_cuda_pdl_lc();
++    const int tid = threadIdx.x;
++    float sum = 0.0f;
++    ggml_cuda_pdl_sync();
++    for (int col = tid; col < ncols; col += 1024) {
++        const float xi = x[col];
++        sum += xi * xi;
++    }
++    extern __shared__ float partial[];
++    sum = block_reduce<block_reduce_method::SUM, 1024>(sum, partial);
++    const float scale = rsqrtf(sum / ncols + eps);
++    for (int col = tid; col < ncols; col += 1024) {
++        const float value = scale * x[col] * gain[col];
++        const float amax = warp_reduce_max<QK8_1>(fabsf(value));
++        const float total = warp_reduce_sum<QK8_1>(value);
++        const float d = amax / 127.0f;
++        const int block = col / QK8_1;
++        const int lane = col % QK8_1;
++        out[block].qs[lane] = amax == 0.0f ? 0 : roundf(value / d);
++        if (lane == 0) out[block].ds = make_half2(d, total);
++    }
++}
++
++
++void quantize_rms_norm_q8_1_cuda(const float * x, const float * gain, void * output,
++                                int ncols, float eps, cudaStream_t stream) {
++    GGML_ASSERT(ncols == 1024 || ncols == 2048);
++    const auto launch = ggml_cuda_kernel_launch_params(dim3(1), dim3(1024), 32 * sizeof(float), stream);
++    ggml_cuda_kernel_launch(rms_norm_quantize_q8_1, launch, x, gain, (block_q8_1 *) output, ncols, eps);
+ }
+ 
+ __device__ __forceinline__ uint8_t compute_e8m0_scale(float amax) {
+diff --git a/ggml/src/ggml-cuda/quantize.cuh b/ggml/src/ggml-cuda/quantize.cuh
+--- a/ggml/src/ggml-cuda/quantize.cuh
++++ b/ggml/src/ggml-cuda/quantize.cuh
+@@ -64,3 +64,6 @@
+                                     int64_t         nrows_dst,
+                                     int             n_expert_used,
+                                     cudaStream_t    stream);
++
++void quantize_rms_norm_q8_1_cuda(const float * x, const float * gain, void * output,
++                                int ncols, float eps, cudaStream_t stream);
+diff --git a/ggml/src/ggml-vulkan/ggml-vulkan.cpp b/ggml/src/ggml-vulkan/ggml-vulkan.cpp
+--- a/ggml/src/ggml-vulkan/ggml-vulkan.cpp
++++ b/ggml/src/ggml-vulkan/ggml-vulkan.cpp
+@@ -818,6 +818,7 @@
+ 
+     vk_pipeline pipeline_matmul_split_k_reduce;
+     vk_pipeline pipeline_quantize_q8_1_x4;
++    vk_pipeline pipeline_rms_norm_quantize_q8_1;
+ 
+     vk_pipeline pipeline_dequant[GGML_TYPE_COUNT];
+     vk_pipeline pipeline_dequant_mul_mat_vec_f32_f32[DMMV_WG_SIZE_COUNT][GGML_TYPE_COUNT][mul_mat_vec_max_cols];
+@@ -5173,6 +5174,14 @@
+         ggml_vk_create_pipeline(device, device->pipeline_quantize_q8_1_x4, "quantize_q8_1_x4", quantize_q8_1_x4_subgroup_len, quantize_q8_1_x4_subgroup_data, "main", 2, sizeof(vk_quantize_q8_1_push_constants), {32 * device->subgroup_size / 8, 1, 1}, { device->subgroup_size }, 1, true, true);
+     } else {
+         ggml_vk_create_pipeline(device, device->pipeline_quantize_q8_1_x4, "quantize_q8_1_x4", quantize_q8_1_x4_len, quantize_q8_1_x4_data, "main", 2, sizeof(vk_quantize_q8_1_push_constants), {32 * device->subgroup_size / 8, 1, 1}, { device->subgroup_size }, 1);
++    }
++
++    if (device->integer_dot_product && device->properties.limits.maxComputeWorkGroupInvocations >= 512 &&
++        device->properties.limits.maxComputeWorkGroupSize[0] >= 512 &&
++        device->properties.limits.maxComputeSharedMemorySize >= 512 * sizeof(float)) {
++        ggml_vk_create_pipeline(device, device->pipeline_rms_norm_quantize_q8_1,
++            "rms_norm_quantize_q8_1", rms_norm_quantize_q8_1_len, rms_norm_quantize_q8_1_data,
++            "main", 3, 4 * sizeof(uint32_t), {1, 1, 1}, {}, 1);
+     }
+ 
+     for (uint32_t i = 0; i < p021_max_gqa_ratio; ++i) {
+@@ -12735,7 +12744,69 @@
+     return rope;
+ }
+ 
++
++static bool ggml_vk_rms_norm_quantize(ggml_backend_vk_context * ctx, vk_context & subctx,
++                                     const ggml_cgraph * graph, int i) {
++    vk_pipeline pipeline = ctx->device->pipeline_rms_norm_quantize_q8_1;
++    if (!pipeline || ctx->num_additional_fused_ops != 1 || ctx->do_add_rms_partials ||
++        ctx->do_add_rms_partials_offset_calculation) return false;
++    const ggml_tensor * norm = graph->nodes[i];
++    const ggml_tensor * mul = graph->nodes[i + 1];
++    const ggml_tensor * raw = norm->src[0];
++    const ggml_tensor * gain = mul->src[0] == norm ? mul->src[1] : mul->src[0];
++    if (raw->type != GGML_TYPE_F32 || gain->type != GGML_TYPE_F32 || mul->type != GGML_TYPE_F32 ||
++        !ggml_is_contiguous(raw) || !ggml_is_contiguous(gain) || !ggml_is_contiguous(mul) ||
++        ggml_nrows(raw) != 1 || (raw->ne[0] != 1024 && raw->ne[0] != 2048) ||
++        ggml_nelements(gain) != raw->ne[0]) return false;
++    auto supports_mmvq = [ctx, mul](const ggml_tensor * mm) {
++        if (mm->op != GGML_OP_MUL_MAT) return false;
++        const ggml_tensor * weight = mm->src[0];
++        return mm->src[1] == mul &&
++            (weight->type == GGML_TYPE_Q8_0 || weight->type == GGML_TYPE_Q4_K) &&
++            ggml_vk_dim01_contiguous(weight) && weight->ne[2] == 1 && weight->ne[3] == 1 &&
++            ggml_vk_should_use_mmvq(ctx->device, weight->ne[1], 1, weight->ne[0], weight->type) &&
++            ggml_vk_get_dequantize_mul_mat_vec(ctx, weight->type, GGML_TYPE_Q8_1,
++                                             1, mm->ne[0], weight->ne[0]) != nullptr;
++    };
++    if (i + 2 >= graph->n_nodes || !supports_mmvq(graph->nodes[i + 2])) return false;
++    bool matched = false;
++    for (int n_ops : {5, 3}) {
++        const ggml_op ops[] = {GGML_OP_RMS_NORM, GGML_OP_MUL, GGML_OP_MUL_MAT, GGML_OP_MUL_MAT, GGML_OP_GLU};
++        const int output = i + n_ops - 1;
++        if (output >= graph->n_nodes || !ggml_can_fuse_subgraph(graph, i, n_ops, ops, &output, 1)) continue;
++        if (n_ops == 5 && !supports_mmvq(graph->nodes[i + 3])) continue;
++        matched = true;
++        break;
++    }
++    if (!matched) return false;
++    const uint64_t size = ggml_vk_align_size(ggml_nelements(raw), 128) *
++                          ggml_type_size(GGML_TYPE_Q8_1) / ggml_blck_size(GGML_TYPE_Q8_1);
++    if (ctx->prealloc_size_y < size) {
++        ctx->prealloc_size_y = size;
++        ggml_vk_preallocate_buffers(ctx, subctx);
++    }
++    if (ctx->prealloc_y_need_sync) ggml_vk_sync_buffers(ctx, subctx);
++    struct {
++        uint32_t ne, a_offset, b_offset;
++        float eps;
++    } pc;
++    pc.ne = (uint32_t) raw->ne[0];
++    pc.a_offset = get_misalign_bytes(ctx, raw) / sizeof(float);
++    pc.b_offset = get_misalign_bytes(ctx, gain) / sizeof(float);
++    memcpy(&pc.eps, norm->op_params, sizeof(pc.eps));
++    ggml_pipeline_request_descriptor_sets(ctx, pipeline, 1);
++    ggml_vk_dispatch_pipeline(ctx, subctx, pipeline,
++        {ggml_vk_tensor_subbuffer(ctx, raw, true), ggml_vk_tensor_subbuffer(ctx, gain, true),
++         vk_subbuffer{ctx->prealloc_y, 0, size}}, pc, {1, 1, 1});
++    ggml_vk_sync_buffers(ctx, subctx);
++    ctx->prealloc_y_last_pipeline_used = ctx->device->pipeline_quantize_q8_1_x4.get();
++    ctx->prealloc_y_last_tensor_used = mul;
++    ctx->prealloc_y_last_decode_vector_staging = false;
++    return true;
++}
++
+ static void ggml_vk_rms_norm(ggml_backend_vk_context * ctx, vk_context& subctx, const struct ggml_cgraph * cgraph, int node_idx, float * op_params) {
++    if (ggml_vk_rms_norm_quantize(ctx, subctx, cgraph, node_idx)) return;
+     ggml_tensor * dst;
+     const ggml_tensor * src0;
+     const ggml_tensor * src1;
+diff --git a/ggml/src/ggml-vulkan/vulkan-shaders/vulkan-shaders-gen.cpp b/ggml/src/ggml-vulkan/vulkan-shaders/vulkan-shaders-gen.cpp
+--- a/ggml/src/ggml-vulkan/vulkan-shaders/vulkan-shaders-gen.cpp
++++ b/ggml/src/ggml-vulkan/vulkan-shaders/vulkan-shaders-gen.cpp
+@@ -868,6 +868,7 @@
+ 
+     string_to_spv("fa_mask_opt", "flash_attn_mask_opt.comp", {});
+ 
++    string_to_spv("rms_norm_quantize_q8_1", "rms_norm_quantize_q8_1.comp", {});
+     string_to_spv("quantize_q8_1", "quantize_q8_1.comp", {});
+     string_to_spv("quantize_q8_1_subgroup", "quantize_q8_1.comp", {{"USE_SUBGROUPS", "1"}});
+ 
+diff --git a/ggml/src/ggml-vulkan/vulkan-shaders/rms_norm_quantize_q8_1.comp b/ggml/src/ggml-vulkan/vulkan-shaders/rms_norm_quantize_q8_1.comp
+new file mode 100644
+--- /dev/null
++++ b/ggml/src/ggml-vulkan/vulkan-shaders/rms_norm_quantize_q8_1.comp
+@@ -0,0 +1,72 @@
++#version 450
++
++#extension GL_EXT_control_flow_attributes : require
++#extension GL_EXT_shader_16bit_storage : require
++
++#include "types.glsl"
++
++layout(local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
++layout(push_constant) uniform parameter {
++    uint ne;
++    uint a_offset;
++    uint b_offset;
++    float eps;
++} p;
++layout(binding = 0) readonly buffer A { float data_a[]; };
++layout(binding = 1) readonly buffer B { float data_b[]; };
++layout(binding = 2) writeonly buffer D { block_q8_1_x4 data_d[]; };
++
++shared float partial[512];
++
++void main() {
++    const uint tid = gl_LocalInvocationID.x;
++    float sum = 0.0;
++    for (uint col = tid; col < p.ne; col += 512) {
++        const float value = data_a[p.a_offset + col];
++        sum += value * value;
++    }
++    partial[tid] = sum;
++    barrier();
++    [[unroll]] for (uint s = 256; s > 0; s >>= 1) {
++        if (tid < s) {
++            sum += partial[tid + s];
++            partial[tid] = sum;
++        }
++        barrier();
++    }
++    const float scale = inversesqrt(partial[0] / float(p.ne) + p.eps);
++    barrier();
++
++    const bool valid = 4 * tid < p.ne;
++    vec4 values = vec4(0.0);
++    if (valid) {
++        const uint a = p.a_offset + 4 * tid;
++        const uint b = p.b_offset + 4 * tid;
++        values = scale * vec4(data_a[a], data_a[a+1], data_a[a+2], data_a[a+3]) *
++                         vec4(data_b[b], data_b[b+1], data_b[b+2], data_b[b+3]);
++    }
++    const vec4 absolute = abs(values);
++    partial[tid] = max(max(absolute.x, absolute.y), max(absolute.z, absolute.w));
++    barrier();
++    const uint lane = tid % 8;
++    [[unroll]] for (uint s = 4; s > 0; s >>= 1) {
++        if (lane < s) partial[tid] = max(partial[tid], partial[tid + s]);
++        barrier();
++    }
++    const float amax = partial[tid - lane];
++    const float d = amax / 127.0;
++    const float inverse_d = d != 0.0 ? 1.0 / d : 0.0;
++    values = round(values * inverse_d);
++    barrier();
++    partial[tid] = values.x + values.y + values.z + values.w;
++    barrier();
++    [[unroll]] for (uint s = 4; s > 0; s >>= 1) {
++        if (lane < s) partial[tid] += partial[tid + s];
++        barrier();
++    }
++    if (valid) {
++        const uint block = tid / 8;
++        data_d[block / 4].qs[(block % 4) * 8 + lane] = pack32(i8vec4(round(values)));
++        if (lane == 0) data_d[block / 4].ds[block % 4] = f16vec2(vec2(d, partial[tid] * d));
++    }
++}

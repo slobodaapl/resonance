@@ -1,6 +1,9 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
+using Dalamud.Interface;
+using Dalamud.Interface.GameFonts;
+using Dalamud.Interface.ManagedFontAtlas;
 using Resonance.Audio;
 using Resonance.Bootstrap;
 using Resonance.Plugin;
@@ -8,10 +11,11 @@ using Resonance.Tts;
 
 namespace Resonance.UI;
 
-public sealed class ConfigWindow : Window, IAsyncDisposable
+public sealed partial class ConfigWindow : Window, IAsyncDisposable
 {
     private static readonly string[] Languages = ["english", "japanese", "german", "french"];
     private static readonly string[] Sexes = ["masculine", "feminine"];
+    private const string SampleSentence = "The light of the crystal guides us through the dark. <sigh> Let's keep moving.";
 
     private readonly Configuration configuration;
     private readonly Func<RuntimeManager?> runtime;
@@ -33,18 +37,24 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
     private readonly Func<BackendInfo, CancellationToken, Task>? setBackend;
     private readonly Func<CancellationToken, Task>? rebuildBackendBenchmark;
     private readonly Action cancelDebug;
+    private readonly Func<CancellationToken, Task>? applyAutomaticBackend;
     private readonly Action preDubConfigurationChanged;
+    private readonly Action dialogueSoundEffectsChanged;
+    private readonly QualityPreset loadedQuality;
+    private readonly Func<PlaybackActivity> playbackActivity;
+    private readonly Func<CancellationToken, Task> refreshDeviceMemory;
+    private readonly Func<QualityPreset, CancellationToken, Task> setQuality;
+    private readonly IFontHandle headingFont;
+    private PlaybackActivity frameActivity;
+    private string? operationError;
     private string selectedDomain = "generic_world";
     private string selectedLanguage = "english";
     private string selectedSex = "masculine";
     private string instruction = string.Empty;
     private string? loadedKey;
     private string debugLanguage = "english";
-    private string debugSentence = "The light of the crystal guides us through the dark.";
+    private string debugSentence = SampleSentence;
     private string debugInstruction = "A clear, natural adult voice with measured pacing and restrained emotion.";
-    private string debugBaseVoice = "alphinaud";
-    private string? refreshedDebugLanguage;
-    private int debugRefreshInFlight;
     private int benchmarkInFlight;
     private readonly object taskGate = new();
     private readonly HashSet<Task> activeTasks = [];
@@ -71,12 +81,19 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
         Action preDubConfigurationChanged,
         Action save,
         Action<Exception> reportError,
+        Func<PlaybackActivity> playbackActivity,
+        Func<CancellationToken, Task> refreshDeviceMemory,
+        Func<QualityPreset, CancellationToken, Task> setQuality,
+        IUiBuilder uiBuilder,
         Func<AudioBackendStatus>? audioBackendStatus = null,
         Func<BackendInfo, CancellationToken, Task>? setBackend = null,
-        Func<CancellationToken, Task>? rebuildBackendBenchmark = null)
-        : base("Resonance Settings###ResonanceSettings")
+        Func<CancellationToken, Task>? rebuildBackendBenchmark = null,
+        Func<CancellationToken, Task>? applyAutomaticBackend = null,
+        Action? dialogueSoundEffectsChanged = null)
+        : base("Voice settings###ResonanceSettings")
     {
         this.configuration = configuration;
+        loadedQuality = configuration.Quality;
         this.runtime = runtime;
         this.bootstrap = bootstrap;
         this.currentTerritory = currentTerritory;
@@ -95,457 +112,26 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
             "FFXIV game mixer backend is not installed"));
         this.setBackend = setBackend;
         this.rebuildBackendBenchmark = rebuildBackendBenchmark;
+        this.applyAutomaticBackend = applyAutomaticBackend;
+        this.playbackActivity = playbackActivity;
+        this.refreshDeviceMemory = refreshDeviceMemory;
+        this.setQuality = setQuality;
+        headingFont = uiBuilder.FontAtlas
+            .NewGameFontHandle(new GameFontStyle(GameFontFamily.Axis, 18) { Weight = 1f });
         this.cancelDebug = cancelDebug;
         this.preDubConfigurationChanged = preDubConfigurationChanged;
+        this.dialogueSoundEffectsChanged = dialogueSoundEffectsChanged ?? (() => { });
         this.save = save;
         this.reportError = reportError;
         debugLanguage = CurrentLanguageName();
-        Size = new Vector2(560, 720);
-        SizeCondition = ImGuiCond.FirstUseEver;
-    }
-
-    public override void Draw()
-    {
-        if (!ImGui.BeginTabBar("##ResonanceSettingsTabs")) return;
-        if (ImGui.BeginTabItem("Settings"))
+        voiceLanguage = debugLanguage;
+        Size = new Vector2(1040, 800);
+        SizeConstraints = new WindowSizeConstraints
         {
-            DrawSettings();
-            ImGui.EndTabItem();
-        }
-        if (ImGui.BeginTabItem("Debug"))
-        {
-            DrawDebug();
-            ImGui.EndTabItem();
-        }
-        ImGui.EndTabBar();
-    }
-
-    private void DrawSettings()
-    {
-        var enabled = configuration.Enabled;
-        if (ImGui.Checkbox("Enabled", ref enabled))
-        {
-            configuration.Enabled = enabled;
-            save();
-            preDubConfigurationChanged();
-        }
-
-        var quality = (int)configuration.Quality;
-        var qualityNames = new[] { "Q4 0.6B", "Q8 0.6B", "Q4 1.7B", "Q8 1.7B" };
-        if (ImGui.Combo("Quality (restart required)", ref quality, qualityNames, qualityNames.Length))
-        {
-            configuration.Quality = (QualityPreset)quality;
-            configuration.BackendBenchmark = null;
-            save();
-        }
-
-        var manager = runtime();
-        var boot = bootstrap();
-        var keepBaseModelLoaded = configuration.KeepBaseModelLoaded;
-        if (ImGui.Checkbox("Keep Base voice-clone model loaded", ref keepBaseModelLoaded))
-        {
-            configuration.KeepBaseModelLoaded = keepBaseModelLoaded;
-            save();
-            if (manager is not null)
-                Run(() => manager.SetBaseHotLoadEnabledAsync(keepBaseModelLoaded, shutdown.Token));
-        }
-        ImGui.TextWrapped("Keeps the Base voice-clone model loaded on the selected CPU/GPU between uses. Uses more memory; does not affect VoiceDesign.");
-        ImGui.TextUnformatted($"Runtime state: {boot.State}");
-        if (boot.CurrentProgress is { } progress && boot.State is BootstrapState.DownloadingRuntime
-                or BootstrapState.DownloadingBase or BootstrapState.DownloadingVoiceDesign)
-        {
-            var fraction = progress.TotalBytes <= 0 ? 0f : Math.Clamp((float)progress.BytesReceived / progress.TotalBytes, 0f, 1f);
-            ImGui.ProgressBar(fraction, new Vector2(-1, 0),
-                $"{progress.Id}: {progress.BytesReceived / 1048576d:F0} / {progress.TotalBytes / 1048576d:F0} MiB");
-        }
-        var effective = manager?.Selection?.Effective;
-        ImGui.TextUnformatted(effective is null
-            ? "Effective inference device: Preparing..."
-            : $"Effective inference device: {effective.Description} ({effective.Type})");
-        var cudaBridge = boot.CudaDriverAvailable switch
-        {
-            true => "available",
-            false => "unavailable; Vulkan/CPU used",
-            null => "probing...",
+            MinimumSize = new Vector2(820, 560),
+            MaximumSize = new Vector2(float.MaxValue),
         };
-        ImGui.TextUnformatted($"CUDA driver bridge: {cudaBridge}");
-        if (boot.CudaDriverAvailable == false && boot.MissingProtonCudaVariables.Count > 0)
-        {
-            var missing = String.Join(" and ", boot.MissingProtonCudaVariables.Select(name => $"{name}=1"));
-            ImGui.TextColored(new Vector4(1f, .75f, .25f, 1f),
-                $"Proton CUDA requires launching XIVLauncher with {missing}, then fully restarting XIVLauncher and FFXIV");
-        }
-        else if (boot.CudaDriverAvailable == false && boot.IsWineRuntime)
-        {
-            ImGui.TextColored(new Vector4(1f, .75f, .25f, 1f),
-                "Proton variables are enabled, but this prefix has no loadable nvcuda.dll bridge; refresh it with an UMU-visible CUDA-capable Proton build");
-        }
-        if (boot.CudaDriverAvailable == true
-            && manager is not null
-            && !manager.DetectedBackends.Any(candidate => candidate.Type == BackendType.Cuda))
-        {
-            ImGui.TextColored(new Vector4(1f, .75f, .25f, 1f),
-                "CUDA backend: not installed or not loadable; the driver bridge alone is insufficient");
-            if (QwenCppRuntime.CudaLoadError is { } cudaError)
-                ImGui.TextWrapped($"CUDA loader: {cudaError}");
-        }
-        if (manager?.Selection?.IsTemporaryCpuFallback == true)
-        {
-            ImGui.TextColored(new Vector4(1f, .35f, .25f, 1f),
-                $"Temporary CPU fallback; still waiting for: {manager.Selection.Desired.Description}");
-        }
-
-        if (manager is not null && manager.DetectedBackends.Count > 0)
-        {
-            var preview = configuration.Compute == ComputePreference.Manual
-                ? configuration.DesiredBackendDescription ?? configuration.DesiredBackendName ?? "Manual"
-                : configuration.Compute.ToString();
-            if (ImGui.BeginCombo("Inference device", preview))
-            {
-                DrawAutomatic("Auto — Performance", ComputePreference.AutoPerformance);
-                DrawAutomatic("Auto — Efficiency", ComputePreference.AutoEfficiency);
-                foreach (var backend in manager.DetectedBackends)
-                {
-                    var selected = configuration.Compute == ComputePreference.Manual
-                        && configuration.DesiredBackendName == backend.Name;
-                    var label = $"{backend.Description} ({backend.Type})";
-                    if (ImGui.Selectable(label, selected))
-                        Run(() => setBackend is null
-                            ? manager.SetDesiredAsync(backend, shutdown.Token)
-                            : setBackend(backend, shutdown.Token));
-                }
-                ImGui.EndCombo();
-            }
-        }
-
-        var volume = configuration.Volume;
-        if (ImGui.SliderFloat("Volume", ref volume, 0f, 2f, "%.2f")) { configuration.Volume = volume; save(); }
-        var mixerStatus = audioBackendStatus();
-        ImGui.TextWrapped($"Voice output: FFXIV game audio mixer — {mixerStatus.Diagnostic}");
-        ImGui.TextUnformatted(mixerStatus.SceneLocked
-            ? "Cutscene voice output active"
-            : "Voice playback follows FFXIV's output device and voice-volume settings");
-        var casting = configuration.BackgroundCasting;
-        if (ImGui.Checkbox("Background casting", ref casting)) { configuration.BackgroundCasting = casting; save(); }
-        var preDub = configuration.PreDubUpcomingCutscenes;
-        if (ImGui.Checkbox("Pre-dub upcoming MSQ cutscenes", ref preDub))
-        {
-            configuration.PreDubUpcomingCutscenes = preDub;
-            save();
-            preDubConfigurationChanged();
-        }
-        ImGui.TextWrapped("Prepares up to two upcoming undubbed MSQ cutscenes during safe downtime. Pauses during combat and cutscenes.");
-        var autoAdvance = configuration.AutoAdvanceDubbedCutsceneDialogue;
-        if (ImGui.Checkbox("Auto-advance prepared dubbed cutscene dialogue", ref autoAdvance))
-        {
-            configuration.AutoAdvanceDubbedCutsceneDialogue = autoAdvance;
-            save();
-        }
-        var autoAdvanceDiagnostics = configuration.AutoAdvanceDiagnostics;
-        if (ImGui.Checkbox("Auto-advance diagnostics", ref autoAdvanceDiagnostics))
-        {
-            configuration.AutoAdvanceDiagnostics = autoAdvanceDiagnostics;
-            save();
-        }
-        ImGui.TextWrapped("Temporarily logs bounded Talk timer/input and native-auto UI state diagnostics to the Dalamud plugin log; off by default and can be noisy.");
-        var masculine = configuration.ReadyMasculineVoices;
-        if (ImGui.SliderInt("Ready masculine / active domain", ref masculine, 0, 20))
-        {
-            configuration.ReadyMasculineVoices = masculine;
-            save();
-        }
-        var feminine = configuration.ReadyFeminineVoices;
-        if (ImGui.SliderInt("Ready feminine / active domain", ref feminine, 0, 20))
-        {
-            configuration.ReadyFeminineVoices = feminine;
-            save();
-        }
-        var cacheGiB = (float)(configuration.CacheLimitBytes / 1073741824d);
-        if (ImGui.SliderFloat("Line cache limit", ref cacheGiB, 0f, 10f, "%.1f GiB"))
-        {
-            configuration.CacheLimitBytes = (long)(cacheGiB * 1073741824d);
-            save();
-        }
-        var canBenchmark = manager is not null
-            && boot.VoiceDesignPath is not null
-            && Volatile.Read(ref benchmarkInFlight) == 0;
-        ImGui.BeginDisabled(!canBenchmark);
-        if (ImGui.Button(Volatile.Read(ref benchmarkInFlight) == 0
-                ? "Rebuild backend benchmark now"
-                : "Benchmarking backends..."))
-            Run(() => RebuildBackendBenchmarkAsync(manager!, boot.VoiceDesignPath!, shutdown.Token));
-        ImGui.EndDisabled();
-
-        ImGui.SameLine();
-        if (ImGui.Button("Regenerate current territory domains"))
-            Run(() => regenerateCurrentTerritory(shutdown.Token));
-
-        DrawCastingDiagnostics();
-        DrawCastingEditor();
-
-        if (configuration.BackendBenchmark is { } benchmark)
-        {
-            ImGui.TextUnformatted($"Benchmark winner: {benchmark.WinnerName}");
-            foreach (var measurement in benchmark.Measurements)
-            {
-                var result = measurement.Successful
-                    && measurement.TimeToFirstAudioSeconds is { } ttfa
-                    && measurement.RealTimeFactor is { } realtime
-                    ? $"TTFA {ttfa:F2}s, RTF {realtime:F2}"
-                    : $"failed: {measurement.Error ?? "unknown"}";
-                ImGui.BulletText($"{measurement.BackendName}: {result}");
-            }
-        }
-        if (ImGui.CollapsingHeader("Diagnostics"))
-        {
-            if (boot.Failure is not null) ImGui.TextWrapped($"Bootstrap failure: {boot.Failure.Message}");
-            if (manager?.Selection is { } selection)
-            {
-                ImGui.TextUnformatted($"Desired: {selection.Desired.Description} [{selection.Desired.Name}]");
-                ImGui.TextUnformatted($"Effective: {selection.Effective.Description} [{selection.Effective.Name}]");
-            }
-            foreach (var backend in manager?.DetectedBackends ?? [])
-            {
-                var memory = backend.MemoryTotal == 0
-                    ? "memory unknown"
-                    : $"{backend.MemoryFree / 1073741824d:F1}/{backend.MemoryTotal / 1073741824d:F1} GiB free";
-                ImGui.BulletText($"{backend.Type}: {backend.Description} [{backend.Name}], {memory}");
-            }
-            if (configuration.LegacyUnappliedOverrides.Count > 0)
-                ImGui.TextUnformatted($"Unapplied legacy overrides: {configuration.LegacyUnappliedOverrides.Count}");
-        }
-
-        void DrawAutomatic(string label, ComputePreference preference)
-        {
-            var selected = configuration.Compute == preference;
-            if (!ImGui.Selectable(label, selected)) return;
-            configuration.Compute = preference;
-            save();
-        }
-    }
-
-    private void DrawCastingDiagnostics()
-    {
-        if (!ImGui.CollapsingHeader("Casting domains")) return;
-        var territory = currentTerritoryName();
-        var territoryLabel = territory ?? $"unknown ({currentTerritory()})";
-        ImGui.TextUnformatted($"Territory: {territoryLabel}");
-        if (territory is null || !catalog.TryGetTerritory(territory, out _))
-            ImGui.TextColored(new Vector4(1f, .75f, .25f, 1f), "Catalog diagnostic: unknown future territory; generic_world fallback.");
-        IReadOnlyList<TerritoryCastingPrior> priors = territory is null ? [] : catalog.GetNormalizedTerritoryPriors(territory);
-        if (priors.Count == 0)
-            ImGui.TextUnformatted("Geographic prior: none; speaker evidence or generic_world applies.");
-        else
-        {
-            ImGui.TextUnformatted("Territory priors:");
-            foreach (var prior in priors)
-                ImGui.BulletText($"{prior.DomainId}: {prior.Weight:P0}");
-        }
-        var candidates = catalog.GetCandidateDomains(territory);
-        ImGui.TextUnformatted($"Evidence-filtered candidates (unknown speaker evidence): {String.Join(", ", candidates.Select(value => value.Id))}");
-
-        var snapshot = poolSnapshot();
-        if (snapshot is null)
-        {
-            ImGui.TextUnformatted("Pool: VoiceDesign not ready.");
-            return;
-        }
-        ImGui.TextUnformatted($"Active domains: {String.Join(", ", snapshot.ActiveDomains)}");
-        ImGui.TextUnformatted($"Current generation: {snapshot.CurrentGeneration ?? "idle"}");
-        foreach (var domain in snapshot.ActiveDomains)
-        {
-            foreach (var sex in Sexes)
-            {
-                var key = CastingPoolScheduler.Key(domain, CurrentLanguageName(), sex);
-                var ready = snapshot.ReadyCounts.GetValueOrDefault(key);
-                var target = snapshot.TargetCounts.GetValueOrDefault(key);
-                ImGui.BulletText($"{domain}/{sex}: {ready}/{target} ready");
-            }
-        }
-        foreach (var failure in snapshot.Failures)
-            ImGui.TextWrapped($"Failure: {failure}");
-    }
-
-    private void DrawDebug()
-    {
-        var manager = runtime();
-        var snapshot = debugSnapshot(debugLanguage);
-        var disableVoicePackAutoUpdate = configuration.DisableVoicePackAutoUpdate;
-        if (ImGui.Checkbox("Don't auto-update voice packs", ref disableVoicePackAutoUpdate))
-        {
-            configuration.DisableVoicePackAutoUpdate = disableVoicePackAutoUpdate;
-            save();
-        }
-        ImGui.TextWrapped("Uses and imports the locally installed pack without checking or downloading remote updates.");
-        ImGui.Separator();
-        ImGui.TextUnformatted("Inference smoke tests");
-        ImGui.TextWrapped("Runs real Base and VoiceDesign inference on the selected device and streams the result through Resonance's in-game audio output.");
-        ImGui.Separator();
-        ImGui.TextUnformatted($"Readiness: {snapshot.Readiness}");
-        ImGui.TextUnformatted($"Device: {snapshot.Device}");
-        ImGui.TextUnformatted($"VoiceDesign runtime backend: {snapshot.VoiceDesignBackend}");
-        ImGui.TextWrapped($"Status: {snapshot.Status}");
-
-        var selectionFailed = manager?.Selection is { } selection
-                              && !String.Equals(selection.Desired.Name, selection.Effective.Name,
-                                  StringComparison.Ordinal);
-        if (selectionFailed)
-            ImGui.TextColored(new Vector4(1f, .35f, .25f, 1f),
-                $"Requested device failed; tests use no fallback. Select a working device. {manager!.Selection!.Error}");
-
-        if (snapshot.Ready && Volatile.Read(ref refreshedDebugLanguage) != debugLanguage
-                           && Volatile.Read(ref debugRefreshInFlight) == 0)
-            RefreshDebugVoices();
-
-        var controlsDisabled = !snapshot.Ready || snapshot.Running;
-        ImGui.BeginDisabled(controlsDisabled);
-        if (manager is not null && manager.DetectedBackends.Count > 0)
-        {
-            var preview = manager.Selection?.Effective is { } selectedBackend
-                ? $"{selectedBackend.Description} ({selectedBackend.Type})"
-                : "Preparing...";
-            if (ImGui.BeginCombo("Test inference device", preview))
-            {
-                foreach (var backend in manager.DetectedBackends)
-                {
-                    var selected = manager.Selection?.Effective.Name == backend.Name;
-                    if (ImGui.Selectable($"{backend.Description} ({backend.Type})", selected))
-                        Run(() => setBackend is null
-                            ? manager.SetDesiredAsync(backend, shutdown.Token)
-                            : setBackend(backend, shutdown.Token));
-                }
-                ImGui.EndCombo();
-            }
-        }
-
-        var languageIndex = Array.IndexOf(Languages, debugLanguage);
-        if (languageIndex < 0) languageIndex = 0;
-        if (ImGui.Combo("Test language", ref languageIndex, Languages, Languages.Length))
-        {
-            debugLanguage = Languages[languageIndex];
-            Volatile.Write(ref refreshedDebugLanguage, null);
-        }
-        ImGui.TextUnformatted("Sample sentence");
-        ImGui.InputTextMultiline("##DebugSampleSentence", ref debugSentence, 2048, new Vector2(-1, 90));
-        ImGui.TextUnformatted("VoiceDesign instruction");
-        ImGui.InputTextMultiline("##DebugVoiceDesignInstruction", ref debugInstruction, 4096, new Vector2(-1, 90));
-        ImGui.BeginDisabled(selectionFailed);
-        if (ImGui.Button("Test VoiceDesign + playback"))
-            Run(() => runVoiceDesignDebug(debugSentence, debugInstruction, debugLanguage, shutdown.Token));
-        ImGui.EndDisabled();
-
-        ImGui.Separator();
-        ImGui.TextUnformatted("Base voice clone");
-        ImGui.TextWrapped("Uses installed official voice-profile packs for the selected language and model quality.");
-        var exportDebugBaseWav = configuration.ExportDebugBaseWav;
-        if (ImGui.Checkbox("Export post-processed Base debug WAV", ref exportDebugBaseWav))
-        {
-            configuration.ExportDebugBaseWav = exportDebugBaseWav;
-            save();
-        }
-        ImGui.TextWrapped("Writes the selected backend's corrected, gained, resampled PCM to the plugin debug-audio directory.");
-        var voices = snapshot.BaseVoices;
-        var selectedVoice = voices.FirstOrDefault(value => value.Key == debugBaseVoice) ?? voices.First();
-        if (ImGui.BeginCombo("Official voice", $"{selectedVoice.Label} — {selectedVoice.SourceStatus}"))
-        {
-            foreach (var voice in voices)
-            {
-                var label = $"{voice.Label} — {voice.SourceStatus}";
-                if (!ImGui.Selectable(label, voice.Key == debugBaseVoice)) continue;
-                debugBaseVoice = voice.Key;
-            }
-            ImGui.EndCombo();
-        }
-        ImGui.BeginDisabled(!selectedVoice.Available || selectionFailed);
-        if (ImGui.Button("Test Base clone + playback"))
-            Run(() => runBaseDebug(debugBaseVoice, debugSentence, debugLanguage, shutdown.Token));
-        ImGui.EndDisabled();
-        ImGui.SameLine();
-        if (ImGui.Button("Refresh official sources")) RefreshDebugVoices();
-        ImGui.EndDisabled();
-
-        if (snapshot.Running && ImGui.Button("Stop debug playback")) cancelDebug();
-    }
-
-    private void RefreshDebugVoices()
-    {
-        if (Interlocked.Exchange(ref debugRefreshInFlight, 1) != 0) return;
-        var language = debugLanguage;
-        Run(() => RefreshDebugVoicesAsync(language));
-    }
-
-    private async Task RefreshDebugVoicesAsync(string language)
-    {
-        try
-        {
-            await refreshDebugBaseVoices(language, shutdown.Token).ConfigureAwait(false);
-            Volatile.Write(ref refreshedDebugLanguage, language);
-        }
-        finally { Interlocked.Exchange(ref debugRefreshInFlight, 0); }
-    }
-
-    private void DrawCastingEditor()
-    {
-        if (!ImGui.CollapsingHeader("Domain prompt editor")) return;
-        var domains = catalog.Domains.Select(domain => domain.Id).ToArray();
-        var domainIndex = Array.IndexOf(domains, selectedDomain);
-        if (domainIndex < 0) domainIndex = 0;
-        if (ImGui.BeginCombo("Domain", domains[domainIndex]))
-        {
-            for (var index = 0; index < domains.Length; index++)
-            {
-                if (!ImGui.Selectable(domains[index], index == domainIndex)) continue;
-                domainIndex = index;
-                selectedDomain = domains[index];
-                loadedKey = null;
-            }
-            ImGui.EndCombo();
-        }
-        var languageIndex = Array.IndexOf(Languages, selectedLanguage);
-        if (languageIndex < 0) languageIndex = 0;
-        if (ImGui.Combo("Language", ref languageIndex, Languages, Languages.Length))
-        {
-            selectedLanguage = Languages[languageIndex];
-            loadedKey = null;
-        }
-        var sexIndex = Array.IndexOf(Sexes, selectedSex);
-        if (sexIndex < 0) sexIndex = 0;
-        if (ImGui.Combo("Sex", ref sexIndex, Sexes, Sexes.Length))
-        {
-            selectedSex = Sexes[sexIndex];
-            loadedKey = null;
-        }
-        var key = CastingPoolScheduler.Key(selectedDomain, selectedLanguage, selectedSex);
-        if (loadedKey != key)
-        {
-            var place = currentTerritoryName();
-            var evidence = new SpeakerCastingEvidence("settings", place, place, Sex: selectedSex);
-            var resolution = catalog.Resolve(evidence) with
-            {
-                DomainId = selectedDomain,
-                ModifierIds = [],
-                CandidateDomainIds = [selectedDomain],
-            };
-            instruction = configuration.GetPromptOverride(selectedDomain, selectedLanguage, selectedSex)
-                ?? catalog.BuildPrompt(resolution, selectedLanguage, selectedSex);
-            loadedKey = key;
-        }
-        ImGui.InputTextMultiline("##DomainInstruction", ref instruction, 4096, new Vector2(-1, 120));
-        if (ImGui.Button("Save domain prompt override"))
-        {
-            configuration.SetPromptOverride(selectedDomain, selectedLanguage, selectedSex, instruction);
-            save();
-        }
-        ImGui.SameLine();
-        if (ImGui.Button("Reset domain prompt override"))
-        {
-            configuration.SetPromptOverride(selectedDomain, selectedLanguage, selectedSex, null);
-            loadedKey = null;
-            save();
-        }
-        ImGui.SameLine();
-        if (ImGui.Button("Regenerate selected domain"))
-            Run(() => regenerateDomain(selectedDomain, shutdown.Token));
+        SizeCondition = ImGuiCond.FirstUseEver;
     }
 
     private string CurrentLanguageName()
@@ -579,9 +165,11 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
         {
             if (Volatile.Read(ref disposed) != 0) return;
             Task task;
+            Volatile.Write(ref operationError, null);
             try { task = operation(); }
             catch (Exception error)
             {
+                Volatile.Write(ref operationError, error.Message);
                 reportError(error);
                 return;
             }
@@ -596,8 +184,12 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
         {
             await task.ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (shutdown.IsCancellationRequested) { }
-        catch (Exception error) { reportError(error); }
+        catch (OperationCanceledException) { }
+        catch (Exception error)
+        {
+            Volatile.Write(ref operationError, error.Message);
+            reportError(error);
+        }
         finally
         {
             lock (taskGate) activeTasks.Remove(task);
@@ -637,5 +229,6 @@ public sealed class ConfigWindow : Window, IAsyncDisposable
             catch (Exception) { }
         }
         shutdown.Dispose();
+        headingFont.Dispose();
     }
 }

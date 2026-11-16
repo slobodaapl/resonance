@@ -3,407 +3,339 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
+using NAudio.Wave;
+using Resonance.Tts;
 
 return Generator.Run(args);
 
 internal static class Generator
 {
-    private const int MaximumReferenceFrames = 192;
     private static readonly string[] Languages = ["english", "japanese", "german", "french"];
-    private static readonly Dictionary<string, string> ReferenceTexts = new(StringComparer.Ordinal)
-    {
-        ["english"] = "Beyond the quiet harbor, bright lanterns shimmer while travelers exchange curious stories of distant roads.",
-        ["japanese"] = "静かな港の向こうで明るい灯籠が揺れ、旅人たちは遠い道の不思議な物語を語り合う。",
-        ["german"] = "Jenseits des stillen Hafens schimmern helle Laternen, während Reisende neugierige Geschichten ferner Wege erzählen.",
-        ["french"] = "Au-delà du port tranquille, de vives lanternes scintillent tandis que les voyageurs racontent d'étranges histoires de routes lointaines.",
-    };
-    private static readonly Dictionary<string, Anchor> AuthenticAnchors = new(StringComparer.Ordinal)
-    {
-        ["il_mheg_nu_mou"] = new("beqlugg", null),
-        ["il_mheg_pixie"] = new("feoul", null),
-        ["loporrit"] = new("livingway", null),
-        ["fuath"] = new("bossoffuath", null),
-        ["hanuhanu"] = new("hanuhanumaleauda", "masculine"),
-        ["vanu_vanu"] = new("linuhanu", "masculine"),
-        ["ixal"] = new("ixalichieftain", "masculine"),
-        ["amaljaa"] = new("amaljaawarrior", "masculine"),
-        ["sahagin"] = new("sahaginpriest", "masculine"),
-        ["ondo"] = new("readerofondo", "masculine"),
-        ["kojin"] = new("kojinsoldier", "masculine"),
-        ["dragon"] = new("tireddragon", "masculine"),
-        ["pelupelu"] = new("pelupelumaleauda", "masculine"),
-    };
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     internal static int Run(string[] args)
     {
         var options = Options.Parse(args);
-        var catalog = JsonSerializer.Deserialize<Catalog>(File.ReadAllText(options.Catalog), JsonOptions())
-                      ?? throw new InvalidDataException("Catalog is empty");
+        var catalog = JsonSerializer.Deserialize<Catalog>(File.ReadAllText(options.Catalog), JsonOptions)
+            ?? throw new InvalidDataException("Catalog is empty");
+        var recipe = JsonSerializer.Deserialize<Recipe>(File.ReadAllText(options.Recipe), JsonOptions)
+            ?? throw new InvalidDataException("Casting recipe is empty");
+        if (!catalog.Domains.Select(d => d.Id).ToHashSet().SetEquals(recipe.Domains.Select(d => d.Id)))
+            throw new InvalidDataException("Casting recipes must exactly cover the catalog domains");
+        if (recipe.Foundations.Select(f => f.Id).Distinct().Count() != 6
+            || recipe.Foundations.Any(f => f.Id != $"{f.Sex}_{f.Age}"
+                || f.Sex is not ("masculine" or "feminine") || f.Age is not ("young" or "adult" or "elder")))
+            throw new InvalidDataException("Six gender/age foundations are required");
+        if (recipe.Foundations.Any(f => !double.IsFinite(f.NativeWeight) || f.NativeWeight is <= 0 or > 1)
+            || recipe.Domains.Any(d => !double.IsFinite(d.Weight) || d.Weight is < 0 or > 1))
+            throw new InvalidDataException("Native foundation weights must be >0 through 1; flavor weights must be 0 through 1");
+        foreach (var domain in recipe.Domains.Where(d => d.NativeBlend is not null))
+            if (domain.NativeBlend!.Count == 0 || domain.Weight != 0 || domain.Anchors.Count != 0
+                || domain.Recording is not null
+                || domain.NativeBlend.Any(pair => String.IsNullOrWhiteSpace(pair.Key)
+                    || !double.IsFinite(pair.Value) || pair.Value is <= 0 or > 1)
+                || domain.NativeBlend.Values.Sum() > 1)
+                throw new InvalidDataException($"Invalid native blend or combined reference recipes: {domain.Id}");
+        foreach (var domain in recipe.Domains.Where(d => d.Recording is not null))
+            if (domain.Weight != 0 || domain.Anchors.Count != 0
+                || String.IsNullOrWhiteSpace(domain.Recording!.Transcript)
+                || String.IsNullOrWhiteSpace(domain.Recording.AudioFile)
+                || !File.Exists(Path.Combine(options.References, domain.Recording.AudioFile)))
+                throw new InvalidDataException($"Clone reference missing or combined with flavor blending: {domain.Id}");
         var qualities = LoadQualities(options);
-        using var database = OpenDatabase(options.Database);
-        UpdatePackMetadata(database, catalog.Version, options.PackVersion);
-        RehashExistingFallbacks(database, catalog.Version);
-        using var design = NativeRuntime.Load(options.VoiceDesignModel, qualities[0].Codec, options.Backend,
-            options.RuntimeDirectory, voiceDesign: true);
-        var runtimes = new List<(Quality Quality, NativeRuntime Runtime)>();
-        try
-        {
-            foreach (var quality in qualities)
-                runtimes.Add((quality, NativeRuntime.Load(quality.Talker, quality.Codec, options.Backend,
-                    options.RuntimeDirectory, voiceDesign: false)));
-
-            var variants = catalog.Domains.SelectMany(Variants).ToArray();
-            var total = variants.Length * Languages.Length;
-            var complete = 0;
-            foreach (var variant in variants)
-            foreach (var language in Languages)
-            {
-                if (runtimes.All(item => Exists(database, variant.Domain.Id, variant.Id, language,
-                        item.Quality.Hash)))
-                {
-                    complete++;
-                    continue;
-                }
-                var instruction = BuildInstruction(variant, language);
-                var text = ReferenceTexts[language];
-                var seed = StableSeed($"fallback\0{catalog.Version}\0{variant.Domain.Id}\0{variant.Id}\0{language}");
-                var audio = design.Synthesize(text, language, instruction, seed);
-                foreach (var (quality, runtime) in runtimes)
-                {
-                    if (Exists(database, variant.Domain.Id, variant.Id, language, quality.Hash)) continue;
-                    var designed = runtime.Extract(audio) with { Text = text };
-                    var final = ApplyAuthenticAnchor(database, variant, language, quality.Hash, designed);
-                    var profileHash = HashProfile(language, quality.Hash, final.Text, final.Embedding, final.Codes,
-                        variant.Domain.Id, catalog.Version);
-                    Upsert(database, variant, language, quality.Hash, final, profileHash);
-                }
-                complete++;
-                if (complete % 10 == 0 || complete == total)
-                    Console.WriteLine($"{complete}/{total} {variant.Domain.Id}/{variant.Id}/{language}");
-            }
-            using var command = database.CreateCommand();
-            command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;";
-            command.ExecuteNonQuery();
-            Console.WriteLine($"fallback_rows={Scalar(database, "SELECT COUNT(*) FROM fallback_profile")}");
-            return 0;
-        }
-        finally
-        {
-            foreach (var runtime in runtimes) runtime.Runtime.Dispose();
-        }
-    }
-
-    private static IEnumerable<Variant> Variants(Domain domain) => domain.FallbackDimensions switch
-    {
-        "none" => [new(domain, "default", null, null)],
-        "feminine_only" => [new(domain, "feminine", "feminine", null)],
-        "sex" => [new(domain, "masculine", "masculine", null), new(domain, "feminine", "feminine", null)],
-        "sex_age" =>
-        [
-            new(domain, "masculine_young", "masculine", "young"),
-            new(domain, "masculine_adult", "masculine", "adult"),
-            new(domain, "feminine_young", "feminine", "young"),
-            new(domain, "feminine_adult", "feminine", "adult"),
-        ],
-        _ => throw new InvalidDataException($"Unknown fallback dimensions '{domain.FallbackDimensions}'"),
-    };
-
-    private static string BuildInstruction(Variant variant, string language)
-    {
-        var prompt = language == "english" ? variant.Domain.Prompts.English : variant.Domain.Prompts.Neutral;
-        var parts = new List<string>
-        {
-            $"Create one reusable casting-reference voice for natural Final Fantasy XIV dialogue in {language}.",
-            prompt,
-            "Give the voice a stable, specific identity: natural breath support, clear consonants, nuanced sentence-level pitch movement, responsive conversational timing, and restrained emotional flexibility.",
-        };
-        if (variant.Sex == "masculine")
-            parts.Add("Use a naturally masculine vocal register without exaggerated depth, chest resonance, or macho caricature.");
-        else if (variant.Sex == "feminine")
-            parts.Add("Use a naturally feminine vocal register without exaggerated pitch, breathiness, or fragility.");
-        if (variant.Age == "young")
-            parts.Add("Sound clearly young: lighter vocal weight, immediate energy, clean diction, and believable adolescence or early adulthood; never a childish caricature.");
-        else if (variant.Age == "adult")
-            parts.Add("Sound mature: settled vocal weight, confident breath support, nuanced timing, and controlled emotional responsiveness.");
-        if (variant.Domain.FallbackDimensions is "none" or "sex" or "feminine_only")
-            parts.Add("Do not impose an age stereotype; preserve the species' characteristic vocal identity.");
-        parts.Add("Close-miked dry studio speech. No announcer delivery, whispering, shouting, singing, celebrity imitation, comic exaggeration, artificial reverb, or background sound.");
-        return String.Join(' ', parts);
-    }
-
-    private static Reference ApplyAuthenticAnchor(SqliteConnection database, Variant variant, string language,
-        string modelHash, Reference designed)
-    {
-        if (!AuthenticAnchors.TryGetValue(variant.Domain.Id, out var anchor)) return designed;
-        // A generic token is safe for trait-independent domains. Sex-sensitive domains
-        // require an explicitly matching actor token; otherwise keep the designed voice.
-        if (variant.Domain.FallbackDimensions != "none"
-            && !String.Equals(anchor.Sex, variant.Sex, StringComparison.Ordinal))
-            return designed;
-        using var command = database.CreateCommand();
-        command.CommandText = """
-            SELECT ref_text,speaker_embedding,rvq_codes,rvq_length,codebooks
-            FROM official_profile WHERE group_id=$group AND language=$language AND model_hash=$model
-            """;
-        command.Parameters.AddWithValue("$group", anchor.GroupId);
-        command.Parameters.AddWithValue("$language", language);
-        command.Parameters.AddWithValue("$model", modelHash);
-        using var reader = command.ExecuteReader();
-        if (!reader.Read()) return designed;
-        var authenticEmbedding = Floats((byte[])reader[1]);
-        var rotated = Slerp(authenticEmbedding, designed.Embedding, 0.20f);
-        var codes = Ints((byte[])reader[2]);
-        var length = reader.GetInt32(3);
-        var codebooks = reader.GetInt32(4);
-        if (length > MaximumReferenceFrames)
-        {
-            var truncated = new int[MaximumReferenceFrames * codebooks];
-            for (var codebook = 0; codebook < codebooks; codebook++)
-                Array.Copy(codes, codebook * length, truncated,
-                    codebook * MaximumReferenceFrames, MaximumReferenceFrames);
-            codes = truncated;
-            length = MaximumReferenceFrames;
-        }
-        return new(reader.GetString(0), rotated, codes, length, codebooks);
-    }
-
-    private static float[] Slerp(float[] from, float[] toward, float amount)
-    {
-        if (from.Length != toward.Length) throw new InvalidDataException("Embedding dimensions differ");
-        double fromNorm = 0, towardNorm = 0, dot = 0;
-        for (var i = 0; i < from.Length; i++)
-        {
-            fromNorm += from[i] * from[i];
-            towardNorm += toward[i] * toward[i];
-            dot += from[i] * toward[i];
-        }
-        fromNorm = Math.Sqrt(fromNorm); towardNorm = Math.Sqrt(towardNorm);
-        var cosine = Math.Clamp(dot / (fromNorm * towardNorm), -1d, 1d);
-        var angle = Math.Acos(cosine);
-        if (angle < 1e-6) return from.Zip(toward, (a, b) => a + (b - a) * amount).ToArray();
-        var denominator = Math.Sin(angle);
-        var aWeight = Math.Sin((1 - amount) * angle) / denominator;
-        var bWeight = Math.Sin(amount * angle) / denominator;
-        var output = new float[from.Length];
-        for (var i = 0; i < output.Length; i++)
-            output[i] = (float)(aWeight * from[i] + bWeight * toward[i]);
-        return output;
-    }
-
-    private static SqliteConnection OpenDatabase(string path)
-    {
-        var connection = new SqliteConnection($"Data Source={path}");
-        connection.Open();
-        using var command = connection.CreateCommand();
-        command.CommandText = """
-            PRAGMA journal_mode=WAL;
+        var variants = catalog.Domains.SelectMany(domain => recipe.Foundations
+            .Where(f => domain.FallbackDimensions == "sex_age"
+                || domain.FallbackDimensions == "feminine_only" && f.Sex == "feminine"
+                || domain.FallbackDimensions == "none" && f.Id == "masculine_adult")
+            .Select(f => new Variant(domain, recipe.Domains.Single(d => d.Id == domain.Id), f))).ToArray();
+        if (variants.Length != catalog.Domains.Sum(d => d.FallbackDimensions switch
+            { "sex_age" => 6, "feminine_only" => 3, "none" => 1, _ => throw new InvalidDataException("Unsupported casting dimensions") }))
+            throw new InvalidDataException("Incomplete casting matrix");
+        Directory.CreateDirectory(options.References);
+        using var cache = Open(options.References + "/references.sqlite3");
+        Execute(cache, """
+            CREATE TABLE IF NOT EXISTS reference_audio(id TEXT PRIMARY KEY,prompt TEXT NOT NULL,
+              seed INTEGER NOT NULL,ref_text TEXT NOT NULL,audio_file TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS reference_profile(id TEXT NOT NULL,model_hash TEXT NOT NULL,
+              prompt TEXT NOT NULL,seed INTEGER NOT NULL,ref_text TEXT NOT NULL,speaker_embedding BLOB NOT NULL,
+              rvq_codes BLOB NOT NULL,rvq_length INTEGER NOT NULL,codebooks INTEGER NOT NULL,
+              PRIMARY KEY(id,model_hash));
+            """);
+        var designs = recipe.Foundations.Select(f => new Design("foundation:" + f.Id, f.Prompt, f.Seed))
+            .Concat(variants.Where(v => v.Flavor.Weight > 0 && !v.Flavor.Anchors.ContainsKey(v.Foundation.Sex))
+                .Select(v => new Design($"flavor:{v.Domain.Id}:{v.Foundation.Id}",
+                    $"{v.Foundation.Prompt} {v.Flavor.Flavor} {recipe.FlavorSuffix}", v.Foundation.Seed)))
+            .DistinctBy(d => d.Id).ToArray();
+        using var database = Open(options.Database);
+        var actors = recipe.Foundations.Select(f => f.NativeActor)
+            .Concat(recipe.Domains.SelectMany(d => d.Anchors.Values))
+            .Concat(recipe.Domains.SelectMany(d => d.NativeBlend?.Keys.AsEnumerable() ?? []))
+            .Distinct().ToArray();
+        foreach (var quality in qualities)
+        foreach (var language in Languages)
+        foreach (var actor in actors)
+            NativeReference(database, null, actor, language, quality);
+        EnsureAudio(options, recipe, cache, designs, qualities.SingleOrDefault(q => q.Id == "1.7b-q8") ?? qualities[0]);
+        using var transaction = database.BeginTransaction();
+        Execute(database, """
             CREATE TABLE IF NOT EXISTS fallback_profile(
-              domain_id TEXT NOT NULL,variant_id TEXT NOT NULL,sex TEXT NULL,age TEXT NULL,
+              domain_id TEXT NOT NULL,variant_id TEXT NOT NULL,sex TEXT,age TEXT,
               language TEXT NOT NULL,model_hash TEXT NOT NULL,ref_text TEXT NOT NULL,
               speaker_embedding BLOB NOT NULL,rvq_codes BLOB NOT NULL,rvq_length INTEGER NOT NULL,
               codebooks INTEGER NOT NULL,profile_hash TEXT NOT NULL,
               PRIMARY KEY(domain_id,variant_id,language,model_hash));
-            """;
-        command.ExecuteNonQuery();
-        return connection;
-    }
-
-    private static void UpdatePackMetadata(SqliteConnection database, int catalogVersion, int packVersion)
-    {
-        using var command = database.CreateCommand();
-        command.CommandText = "UPDATE pack_metadata SET pack_version=$pack,catalog_version=$catalog,created_utc=$utc";
-        command.Parameters.AddWithValue("$pack", packVersion);
-        command.Parameters.AddWithValue("$catalog", catalogVersion);
-        command.Parameters.AddWithValue("$utc", DateTimeOffset.UtcNow.ToString("O"));
-        if (command.ExecuteNonQuery() != 1) throw new InvalidDataException("Pack metadata row is missing or duplicated");
-    }
-
-    private static void RehashExistingFallbacks(SqliteConnection database, int catalogVersion)
-    {
-        using var read = database.CreateCommand();
-        read.CommandText = "SELECT rowid,domain_id,language,model_hash,ref_text,speaker_embedding,rvq_codes,profile_hash FROM fallback_profile";
-        using var reader = read.ExecuteReader();
-        var updates = new List<(long RowId, string Hash)>();
-        while (reader.Read())
+            """, transaction);
+        Execute(database, "DELETE FROM fallback_profile", transaction);
+        foreach (var quality in qualities)
         {
-            var embedding = Floats((byte[])reader[5]);
-            var codes = Ints((byte[])reader[6]);
-            var expected = HashProfile(reader.GetString(2), reader.GetString(3), reader.GetString(4), embedding,
-                codes, reader.GetString(1), catalogVersion);
-            if (!String.Equals(expected, reader.GetString(7), StringComparison.OrdinalIgnoreCase))
-                updates.Add((reader.GetInt64(0), expected));
+            NativeRuntime? runtime = null;
+            try
+            {
+                Reference Designed(string id)
+                {
+                    var spec = designs.Single(d => d.Id == id);
+                    using var query = cache.CreateCommand();
+                    query.CommandText = "SELECT ref_text,speaker_embedding,rvq_codes,rvq_length,codebooks FROM reference_profile WHERE id=$id AND model_hash=$model AND prompt=$prompt AND seed=$seed";
+                    query.Parameters.AddWithValue("$id", id); query.Parameters.AddWithValue("$model", quality.Hash);
+                    query.Parameters.AddWithValue("$prompt", spec.Prompt); query.Parameters.AddWithValue("$seed", spec.Seed);
+                    using (var reader = query.ExecuteReader())
+                        if (reader.Read()) return ReadReference(reader, quality.Dimension);
+                    using var audio = cache.CreateCommand();
+                    audio.CommandText = "SELECT ref_text,audio_file FROM reference_audio WHERE id=$id";
+                    audio.Parameters.AddWithValue("$id", id);
+                    string text, file;
+                    using (var reader = audio.ExecuteReader())
+                    {
+                        if (!reader.Read()) throw new InvalidDataException($"Reference audio missing: {id}");
+                        text = reader.GetString(0); file = reader.GetString(1);
+                    }
+                    runtime ??= NativeRuntime.Load(quality.Talker, quality.Codec, options.Backend, options.Runtime);
+                    var reference = runtime.Extract(ReadAudio(Path.Combine(options.References, file))) with { Text = text };
+                    Validate(reference, quality.Dimension);
+                    if (reference.Length >= 220) throw new InvalidDataException($"Designed reference reached its generation limit: {id}");
+                    using var save = cache.CreateCommand();
+                    save.CommandText = "INSERT OR REPLACE INTO reference_profile VALUES($id,$model,$prompt,$seed,$text,$embedding,$codes,$length,$books)";
+                    save.Parameters.AddWithValue("$id", id); save.Parameters.AddWithValue("$model", quality.Hash);
+                    save.Parameters.AddWithValue("$prompt", spec.Prompt); save.Parameters.AddWithValue("$seed", spec.Seed);
+                    AddReference(save, reference); save.ExecuteNonQuery();
+                    return reference;
+                }
+                var generic = recipe.Foundations.ToDictionary(f => f.Id, f => Designed("foundation:" + f.Id));
+                var clones = new Dictionary<string, Reference>(StringComparer.Ordinal);
+                foreach (var flavor in recipe.Domains.Where(d => d.Recording is not null))
+                {
+                    runtime ??= NativeRuntime.Load(quality.Talker, quality.Codec, options.Backend, options.Runtime);
+                    var clone = runtime.Extract(ReadAudio(Path.Combine(options.References, flavor.Recording!.AudioFile)))
+                        with { Text = flavor.Recording.Transcript };
+                    Validate(clone, quality.Dimension);
+                    clones.Add(flavor.Id, clone);
+                }
+                var total = 0;
+                foreach (var language in Languages)
+                {
+                    var ageReferences = recipe.Foundations.ToDictionary(f => f.Id,
+                        f => NativeReference(database, transaction, f.NativeActor, language, quality));
+                    var bases = recipe.Foundations.ToDictionary(f => f.Id,
+                        f => VoiceEmbedding.LinearBlend(generic[f.Id].Embedding,
+                            ageReferences[f.Id].Embedding, f.NativeWeight));
+                    foreach (var variant in variants)
+                    {
+                        var foundation = variant.Foundation;
+                        var embedding = bases[foundation.Id];
+                        var performance = ageReferences[foundation.Id];
+                        if (variant.Flavor.Weight > 0)
+                        {
+                            var flavor = variant.Flavor.Anchors.TryGetValue(foundation.Sex, out var actor)
+                                ? NativeReference(database, transaction, actor, language, quality)
+                                : Designed($"flavor:{variant.Domain.Id}:{foundation.Id}");
+                            embedding = VoiceEmbedding.LinearBlend(embedding, flavor.Embedding, variant.Flavor.Weight);
+                        }
+                        if (variant.Flavor.NativeBlend is { } blend)
+                        {
+                            var mass = 1 - blend.Values.Sum();
+                            foreach (var (actor, weight) in blend)
+                            {
+                                mass += weight;
+                                var anchor = NativeReference(database, transaction, actor, language, quality);
+                                embedding = VoiceEmbedding.LinearBlend(embedding, anchor.Embedding, weight / mass);
+                            }
+                            performance = NativeReference(database, transaction,
+                                blend.MaxBy(pair => pair.Value).Key, language, quality);
+                        }
+                        var reference = clones.TryGetValue(variant.Domain.Id, out var clone)
+                            ? clone : performance with { Embedding = embedding };
+                        using var insert = database.CreateCommand(); insert.Transaction = transaction;
+                        insert.CommandText = "INSERT INTO fallback_profile VALUES($domain,$variant,$sex,$age,$language,$model,$text,$embedding,$codes,$length,$books,$hash)";
+                        insert.Parameters.AddWithValue("$domain", variant.Domain.Id);
+                        var shared = variant.Domain.FallbackDimensions == "none";
+                        insert.Parameters.AddWithValue("$variant", shared ? "default" : foundation.Id);
+                        insert.Parameters.AddWithValue("$sex", shared ? DBNull.Value : foundation.Sex);
+                        insert.Parameters.AddWithValue("$age", shared ? DBNull.Value : foundation.Age);
+                        insert.Parameters.AddWithValue("$language", language); insert.Parameters.AddWithValue("$model", quality.Hash);
+                        AddReference(insert, reference);
+                        insert.Parameters.AddWithValue("$hash", HashProfile(language, quality.Hash, reference, variant.Domain.Id, catalog.Version));
+                        insert.ExecuteNonQuery(); total++;
+                    }
+                }
+                Console.WriteLine($"[fallback] {quality.Id}: {total} profiles; native conditioning retained");
+            }
+            finally { runtime?.Dispose(); }
         }
-        reader.Close();
-        foreach (var update in updates)
+        using (var metadata = database.CreateCommand())
         {
-            using var write = database.CreateCommand();
-            write.CommandText = "UPDATE fallback_profile SET profile_hash=$hash WHERE rowid=$rowid";
-            write.Parameters.AddWithValue("$hash", update.Hash); write.Parameters.AddWithValue("$rowid", update.RowId);
-            write.ExecuteNonQuery();
+            metadata.Transaction = transaction;
+            metadata.CommandText = "UPDATE pack_metadata SET pack_version=$pack,catalog_version=$catalog,created_utc=$utc";
+            metadata.Parameters.AddWithValue("$pack", options.PackVersion); metadata.Parameters.AddWithValue("$catalog", catalog.Version);
+            metadata.Parameters.AddWithValue("$utc", DateTimeOffset.UtcNow.ToString("O"));
+            if (metadata.ExecuteNonQuery() != 1) throw new InvalidDataException("Pack metadata row missing or duplicated");
         }
-        if (updates.Count > 0) Console.WriteLine($"rehashed_existing={updates.Count}");
+        transaction.Commit();
+        Execute(database, "PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;");
+        Console.WriteLine($"[fallback] complete: {variants.Length * Languages.Length * qualities.Length} profiles, catalog {catalog.Version}, pack {options.PackVersion}");
+        return 0;
     }
 
-    private static bool Exists(SqliteConnection database, string domain, string variant, string language, string model)
+    private static void EnsureAudio(Options options, Recipe recipe, SqliteConnection cache, Design[] designs, Quality quality)
     {
-        using var command = database.CreateCommand();
-        command.CommandText = "SELECT EXISTS(SELECT 1 FROM fallback_profile WHERE domain_id=$domain AND variant_id=$variant AND language=$language AND model_hash=$model)";
-        command.Parameters.AddWithValue("$domain", domain); command.Parameters.AddWithValue("$variant", variant);
-        command.Parameters.AddWithValue("$language", language); command.Parameters.AddWithValue("$model", model);
-        return Convert.ToInt32(command.ExecuteScalar()) != 0;
+        NativeRuntime? runtime = null;
+        try
+        {
+            foreach (var design in designs)
+            {
+                using var query = cache.CreateCommand();
+                query.CommandText = "SELECT audio_file FROM reference_audio WHERE id=$id AND prompt=$prompt AND seed=$seed";
+                query.Parameters.AddWithValue("$id", design.Id); query.Parameters.AddWithValue("$prompt", design.Prompt);
+                query.Parameters.AddWithValue("$seed", design.Seed);
+                if (query.ExecuteScalar() is string existing && File.Exists(Path.Combine(options.References, existing))) continue;
+                if (!File.Exists(options.VoiceDesign))
+                    throw new FileNotFoundException("Reference generation requires the Q8 VoiceDesign model", options.VoiceDesign);
+                runtime ??= NativeRuntime.Load(options.VoiceDesign, quality.Codec, options.Backend, options.Runtime);
+                var texts = new[] { recipe.ReferenceText, "Wait! Sit down. Tell me what happened." }.Distinct();
+                var complete = false;
+                foreach (var text in texts)
+                {
+                    var samples = runtime.Synthesize(text, design.Prompt, design.Seed);
+                    if (samples.Length >= 220 * 1920) continue;
+                    var name = design.Id.Replace(':', '_') + ".wav";
+                    var file = Path.Combine(options.References, name);
+                    using (var writer = new WaveFileWriter(file + ".partial", WaveFormat.CreateIeeeFloatWaveFormat(24000, 1)))
+                        writer.WriteSamples(samples, 0, samples.Length);
+                    File.Move(file + ".partial", file, true);
+                    using var replacement = cache.BeginTransaction();
+                    using var save = cache.CreateCommand(); save.Transaction = replacement;
+                    save.CommandText = "DELETE FROM reference_profile WHERE id=$id; INSERT OR REPLACE INTO reference_audio VALUES($id,$prompt,$seed,$text,$file)";
+                    save.Parameters.AddWithValue("$id", design.Id); save.Parameters.AddWithValue("$prompt", design.Prompt);
+                    save.Parameters.AddWithValue("$seed", design.Seed); save.Parameters.AddWithValue("$text", text);
+                    save.Parameters.AddWithValue("$file", name); save.ExecuteNonQuery(); replacement.Commit();
+                    Console.WriteLine($"[fallback] designed {design.Id}"); complete = true; break;
+                }
+                if (!complete) throw new InvalidDataException($"Reference generation did not finish within 220 frames: {design.Id}");
+            }
+        }
+        finally { runtime?.Dispose(); }
     }
 
-    private static void Upsert(SqliteConnection database, Variant variant, string language, string model,
-        Reference reference, string hash)
+    private static float[] ReadAudio(string path)
     {
-        using var command = database.CreateCommand();
-        command.CommandText = """
-            INSERT OR REPLACE INTO fallback_profile VALUES(
-              $domain,$variant,$sex,$age,$language,$model,$text,$embedding,$codes,$length,$codebooks,$hash)
-            """;
-        command.Parameters.AddWithValue("$domain", variant.Domain.Id);
-        command.Parameters.AddWithValue("$variant", variant.Id);
-        command.Parameters.AddWithValue("$sex", (object?)variant.Sex ?? DBNull.Value);
-        command.Parameters.AddWithValue("$age", (object?)variant.Age ?? DBNull.Value);
-        command.Parameters.AddWithValue("$language", language); command.Parameters.AddWithValue("$model", model);
-        command.Parameters.AddWithValue("$text", reference.Text);
-        command.Parameters.AddWithValue("$embedding", Bytes(reference.Embedding));
-        command.Parameters.AddWithValue("$codes", Bytes(reference.Codes));
-        command.Parameters.AddWithValue("$length", reference.Length);
-        command.Parameters.AddWithValue("$codebooks", reference.Codebooks); command.Parameters.AddWithValue("$hash", hash);
-        command.ExecuteNonQuery();
+        using var reader = new WaveFileReader(path);
+        if (reader.WaveFormat.SampleRate != 24000 || reader.WaveFormat.Channels != 1)
+            throw new InvalidDataException($"Reference must be 24 kHz mono: {path}");
+        var samples = new float[reader.Length / reader.WaveFormat.BlockAlign];
+        var provider = reader.ToSampleProvider(); var offset = 0;
+        while (offset < samples.Length)
+        {
+            var read = provider.Read(samples, offset, samples.Length - offset);
+            if (read == 0) throw new EndOfStreamException(path);
+            offset += read;
+        }
+        return samples;
     }
 
-    private static string HashProfile(string language, string model, string text, float[] embedding, int[] codes,
-        string domain, int catalogVersion)
+    private static Reference NativeReference(SqliteConnection database, SqliteTransaction? transaction,
+        string actor, string language, Quality quality)
+    {
+        using var query = database.CreateCommand(); query.Transaction = transaction;
+        query.CommandText = "SELECT ref_text,speaker_embedding,rvq_codes,rvq_length,codebooks FROM official_profile WHERE group_id=$group AND language=$language AND model_hash=$model";
+        query.Parameters.AddWithValue("$group", actor); query.Parameters.AddWithValue("$language", language);
+        query.Parameters.AddWithValue("$model", quality.Hash);
+        using var reader = query.ExecuteReader();
+        if (!reader.Read()) throw new InvalidDataException($"Missing declared native anchor: {actor}/{language}/{quality.Id}");
+        return ReadReference(reader, quality.Dimension);
+    }
+
+    private static Reference ReadReference(SqliteDataReader reader, int dimension)
+    {
+        var reference = new Reference(reader.GetString(0), Floats((byte[])reader[1]), Ints((byte[])reader[2]), reader.GetInt32(3), reader.GetInt32(4));
+        Validate(reference, dimension); return reference;
+    }
+    private static void Validate(Reference reference, int dimension)
+    {
+        if (String.IsNullOrWhiteSpace(reference.Text) || reference.Embedding.Length != dimension
+            || reference.Embedding.Any(v => !float.IsFinite(v)) || reference.Codebooks != 16
+            || reference.Length is < 1 or > 250 || reference.Codes.Length != reference.Length * 16
+            || reference.Codes.Any(v => v is < 0 or >= 2048))
+            throw new InvalidDataException("Invalid reference shape, transcript or latent values");
+    }
+    private static void AddReference(SqliteCommand command, Reference reference)
+    {
+        command.Parameters.AddWithValue("$text", reference.Text); command.Parameters.AddWithValue("$embedding", Bytes(reference.Embedding));
+        command.Parameters.AddWithValue("$codes", Bytes(reference.Codes)); command.Parameters.AddWithValue("$length", reference.Length);
+        command.Parameters.AddWithValue("$books", reference.Codebooks);
+    }
+    private static SqliteConnection Open(string path)
+    {
+        var connection = new SqliteConnection($"Data Source={Path.GetFullPath(path)}"); connection.Open(); return connection;
+    }
+    private static void Execute(SqliteConnection database, string sql, SqliteTransaction? transaction = null)
+    {
+        using var command = database.CreateCommand(); command.Transaction = transaction; command.CommandText = sql; command.ExecuteNonQuery();
+    }
+    private static string HashProfile(string language, string model, Reference reference, string domain, int version)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        hash.AppendData(Encoding.UTF8.GetBytes($"Designed\0{language}\0{model}\0\0\0\0{domain}\0{catalogVersion}\0{{}}\0{text}"));
-        hash.AppendData(Bytes(embedding)); hash.AppendData(Bytes(codes));
+        hash.AppendData(Encoding.UTF8.GetBytes($"Designed\0{language}\0{model}\0\0\0\0{domain}\0{version}\0{{}}\0{reference.Text}"));
+        hash.AppendData(Bytes(reference.Embedding)); hash.AppendData(Bytes(reference.Codes));
         return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
     }
-
-    private static long StableSeed(string value) => BitConverter.ToInt64(SHA256.HashData(Encoding.UTF8.GetBytes(value))) & Int64.MaxValue;
     private static byte[] Bytes<T>(T[] values) where T : struct => MemoryMarshal.AsBytes(values.AsSpan()).ToArray();
     private static float[] Floats(byte[] bytes) { var values = new float[bytes.Length / 4]; Buffer.BlockCopy(bytes, 0, values, 0, bytes.Length); return values; }
     private static int[] Ints(byte[] bytes) { var values = new int[bytes.Length / 4]; Buffer.BlockCopy(bytes, 0, values, 0, bytes.Length); return values; }
-    private static object? Scalar(SqliteConnection database, string sql) { using var command = database.CreateCommand(); command.CommandText = sql; return command.ExecuteScalar(); }
-    private static JsonSerializerOptions JsonOptions() => new() { PropertyNameCaseInsensitive = true };
-
-    private sealed record Options(string Catalog, string Database, string Models, string RuntimeDirectory,
-        string VoiceDesignModel, string[] Qualities, string Backend, int PackVersion)
+    private static Quality[] LoadQualities(Options options)
+    {
+        using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(Path.GetDirectoryName(options.Catalog)!, "models.json")));
+        JsonElement Artifact(string id) => manifest.RootElement.GetProperty("artifacts").EnumerateArray().Single(a => a.GetProperty("id").GetString() == id);
+        return options.Qualities.Select(id =>
+        {
+            if (id is not ("q4" or "q8" or "1.7b-q4" or "1.7b-q8")) throw new ArgumentException($"Unknown quality: {id}");
+            var talker = Artifact("base-" + id); var codec = Artifact("tokenizer-" + (id.EndsWith("q8", StringComparison.Ordinal) ? "q8" : "q4"));
+            return new Quality(id,Path.Combine(options.Models,talker.GetProperty("fileName").GetString()!),
+                Path.Combine(options.Models,codec.GetProperty("fileName").GetString()!),talker.GetProperty("sha256").GetString()!,id.StartsWith("1.7b",StringComparison.Ordinal) ? 2048 : 1024);
+        }).ToArray();
+    }
+    private sealed record Options(string Catalog,string Recipe,string Database,string Models,string Runtime,string References,string VoiceDesign,string[] Qualities,string Backend,int PackVersion)
     {
         internal static Options Parse(string[] args)
         {
-            var values = new Dictionary<string, string>(StringComparer.Ordinal);
-            for (var i = 0; i < args.Length; i += 2) values.Add(args[i], args[i + 1]);
-            string Required(string key) => Path.GetFullPath(values.TryGetValue(key, out var value) ? value : throw new ArgumentException($"Missing {key}"));
-            var models = Required("--models");
-            return new(Required("--catalog"), Required("--database"), models, Required("--runtime"),
-                Path.Combine(models, "qwen-talker-1.7b-voicedesign-Q4_K_M.gguf"),
-                (values.GetValueOrDefault("--qualities") ?? "q4,q8,1.7b-q4,1.7b-q8")
-                .Split(',', StringSplitOptions.RemoveEmptyEntries),
-                values.GetValueOrDefault("--backend") ?? "CUDA0", Int32.Parse(values.GetValueOrDefault("--pack-version") ?? "5"));
+            if (args.Length % 2 != 0) throw new ArgumentException("Options require --name value pairs");
+            var values = Enumerable.Range(0,args.Length/2).ToDictionary(i=>args[i*2],i=>args[i*2+1],StringComparer.Ordinal);
+            string Required(string name) => Path.GetFullPath(values.TryGetValue(name,out var value) ? value : throw new ArgumentException($"Missing {name}"));
+            var catalog = Required("--catalog"); var models = Required("--models");
+            return new(catalog,Path.GetFullPath(values.GetValueOrDefault("--recipe") ?? Path.Combine(Path.GetDirectoryName(catalog)!,"fallback-voices.json")),
+                Required("--database"),models,Required("--runtime"),
+                Path.GetFullPath(values.GetValueOrDefault("--references") ?? ".references/artifacts/fallback-references"),
+                Path.Combine(models,"qwen-talker-1.7b-voicedesign-Q8_0.gguf"),
+                (values.GetValueOrDefault("--qualities") ?? "q4,q8,1.7b-q4,1.7b-q8").Split(','),values.GetValueOrDefault("--backend") ?? "CUDA0",
+                Int32.Parse(values.GetValueOrDefault("--pack-version") ?? "9"));
         }
     }
-
-    private static Quality[] LoadQualities(Options options)
-    {
-        var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(Path.GetDirectoryName(options.Catalog)!, "models.json")));
-        string Hash(string id) => manifest.RootElement.GetProperty("artifacts").EnumerateArray().Single(x => x.GetProperty("id").GetString() == id).GetProperty("sha256").GetString()!;
-        string FileName(string id) => manifest.RootElement.GetProperty("artifacts").EnumerateArray()
-            .Single(x => x.GetProperty("id").GetString() == id).GetProperty("fileName").GetString()!;
-        return options.Qualities.Select(quality =>
-        {
-            var baseId = $"base-{quality}";
-            var quantization = quality switch
-            {
-                "q4" or "1.7b-q4" => "q4",
-                "q8" or "1.7b-q8" => "q8",
-                _ => throw new InvalidDataException($"Unknown Base quality '{quality}'"),
-            };
-            var tokenizerId = $"tokenizer-{quantization}";
-            return new Quality(quality, Path.Combine(options.Models, FileName(baseId)),
-                Path.Combine(options.Models, FileName(tokenizerId)), Hash(baseId));
-        }).ToArray();
-    }
-
     private sealed record Catalog(int Version, Domain[] Domains);
-    private sealed record Domain(string Id, string FallbackDimensions, Prompts Prompts);
-    private sealed record Prompts(string English, string Neutral);
-    private sealed record Variant(Domain Domain, string Id, string? Sex, string? Age);
-    private sealed record Quality(string Id, string Talker, string Codec, string Hash);
-    private sealed record Anchor(string GroupId, string? Sex);
-    private sealed record Reference(string Text, float[] Embedding, int[] Codes, int Length, int Codebooks);
-
-    private sealed unsafe class NativeRuntime(nint context, bool voiceDesign) : IDisposable
-    {
-        internal static NativeRuntime Load(string talker, string codec, string backend, string runtime, bool voiceDesign)
-        {
-            Native.BackendLoadFromPath(runtime);
-            using var talkerString = new Utf8(talker); using var codecString = new Utf8(codec); using var backendString = new Utf8(backend);
-            Native.InitDefaultParams(out var parameters); parameters.TalkerPath = talkerString.Pointer;
-            parameters.CodecPath = codecString.Pointer; parameters.BackendName = backendString.Pointer;
-            var context = Native.Init(ref parameters);
-            if (context == 0) throw new InvalidOperationException("qt_init failed: " + LastError());
-            return new(context, voiceDesign);
-        }
-        internal Reference Extract(float[] samples)
-        {
-            Native.VoiceRef native = default;
-            fixed (float* pointer = samples)
-                if (Native.ExtractVoiceRef(context, pointer, samples.Length, out native) != 0)
-                    throw new InvalidOperationException("qt_extract_voice_ref failed: " + LastError());
-            try
-            {
-                var embedding = new float[native.SpeakerDimension]; var codes = new int[native.ReferenceLength * native.Codebooks];
-                Marshal.Copy((nint)native.SpeakerEmbedding, embedding, 0, embedding.Length);
-                Marshal.Copy((nint)native.Codes, codes, 0, codes.Length);
-                return new(String.Empty, embedding, codes, native.ReferenceLength, native.Codebooks);
-            }
-            finally { Native.VoiceRefFree(ref native); }
-        }
-        internal float[] Synthesize(string text, string language, string instruction, long seed)
-        {
-            if (!voiceDesign) throw new InvalidOperationException("Not a VoiceDesign context");
-            Native.TtsDefaultParams(out var parameters);
-            using var textString = new Utf8(text); using var languageString = new Utf8(language); using var instructionString = new Utf8(instruction);
-            parameters.Text = textString.Pointer; parameters.Language = languageString.Pointer;
-            parameters.Instruction = instructionString.Pointer; parameters.Seed = seed;
-            parameters.MaxNewTokens = 180;
-            Native.Audio audio = default;
-            var status = Native.Synthesize(context, ref parameters, out audio);
-            if (status != 0) throw new InvalidOperationException($"qt_synthesize failed ({status}): {LastError()}");
-            try { var samples = new float[audio.SampleCount]; Marshal.Copy((nint)audio.Samples, samples, 0, samples.Length); return samples; }
-            finally { Native.AudioFree(ref audio); }
-        }
-        public void Dispose() => Native.Free(context);
-        private static string LastError() => Marshal.PtrToStringUTF8((nint)Native.LastError()) ?? "unknown";
-    }
-
-    private sealed unsafe class Utf8 : IDisposable
-    {
-        private nint memory;
-        internal byte* Pointer => (byte*)memory;
-        internal Utf8(string value) { var bytes = Encoding.UTF8.GetBytes(value + '\0'); memory = Marshal.AllocHGlobal(bytes.Length); Marshal.Copy(bytes, 0, memory, bytes.Length); }
-        public void Dispose() { if (memory != 0) Marshal.FreeHGlobal(Interlocked.Exchange(ref memory, 0)); }
-    }
-}
-
-internal static unsafe partial class Native
-{
-    [StructLayout(LayoutKind.Sequential)] internal struct InitParams { internal int AbiVersion; internal byte* TalkerPath; internal byte* CodecPath; internal byte UseFlashAttention; internal byte ClampFp16; internal int MaxBatch; internal float CodecChunkSeconds; internal byte* BackendName; }
-    [StructLayout(LayoutKind.Sequential)] internal struct TtsParams { internal int AbiVersion; internal byte* Text; internal byte* Language; internal byte* Instruction; internal byte* Speaker; internal float* ReferenceAudio; internal int ReferenceSampleCount; internal byte* ReferenceText; internal long Seed; internal int MaxNewTokens; internal byte DoSample; internal float Temperature; internal int TopK; internal float TopP; internal float RepetitionPenalty; internal byte SubtalkerDoSample; internal float SubtalkerTemperature; internal int SubtalkerTopK; internal float SubtalkerTopP; internal byte* DumpDirectory; internal nint Cancel; internal void* CancelUserData; internal nint OnChunk; internal void* OnChunkUserData; internal float* ReferenceSpeakerEmbedding; internal int ReferenceSpeakerDimension; internal int* ReferenceCodes; internal int ReferenceLength; }
-    [StructLayout(LayoutKind.Sequential)] internal struct Audio { internal float* Samples; internal int SampleCount; internal int SampleRate; internal int Channels; }
-    [StructLayout(LayoutKind.Sequential)] internal struct VoiceRef { internal float* SpeakerEmbedding; internal int SpeakerDimension; internal int* Codes; internal int ReferenceLength; internal int Codebooks; }
-    [LibraryImport("qwen", EntryPoint = "qt_backend_load_from_path", StringMarshalling = StringMarshalling.Utf8)] internal static partial int BackendLoadFromPath(string path);
-    [LibraryImport("qwen", EntryPoint = "qt_init_default_params")] internal static partial void InitDefaultParams(out InitParams parameters);
-    [LibraryImport("qwen", EntryPoint = "qt_tts_default_params")] internal static partial void TtsDefaultParams(out TtsParams parameters);
-    [LibraryImport("qwen", EntryPoint = "qt_init")] internal static partial nint Init(ref InitParams parameters);
-    [LibraryImport("qwen", EntryPoint = "qt_free")] internal static partial void Free(nint context);
-    [LibraryImport("qwen", EntryPoint = "qt_synthesize")] internal static partial int Synthesize(nint context, ref TtsParams parameters, out Audio audio);
-    [LibraryImport("qwen", EntryPoint = "qt_audio_free")] internal static partial void AudioFree(ref Audio audio);
-    [LibraryImport("qwen", EntryPoint = "qt_extract_voice_ref")] internal static partial int ExtractVoiceRef(nint context, float* samples, int sampleCount, out VoiceRef voiceRef);
-    [LibraryImport("qwen", EntryPoint = "qt_voice_ref_free")] internal static partial void VoiceRefFree(ref VoiceRef voiceRef);
-    [LibraryImport("qwen", EntryPoint = "qt_last_error")] internal static partial byte* LastError();
+    private sealed record Domain(string Id,string FallbackDimensions);
+    private sealed record Recipe(int Version,string ReferenceText,string FlavorSuffix,Foundation[] Foundations,FlavorRecipe[] Domains);
+    private sealed record Foundation(string Id,string Sex,string Age,string NativeActor,string Prompt,long Seed,double NativeWeight);
+    private sealed record FlavorRecipe(string Id,string Flavor,Dictionary<string,string> Anchors,double Weight,string[] Sources,CloneReference? Recording = null,Dictionary<string,double>? NativeBlend = null);
+    private sealed record CloneReference(string AudioFile,string Transcript);
+    private sealed record Variant(Domain Domain,FlavorRecipe Flavor,Foundation Foundation);
+    private sealed record Design(string Id,string Prompt,long Seed);
+    private sealed record Quality(string Id,string Talker,string Codec,string Hash,int Dimension);
+    internal sealed record Reference(string Text,float[] Embedding,int[] Codes,int Length,int Codebooks);
 }

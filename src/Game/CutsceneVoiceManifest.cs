@@ -17,13 +17,15 @@ public sealed record CutsceneVoiceLine(
     string? ActorTokenHash = null,
     uint? ActorNpcBaseId = null)
 {
+    public string SourceKey { get; init; } = Key;
+    public int? SourceOffset { get; init; }
     public string NodeId { get; init; } = Convert.ToHexString(
         SHA256.HashData(Encoding.UTF8.GetBytes(Key))).ToLowerInvariant();
 }
 
 public sealed record CutsceneVoiceEdge(string? CurrentNodeId, string? NextNodeId);
 
-public sealed partial class CutsceneVoiceManifest(
+public sealed class CutsceneVoiceManifest(
     uint cutsceneId,
     string cutscenePath,
     IReadOnlyList<CutsceneVoiceLine> lines,
@@ -31,36 +33,78 @@ public sealed partial class CutsceneVoiceManifest(
 {
     private readonly IReadOnlyDictionary<string, CutsceneVoiceLine[]> successors =
         edges is null ? BuildSuccessors(lines) : BuildSuccessors(lines, edges);
+    private readonly Dictionary<string, CutsceneVoiceLine[]> byText = lines
+        .GroupBy(line => DialogueText.NormalizeText(line.Text), StringComparer.Ordinal)
+        .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+    private readonly Dictionary<string, CutsceneVoiceLine[]> bySourceKey = lines
+        .GroupBy(line => line.SourceKey, StringComparer.Ordinal)
+        .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
     public uint CutsceneId { get; } = cutsceneId;
     public string CutscenePath { get; } = cutscenePath;
     public IReadOnlyList<CutsceneVoiceLine> Lines { get; } = lines;
+    public IReadOnlyList<CutsceneVoiceEdge>? Edges { get; } = edges;
 
-    public IReadOnlyList<CutsceneVoiceLine> StartNodes => edges is null
+    public IReadOnlyList<CutsceneVoiceLine> StartNodes => Edges is null
         ? Lines.Count == 0
             ? []
             : Lines.Where(line => line.Ordinal == Lines.Min(value => value.Ordinal)).ToArray()
-        : ResolveStarts(Lines, edges);
+        : ResolveStarts(Lines, Edges);
 
     public IReadOnlyList<CutsceneVoiceLine> MatchFrontier(
-        string speaker, string text, IReadOnlyCollection<string> frontierNodeIds)
+        string speaker, string text, IReadOnlyCollection<string> frontierNodeIds,
+        uint? npcBaseId = null, IReadOnlySet<string>? actorIdentities = null, string? rowKey = null,
+        int? rowOffset = null)
     {
-        var candidates = frontierNodeIds.Count == 0
-            ? Lines
-            : Lines.Where(line => frontierNodeIds.Contains(line.NodeId));
-        var normalizedText = NormalizeText(text);
-        var textMatches = candidates.Where(line => NormalizeText(line.Text) == normalizedText).ToArray();
+        if (rowKey is not null)
+        {
+            var sourceMatches = bySourceKey.GetValueOrDefault(rowKey) ?? [];
+            if (rowOffset is not null && sourceMatches.Any(line => line.SourceOffset is not null))
+                return sourceMatches.Where(line => line.SourceOffset == rowOffset).ToArray();
+            var atFrontier = sourceMatches.Where(line => frontierNodeIds.Contains(line.NodeId)).ToArray();
+            return atFrontier.Length != 0 ? atFrontier : sourceMatches;
+        }
+        var textMatches = byText.GetValueOrDefault(DialogueText.NormalizeText(text)) ?? [];
+        if (npcBaseId is not null)
+            textMatches = textMatches.Where(line => line.ActorNpcBaseId is null
+                || line.ActorNpcBaseId == npcBaseId).ToArray();
         if (textMatches.Length == 0) return [];
-        var normalizedSpeaker = NormalizeActor(speaker);
+        var normalizedSpeaker = DialogueText.NormalizeSpeaker(speaker);
         var speakerHash = Convert.ToHexString(
             SHA256.HashData(Encoding.UTF8.GetBytes(normalizedSpeaker))).ToLowerInvariant();
-        var actorMatches = textMatches.Where(line => line.ActorTokenHash is not null
+        bool MatchesActor(CutsceneVoiceLine line) => normalizedSpeaker.Length != 0
+            && (line.ActorTokenHash is not null
                 ? String.Equals(line.ActorTokenHash, speakerHash, StringComparison.Ordinal)
-                : NormalizeActor(line.ActorToken) == normalizedSpeaker).ToArray();
-        // Legacy NONE_VOICE rows lack actor attribution. Preserve exact-text
-        // matching until a schema-v2 graph supplies the deterministic actor.
-        if (actorMatches.Length == 0 && textMatches.Length == 1
-            && textMatches[0].ActorToken == "NONE_VOICE") return textMatches;
-        return actorMatches;
+                : DialogueText.NormalizeSpeaker(line.ActorToken) == normalizedSpeaker);
+        var matches = npcBaseId is not null || actorIdentities is not null
+            ? textMatches.Where(line => npcBaseId is not null && line.ActorNpcBaseId == npcBaseId
+                || actorIdentities?.Contains(ActorIdentity(line)) == true).ToArray()
+            : textMatches.Where(MatchesActor).ToArray();
+        if (matches.Length == 0)
+        {
+            // The whole scene must agree; a frontier can hide conflicting actors or voice status.
+            var first = textMatches[0];
+            var actor = ActorIdentity(first);
+            if (textMatches.Any(line => line.IsVoiced != first.IsVoiced
+                    || line.IsPlayerChoice != first.IsPlayerChoice
+                    || ActorIdentity(line) != actor)
+                || textMatches.Length > 1 && actor.Length == 0)
+                return [];
+            matches = textMatches;
+        }
+        return frontierNodeIds.Count == 0
+            ? matches
+            : matches.Where(line => frontierNodeIds.Contains(line.NodeId)).ToArray();
+    }
+
+    internal static string ActorIdentity(CutsceneVoiceLine line) =>
+        line.ActorTokenHash ?? DialogueText.NormalizeSpeaker(line.ActorToken);
+
+    public bool HasOnlyNativeDialogue(string text, uint? npcBaseId = null)
+    {
+        var matches = byText.GetValueOrDefault(DialogueText.NormalizeText(text)) ?? [];
+        if (npcBaseId is not null)
+            matches = matches.Where(line => line.ActorNpcBaseId is null || line.ActorNpcBaseId == npcBaseId).ToArray();
+        return matches.Length != 0 && matches.All(line => line.IsVoiced && !line.IsPlayerChoice);
     }
 
     public IReadOnlyList<CutsceneVoiceLine> Successors(IEnumerable<CutsceneVoiceLine> current) =>
@@ -69,16 +113,16 @@ public sealed partial class CutsceneVoiceManifest(
 
     public CutsceneVoiceLine? Match(string speaker, string text, int afterOrder = -1)
     {
-        var normalizedText = NormalizeText(text);
+        var normalizedText = DialogueText.NormalizeText(text);
         var future = Lines.Where(line => line.Order > afterOrder).ToArray();
-        var matches = future.Where(line => NormalizeText(line.Text) == normalizedText).ToArray();
+        var matches = future.Where(line => DialogueText.NormalizeText(line.Text) == normalizedText).ToArray();
         if (matches.Length == 0 && afterOrder >= 0)
-            matches = Lines.Where(line => NormalizeText(line.Text) == normalizedText).ToArray();
+            matches = Lines.Where(line => DialogueText.NormalizeText(line.Text) == normalizedText).ToArray();
         if (matches.Length == 1) return matches[0];
-        var normalizedSpeaker = NormalizeActor(speaker);
+        var normalizedSpeaker = DialogueText.NormalizeSpeaker(speaker);
         if (matches.Length > 1)
         {
-            var actorMatches = matches.Where(line => NormalizeActor(line.ActorToken) == normalizedSpeaker).ToArray();
+            var actorMatches = matches.Where(line => DialogueText.NormalizeSpeaker(line.ActorToken) == normalizedSpeaker).ToArray();
             return actorMatches.Length == 0 ? null : actorMatches[0];
         }
 
@@ -88,7 +132,7 @@ public sealed partial class CutsceneVoiceManifest(
         var next = talkCandidates.Where(line => line.Ordinal == nextOrdinal).ToArray();
         if (next.Length == 1) return next[0];
         var nextActorMatches = next
-            .Where(line => NormalizeActor(line.ActorToken) == normalizedSpeaker)
+            .Where(line => DialogueText.NormalizeSpeaker(line.ActorToken) == normalizedSpeaker)
             .ToArray();
         return nextActorMatches.Length == 1 ? nextActorMatches[0] : null;
     }
@@ -155,35 +199,27 @@ public sealed partial class CutsceneVoiceManifest(
             .Select(edge => byId[edge.NextNodeId!]).DistinctBy(line => line.NodeId).ToArray();
     }
 
-    private static string NormalizeText(string value)
-    {
-        value = SpeakerLabelPattern().Replace(value, String.Empty);
-        return String.Join(' ', value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-    }
-
-    private static string NormalizeActor(string value) => new(value
-        .Where(char.IsLetterOrDigit)
-        .Select(char.ToLowerInvariant)
-        .ToArray());
-
-    [GeneratedRegex(@"^(?:\(-[^)]*-\))+\s*")]
-    private static partial Regex SpeakerLabelPattern();
 }
 
 public static partial class CutsceneVoiceManifestParser
 {
-    public static IReadOnlyList<string> ExtractDialogueSheetNames(ReadOnlySpan<byte> cutb) =>
-        DialogueSheetPattern().Matches(Encoding.UTF8.GetString(cutb))
+    public static IReadOnlyList<string> ExtractDialogueSheetNames(ReadOnlySpan<byte> cutb)
+    {
+        var names = CutsceneFlowParser.ReadDialogueSheetNames(cutb);
+        if (names.Count != 0) return names;
+        return DialogueSheetPattern().Matches(Encoding.UTF8.GetString(cutb))
             .Select(match => match.Value)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
 
     public static CutsceneVoiceManifest Parse(
         uint cutsceneId,
         string cutscenePath,
         ReadOnlySpan<byte> cutb,
         Func<string, IReadOnlyDictionary<string, string>?> loadSheet,
-        string languageCode)
+        string languageCode,
+        int? voiceLanguage = null)
     {
         var raw = Encoding.UTF8.GetString(cutb);
         var sheetNames = ExtractDialogueSheetNames(cutb);
@@ -240,7 +276,47 @@ public static partial class CutsceneVoiceManifestParser
                 value.Key, value.Actor, value.Text, value.Voiced, value.ScdPath,
                 order, value.Ordinal, value.PlayerChoice))
             .ToArray();
-        return new(cutsceneId, cutscenePath, lines);
+        var flow = CutsceneFlowParser.Parse(cutb);
+        if (flow is null) return new(cutsceneId, cutscenePath, lines);
+        var byKey = lines.ToDictionary(line => line.SourceKey, StringComparer.OrdinalIgnoreCase);
+        var voiceIndex = voiceLanguage ?? languageCode switch { "ja" => 0, "en" => 1, "de" => 2, "fr" => 3,
+            _ => throw new NotSupportedException($"Unsupported cutscene voice language '{languageCode}'") };
+        if (voiceIndex is < 0 or > 3) throw new ArgumentOutOfRangeException(nameof(voiceLanguage));
+        var decoded = new List<CutsceneVoiceLine>();
+        var byOffset = new Dictionary<int, CutsceneVoiceLine>();
+        foreach (var cue in flow.Cues)
+        {
+            if (!byKey.TryGetValue(cue.Key, out var original))
+            {
+                TryParseQuestKey(cue.Key, out var actor, out var ordinal, out _);
+                if (actor.Length == 0)
+                {
+                    var tokens = cue.Key.Split('_');
+                    if (tokens.Length >= 5 && Int32.TryParse(tokens[^2], out ordinal)) actor = tokens[^1];
+                }
+                original = new(cue.Key, actor, textByKey.GetValueOrDefault(cue.Key) ?? String.Empty,
+                    false, null, decoded.Count, ordinal);
+            }
+            var key = $"{cue.Key}@{cue.Offset:x}";
+            var line = original with
+            {
+                Key = key,
+                SourceKey = cue.Key,
+                SourceOffset = cue.Offset,
+                NodeId = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key))).ToLowerInvariant(),
+                IsVoiced = !cue.IsPlayerChoice && (cue.VoiceLanguageMask & (1 << voiceIndex)) != 0,
+                IsPlayerChoice = cue.IsPlayerChoice || original.IsPlayerChoice,
+                Order = decoded.Count,
+            };
+            decoded.Add(line);
+            byOffset.Add(cue.Offset, line);
+        }
+        var cueKeys = flow.Cues.Select(cue => cue.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        decoded.AddRange(lines.Where(line => !cueKeys.Contains(line.SourceKey)));
+        var graph = flow.Edges.Select(edge => new CutsceneVoiceEdge(
+            edge.CurrentOffset is { } current ? byOffset[current].NodeId : null,
+            edge.NextOffset is { } next ? byOffset[next].NodeId : null)).ToArray();
+        return new(cutsceneId, cutscenePath, decoded, graph);
     }
 
     private static bool TryParseQuestKey(

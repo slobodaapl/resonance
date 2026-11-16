@@ -177,6 +177,7 @@ jobs:
           git -c core.autocrlf=false clone https://github.com/ServeurpersoCom/qwentts.cpp.git native/qwentts-ci
           git -C native/qwentts-ci checkout a8a7716b530e49fed537c57711247c12fbbb903c
           git -c core.autocrlf=false clone https://github.com/ServeurpersoCom/ggml.git native/qwentts-ci/ggml
+          git -C native/qwentts-ci/ggml fetch origin c044c6f03892f9d5e98213b05f8afea1f8b0d3c9
           git -C native/qwentts-ci/ggml checkout c044c6f03892f9d5e98213b05f8afea1f8b0d3c9
           if ((git -C native/qwentts-ci rev-parse HEAD) -ne 'a8a7716b530e49fed537c57711247c12fbbb903c') { throw 'Unexpected qwentts revision' }
           if ((git -C native/qwentts-ci/ggml rev-parse HEAD) -ne 'c044c6f03892f9d5e98213b05f8afea1f8b0d3c9') { throw 'Unexpected ggml revision' }
@@ -251,6 +252,7 @@ jobs:
           git -c core.autocrlf=false clone https://github.com/ServeurpersoCom/qwentts.cpp.git native/qwentts-ci
           git -C native/qwentts-ci checkout a8a7716b530e49fed537c57711247c12fbbb903c
           git -c core.autocrlf=false clone https://github.com/ServeurpersoCom/ggml.git native/qwentts-ci/ggml
+          git -C native/qwentts-ci/ggml fetch origin c044c6f03892f9d5e98213b05f8afea1f8b0d3c9
           git -C native/qwentts-ci/ggml checkout c044c6f03892f9d5e98213b05f8afea1f8b0d3c9
           if ((git -C native/qwentts-ci rev-parse HEAD) -ne 'a8a7716b530e49fed537c57711247c12fbbb903c') { throw 'Unexpected qwentts revision' }
           if ((git -C native/qwentts-ci/ggml rev-parse HEAD) -ne 'c044c6f03892f9d5e98213b05f8afea1f8b0d3c9') { throw 'Unexpected ggml revision' }
@@ -313,6 +315,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Fetch bundled dialogue sound effects
+        shell: pwsh
+        run: git lfs pull --include="assets/sound-effects/**" --exclude=""
+
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
@@ -335,6 +341,12 @@ jobs:
           dotnet build Resonance.csproj --configuration Release
           dotnet publish Resonance.csproj --configuration Release --runtime win-x64 --self-contained false --output artifacts/plugin
           if (-not (Test-Path artifacts/plugin/Resonance.json)) { throw 'Dalamud manifest missing from plugin publish output' }
+          foreach ($effect in Get-ChildItem assets/sound-effects/*.wav) {
+            $publishedEffect = Join-Path artifacts/plugin/assets/sound-effects $effect.Name
+            if (-not (Test-Path $publishedEffect)) { throw "Dialogue sound effect missing from publish output: $($effect.Name)" }
+            $header = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($publishedEffect), 0, 4)
+            if ($header -ne 'RIFF') { throw "Dialogue sound effect is not a hydrated WAV: $($effect.Name)" }
+          }
           if (-not (Test-Path artifacts/plugin/reference-extractor/ReferenceExtractor.dll)) { throw 'Reference extractor host missing from managed publish output' }
           if (Get-ChildItem artifacts/plugin -File -Filter 'ReferenceExtractor*') { throw 'Reference extractor artifacts leaked into plugin root' }
           if (Get-ChildItem artifacts/plugin -Recurse -File | Where-Object { $_.Name -match '^(qwen|ggml).*\.dll$' }) { throw 'Native runtime must remain in separately downloaded packs' }

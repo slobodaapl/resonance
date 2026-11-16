@@ -12,7 +12,10 @@ namespace Resonance.Bootstrap;
 public sealed record OfficialProfilePackSyncResult(
     int ImportedProfiles,
     int PackVersion,
-    bool Downloaded);
+    bool Downloaded)
+{
+    public int ReconciledAssignments { get; init; }
+}
 
 public sealed class OfficialProfilePackManager : IDisposable
 {
@@ -63,54 +66,67 @@ public sealed class OfficialProfilePackManager : IDisposable
         await gate.WaitAsync(token).ConfigureAwait(false);
         try
         {
-            if (!allowRemoteUpdate)
+            var result = await SynchronizeCoreAsync(modelHash, token, allowRemoteUpdate).ConfigureAwait(false);
+            return result with
             {
-                var local = await LoadLocalManifestAsync(token).ConfigureAwait(false);
-                if (local is null || !File.Exists(DatabasePath)) return new(0, 0, false);
-                return new(await ImportAsync(DatabasePath, modelHash, local.PackVersion, token)
+                ReconciledAssignments = await voices.ReconcileOfficialAssignmentsAsync(catalog, modelHash, token)
+                    .ConfigureAwait(false)
+                    + await voices.ReconcileRegionalAssignmentsAsync(castingCatalog, modelHash, token)
                         .ConfigureAwait(false),
-                    local.PackVersion, false);
-            }
-
-            RemoteManifest? remote;
-            try
-            {
-                remote = await FetchManifestAsync(token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
-            catch
-            {
-                var cached = await LoadLocalManifestAsync(token).ConfigureAwait(false);
-                if (cached is null || !File.Exists(DatabasePath)) throw;
-                return new(await ImportAsync(
-                        DatabasePath, modelHash, cached.PackVersion, token).ConfigureAwait(false),
-                    cached.PackVersion, false);
-            }
-            if (remote is null)
-            {
-                var local = await LoadLocalManifestAsync(token).ConfigureAwait(false);
-                if (local is null || !File.Exists(DatabasePath)) return new(0, 0, false);
-                return new(await ImportAsync(DatabasePath, modelHash, local.PackVersion, token).ConfigureAwait(false),
-                    local.PackVersion, false);
-            }
-
-            var localManifest = await LoadLocalManifestAsync(token).ConfigureAwait(false);
-            if (localManifest is not null && File.Exists(DatabasePath)
-                && localManifest.PackVersion > remote.PackVersion)
-                return new(await ImportAsync(DatabasePath, modelHash, localManifest.PackVersion, token)
-                        .ConfigureAwait(false),
-                    localManifest.PackVersion, false);
-            var downloaded = localManifest is null
-                             || localManifest.PackVersion != remote.PackVersion
-                             || !String.Equals(localManifest.DatabaseSha256, remote.DatabaseSha256,
-                                 StringComparison.OrdinalIgnoreCase)
-                             || !File.Exists(DatabasePath);
-            if (downloaded) await DownloadAndInstallAsync(remote, token).ConfigureAwait(false);
-            var imported = await ImportAsync(DatabasePath, modelHash, remote.PackVersion, token)
-                .ConfigureAwait(false);
-            return new(imported, remote.PackVersion, downloaded);
+            };
         }
         finally { gate.Release(); }
+    }
+
+    private async Task<OfficialProfilePackSyncResult> SynchronizeCoreAsync(
+        string modelHash, CancellationToken token, bool allowRemoteUpdate)
+    {
+        if (!allowRemoteUpdate)
+        {
+            var local = await LoadLocalManifestAsync(token).ConfigureAwait(false);
+            if (local is null || !File.Exists(DatabasePath)) return new(0, 0, false);
+            return new(await ImportAsync(DatabasePath, modelHash, local.PackVersion, token)
+                    .ConfigureAwait(false),
+                local.PackVersion, false);
+        }
+
+        RemoteManifest? remote;
+        try
+        {
+            remote = await FetchManifestAsync(token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+        catch
+        {
+            var cached = await LoadLocalManifestAsync(token).ConfigureAwait(false);
+            if (cached is null || !File.Exists(DatabasePath)) throw;
+            return new(await ImportAsync(
+                    DatabasePath, modelHash, cached.PackVersion, token).ConfigureAwait(false),
+                cached.PackVersion, false);
+        }
+        if (remote is null)
+        {
+            var local = await LoadLocalManifestAsync(token).ConfigureAwait(false);
+            if (local is null || !File.Exists(DatabasePath)) return new(0, 0, false);
+            return new(await ImportAsync(DatabasePath, modelHash, local.PackVersion, token).ConfigureAwait(false),
+                local.PackVersion, false);
+        }
+
+        var localManifest = await LoadLocalManifestAsync(token).ConfigureAwait(false);
+        if (localManifest is not null && File.Exists(DatabasePath)
+            && localManifest.PackVersion > remote.PackVersion)
+            return new(await ImportAsync(DatabasePath, modelHash, localManifest.PackVersion, token)
+                    .ConfigureAwait(false),
+                localManifest.PackVersion, false);
+        var downloaded = localManifest is null
+                         || localManifest.PackVersion != remote.PackVersion
+                         || !String.Equals(localManifest.DatabaseSha256, remote.DatabaseSha256,
+                             StringComparison.OrdinalIgnoreCase)
+                         || !File.Exists(DatabasePath);
+        if (downloaded) await DownloadAndInstallAsync(remote, token).ConfigureAwait(false);
+        var imported = await ImportAsync(DatabasePath, modelHash, remote.PackVersion, token)
+            .ConfigureAwait(false);
+        return new(imported, remote.PackVersion, downloaded);
     }
 
     private string DatabasePath => Path.Combine(directory, "official-profiles.sqlite3");
@@ -237,9 +253,7 @@ public sealed class OfficialProfilePackManager : IDisposable
                 reference, row.SourceMetadata);
             if (!String.Equals(profile.ProfileHash, row.ProfileHash, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException($"Pack profile hash failed for '{row.GroupId}/{row.Language}'");
-            if (existing is { Kind: VoiceProfileKind.Official }
-                && String.Equals(existing.ProfileHash, profile.ProfileHash, StringComparison.OrdinalIgnoreCase))
-                continue;
+            if (existing is { Kind: VoiceProfileKind.Official }) continue;
             var speaker = await voices.ResolveSpeakerAsync(
                 canonicalKey, null, group.Label, 0, row.Language, token).ConfigureAwait(false);
             await voices.SaveAndAssignAsync(speaker.Id, profile, token).ConfigureAwait(false);
@@ -259,7 +273,7 @@ public sealed class OfficialProfilePackManager : IDisposable
             while (await reader.ReadAsync(token).ConfigureAwait(false))
             {
                 var row = ReadFallbackProfile(reader);
-                ValidateFallbackProfile(row);
+                ValidateFallbackProfile(row, packCatalogVersion);
                 var reference = new VoiceReference(row.Embedding, row.Codes, row.RvqLength,
                     row.Codebooks, row.Transcript);
                 var profile = VoiceRegistry.CreateProfile(
@@ -283,7 +297,7 @@ public sealed class OfficialProfilePackManager : IDisposable
         return imported;
     }
 
-    private void ValidateFallbackProfile(FallbackProfile row)
+    private void ValidateFallbackProfile(FallbackProfile row, int packCatalogVersion)
     {
         CastingDomain domain;
         try { domain = castingCatalog.GetDomain(row.DomainId); }
@@ -292,15 +306,21 @@ public sealed class OfficialProfilePackManager : IDisposable
             throw new InvalidDataException($"Pack references unknown fallback domain '{row.DomainId}'", error);
         }
 
+        if (packCatalogVersion < 5 && row.Age is null
+            && (domain.FallbackDimensions != "feminine_only" || row.Sex == "feminine")
+            && (row is { VariantId: "default", Sex: null }
+                || row.Sex is "masculine" or "feminine" && row.VariantId == row.Sex))
+            return;
         var valid = domain.FallbackDimensions switch
         {
             "none" => row is { VariantId: "default", Sex: null, Age: null },
-            "feminine_only" => row is { VariantId: "feminine", Sex: "feminine", Age: null },
+            "feminine_only" => row.Sex == "feminine" && row.Age is "young" or "adult" or "elder"
+                               && row.VariantId == $"feminine_{row.Age}",
             "sex" => row.Age is null
                      && row.Sex is "masculine" or "feminine"
                      && String.Equals(row.VariantId, row.Sex, StringComparison.Ordinal),
             "sex_age" => row.Sex is "masculine" or "feminine"
-                         && row.Age is "young" or "adult"
+                         && row.Age is "young" or "adult" or "elder"
                          && String.Equals(row.VariantId, $"{row.Sex}_{row.Age}", StringComparison.Ordinal),
             _ => false,
         };
@@ -330,7 +350,7 @@ public sealed class OfficialProfilePackManager : IDisposable
         Buffer.BlockCopy(codeBytes, 0, codes, 0, codeBytes.Length);
         var rvqLength = reader.GetInt32(9);
         var codebooks = reader.GetInt32(10);
-        if (codebooks != 16 || rvqLength is < 1 or > 192 || codes.Length != rvqLength * codebooks
+        if (codebooks != 16 || rvqLength is < 1 or > 250 || codes.Length != rvqLength * codebooks
             || embedding.Any(value => !float.IsFinite(value)))
             throw new InvalidDataException("Fallback profile pack contains invalid reference metadata");
         return new(reader.GetString(0), reader.GetString(1),
@@ -408,14 +428,10 @@ public sealed class OfficialProfilePackManager : IDisposable
                     SELECT 1 FROM scene_edge s
                     WHERE s.cutscene_id=n.cutscene_id AND s.language=n.language
                       AND s.current_node_id IS NULL AND s.next_node_id IS NOT NULL)
-                    OR NOT EXISTS(
-                    SELECT 1 FROM scene_edge e
-                    WHERE e.cutscene_id=n.cutscene_id AND e.language=n.language
-                      AND e.current_node_id IS NOT NULL AND e.next_node_id IS NULL)
                 )
                 """;
             if (Convert.ToInt64(command.ExecuteScalar()) != 0)
-                throw new InvalidDataException("Official profile pack scene graph has incomplete boundaries");
+                throw new InvalidDataException("Official profile pack scene graph has no start boundary");
         }
     }
 

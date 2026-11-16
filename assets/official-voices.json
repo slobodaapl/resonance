@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "catalogVersion": 4,
+  "catalogVersion": 7,
   "groups": [
     {
       "id": "alphinaud",
@@ -8,6 +8,15 @@
       "npcBaseIds": [],
       "aliases": {
         "english": [
+          "Alphinaud"
+        ],
+        "japanese": [
+          "アルフィノ"
+        ],
+        "german": [
+          "Alphinaud"
+        ],
+        "french": [
           "Alphinaud"
         ]
       },
@@ -22,6 +31,15 @@
       "npcBaseIds": [],
       "aliases": {
         "english": [
+          "Thancred"
+        ],
+        "japanese": [
+          "サンクレッド"
+        ],
+        "german": [
+          "Thancred"
+        ],
+        "french": [
           "Thancred"
         ]
       },
@@ -38,6 +56,15 @@
         "english": [
           "G'raha Tia",
           "G’raha Tia"
+        ],
+        "japanese": [
+          "グ・ラハ・ティア"
+        ],
+        "german": [
+          "G'raha Tia"
+        ],
+        "french": [
+          "G'raha Tia"
         ]
       },
       "sources": {},
@@ -60,6 +87,15 @@
       ],
       "aliases": {
         "english": [
+          "Wuk Lamat"
+        ],
+        "japanese": [
+          "ウクラマト"
+        ],
+        "german": [
+          "Wuk Lamat"
+        ],
+        "french": [
           "Wuk Lamat"
         ]
       },
@@ -302,7 +338,20 @@
       "id": "alisaie",
       "label": "ALISAIE",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Alisaie"
+        ],
+        "japanese": [
+          "アリゼー"
+        ],
+        "german": [
+          "Alisaie"
+        ],
+        "french": [
+          "Alisaie"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "ALISAIE"
@@ -342,7 +391,20 @@
       "id": "alxaal",
       "label": "ALXAAL",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Alxaal"
+        ],
+        "japanese": [
+          "アルシャール"
+        ],
+        "german": [
+          "Alxaal"
+        ],
+        "french": [
+          "Alxaal"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "ALXAAL"
@@ -382,7 +444,20 @@
       "id": "ameliance",
       "label": "AMELIANCE",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Ameliance"
+        ],
+        "japanese": [
+          "アメリアンス"
+        ],
+        "german": [
+          "Ameliance"
+        ],
+        "french": [
+          "Ameliance"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "AMELIANCE"
@@ -512,7 +587,20 @@
       "id": "arenvald",
       "label": "ARENVALD",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Arenvald"
+        ],
+        "japanese": [
+          "アレンヴァルド"
+        ],
+        "german": [
+          "Arenvald"
+        ],
+        "french": [
+          "Arenvald"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "ARENVALD"
@@ -522,7 +610,20 @@
       "id": "artoirel",
       "label": "ARTOIREL",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Artoirel"
+        ],
+        "japanese": [
+          "アルトアレール"
+        ],
+        "german": [
+          "Artoirel"
+        ],
+        "french": [
+          "Artoirel"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "ARTOIREL"
@@ -532,7 +633,20 @@
       "id": "aruhnsenna",
       "label": "ARUHNSENNA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "A-Ruhn-Senna"
+        ],
+        "japanese": [
+          "ア・ルン・センナ"
+        ],
+        "german": [
+          "A-Ruhn-Senna"
+        ],
+        "french": [
+          "A-Ruhn-Senna"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "ARUHNSENNA"
@@ -542,7 +656,20 @@
       "id": "asahi",
       "label": "ASAHI",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Asahi"
+        ],
+        "japanese": [
+          "アサヒ"
+        ],
+        "german": [
+          "Asahi"
+        ],
+        "french": [
+          "Asahi"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "ASAHI"
@@ -592,7 +719,20 @@
       "id": "athena",
       "label": "ATHENA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Athena"
+        ],
+        "japanese": [
+          "アテナ"
+        ],
+        "german": [
+          "Athena"
+        ],
+        "french": [
+          "Athéna"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "ATHENA"
@@ -612,7 +752,20 @@
       "id": "aymeric",
       "label": "AYMERIC",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Aymeric"
+        ],
+        "japanese": [
+          "アイメリク"
+        ],
+        "german": [
+          "Aymeric"
+        ],
+        "french": [
+          "Aymeric"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "AYMERIC"
@@ -652,7 +805,20 @@
       "id": "bakooljaja",
       "label": "BAKOOLJAJA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Bakool Ja Ja"
+        ],
+        "japanese": [
+          "バクージャジャ"
+        ],
+        "german": [
+          "Bakool Ja Ja"
+        ],
+        "french": [
+          "Bakool Ja Ja"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "BAKOOLJAJA"
@@ -722,7 +888,20 @@
       "id": "beqlugg",
       "label": "BEQLUGG",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Beq Lugg"
+        ],
+        "japanese": [
+          "ベーク＝ラグ"
+        ],
+        "german": [
+          "Beq Lugg"
+        ],
+        "french": [
+          "Beq Lugg"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "BEQLUGG"
@@ -742,7 +921,20 @@
       "id": "biggs",
       "label": "BIGGS",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Biggs"
+        ],
+        "japanese": [
+          "ビッグス"
+        ],
+        "german": [
+          "Biggs"
+        ],
+        "french": [
+          "Biggs"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "BIGGS"
@@ -802,7 +994,20 @@
       "id": "bloewyda",
       "label": "BLOEWYDA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Bloewyda"
+        ],
+        "japanese": [
+          "ブローウィダ"
+        ],
+        "german": [
+          "Bloewyda"
+        ],
+        "french": [
+          "Bloewyda"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "BLOEWYDA"
@@ -922,7 +1127,20 @@
       "id": "brukevu",
       "label": "BRUKEVU",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Br'uk Evu"
+        ],
+        "japanese": [
+          "ブルケブ"
+        ],
+        "german": [
+          "Br'uk Evu"
+        ],
+        "french": [
+          "Br'uk Evu"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "BRUKEVU"
@@ -932,7 +1150,20 @@
       "id": "bunchin",
       "label": "BUNCHIN",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Bunchin"
+        ],
+        "japanese": [
+          "ブンチン"
+        ],
+        "german": [
+          "Bunchin"
+        ],
+        "french": [
+          "Bunchin"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "BUNCHIN"
@@ -942,7 +1173,20 @@
       "id": "byakko",
       "label": "BYAKKO",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Byakko"
+        ],
+        "japanese": [
+          "白虎"
+        ],
+        "german": [
+          "Byakko"
+        ],
+        "french": [
+          "Byakko"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "BYAKKO"
@@ -952,7 +1196,20 @@
       "id": "cahciua",
       "label": "CAHCIUA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Cahciua"
+        ],
+        "japanese": [
+          "カフキワ"
+        ],
+        "german": [
+          "Cahciua"
+        ],
+        "french": [
+          "Cahciua"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "CAHCIUA"
@@ -1062,7 +1319,20 @@
       "id": "cid",
       "label": "CID",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Cid"
+        ],
+        "japanese": [
+          "シド"
+        ],
+        "german": [
+          "Cid"
+        ],
+        "french": [
+          "Cid"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "CID"
@@ -1332,7 +1602,20 @@
       "id": "dewlala",
       "label": "DEWLALA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Dewlala"
+        ],
+        "japanese": [
+          "デュララ"
+        ],
+        "german": [
+          "Dewlala"
+        ],
+        "french": [
+          "Dulala"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "DEWLALA"
@@ -1621,8 +1904,39 @@
     {
       "id": "edmont",
       "label": "EDMONT",
-      "npcBaseIds": [],
-      "aliases": {},
+      "npcBaseIds": [
+        1012124,
+        1012378,
+        1012397,
+        1012584,
+        1012755,
+        1012786,
+        1013033,
+        1013185,
+        1016024,
+        1016889,
+        1017682,
+        1017722,
+        1026787,
+        1027139
+      ],
+      "aliases": {
+        "english": [
+          "Count Edmont de Fortemps"
+        ],
+        "japanese": [
+          "エドモン・ド・フォルタン",
+          "エドモン・ド・フォルタン伯爵"
+        ],
+        "german": [
+          "Edmont Fortemps",
+          "Graf Edmont Fortemps"
+        ],
+        "french": [
+          "Edmont de Fortemps",
+          "comte Edmont de Fortemps"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "EDMONT"
@@ -1632,7 +1946,20 @@
       "id": "elidibus",
       "label": "ELIDIBUS",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Elidibus"
+        ],
+        "japanese": [
+          "エリディブス"
+        ],
+        "german": [
+          "Elidibus"
+        ],
+        "french": [
+          "Elidibus"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "ELIDIBUS"
@@ -1652,7 +1979,20 @@
       "id": "emmanellain",
       "label": "EMMANELLAIN",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Emmanellain"
+        ],
+        "japanese": [
+          "エマネラン"
+        ],
+        "german": [
+          "Emmanellain"
+        ],
+        "french": [
+          "Emmanellain"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "EMMANELLAIN"
@@ -1702,7 +2042,20 @@
       "id": "erenville",
       "label": "ERENVILLE",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Erenville"
+        ],
+        "japanese": [
+          "エレンヴィル"
+        ],
+        "german": [
+          "Erenville"
+        ],
+        "french": [
+          "Erenville"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "ERENVILLE"
@@ -1712,7 +2065,20 @@
       "id": "estinien",
       "label": "ESTINIEN",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Estinien"
+        ],
+        "japanese": [
+          "エスティニアン"
+        ],
+        "german": [
+          "Estinien"
+        ],
+        "french": [
+          "Estinien"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "ESTINIEN"
@@ -1852,7 +2218,20 @@
       "id": "eynzahrslafyrsyn",
       "label": "EYNZAHRSLAFYRSYN",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Eynzahr Slafyrsyn"
+        ],
+        "japanese": [
+          "エインザル大甲将"
+        ],
+        "german": [
+          "Eynzahr Slafyrsyn"
+        ],
+        "french": [
+          "Eynzahr Slafyrsyn"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "EYNZAHRSLAFYRSYN"
@@ -1882,7 +2261,20 @@
       "id": "fandaniel",
       "label": "FANDANIEL",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Fandaniel"
+        ],
+        "japanese": [
+          "ファダニエル"
+        ],
+        "german": [
+          "Fandaniel"
+        ],
+        "french": [
+          "Fandaniel"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "FANDANIEL"
@@ -1932,7 +2324,20 @@
       "id": "feoul",
       "label": "FEOUL",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Feo Ul"
+        ],
+        "japanese": [
+          "フェオ＝ウル"
+        ],
+        "german": [
+          "Feo Ul"
+        ],
+        "french": [
+          "Feo Ul"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "FEOUL"
@@ -1962,7 +2367,20 @@
       "id": "fordola",
       "label": "FORDOLA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Fordola"
+        ],
+        "japanese": [
+          "フォルドラ"
+        ],
+        "german": [
+          "Fordola"
+        ],
+        "french": [
+          "Fordola"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "FORDOLA"
@@ -2002,7 +2420,20 @@
       "id": "fourchenault",
       "label": "FOURCHENAULT",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Fourchenault"
+        ],
+        "japanese": [
+          "フルシュノ"
+        ],
+        "german": [
+          "Fourchenault"
+        ],
+        "french": [
+          "Fourchenault"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "FOURCHENAULT"
@@ -2012,7 +2443,20 @@
       "id": "fyrgeiss",
       "label": "FYRGEISS",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Fyrgeiss"
+        ],
+        "japanese": [
+          "フィルガイス"
+        ],
+        "german": [
+          "Fyrgeiss"
+        ],
+        "french": [
+          "Fyrgeiss"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "FYRGEISS"
@@ -2042,7 +2486,20 @@
       "id": "gabu",
       "label": "GABU",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Ga Bu"
+        ],
+        "japanese": [
+          "ガ・ブ"
+        ],
+        "german": [
+          "Ga Bu"
+        ],
+        "french": [
+          "Ga Bu"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "GABU"
@@ -2052,7 +2509,20 @@
       "id": "gaia",
       "label": "GAIA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Gaia"
+        ],
+        "japanese": [
+          "ガイア"
+        ],
+        "german": [
+          "Gaia"
+        ],
+        "french": [
+          "Gaïa"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "GAIA"
@@ -2182,7 +2652,20 @@
       "id": "garuda",
       "label": "GARUDA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Garuda"
+        ],
+        "japanese": [
+          "ガルーダ"
+        ],
+        "german": [
+          "Garuda"
+        ],
+        "french": [
+          "Garuda"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "GARUDA"
@@ -2232,7 +2715,20 @@
       "id": "geode",
       "label": "GEODE",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Geode"
+        ],
+        "japanese": [
+          "ジオード"
+        ],
+        "german": [
+          "Geode"
+        ],
+        "french": [
+          "Geode"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "GEODE"
@@ -2272,7 +2768,20 @@
       "id": "glynard",
       "label": "GLYNARD",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Glynard"
+        ],
+        "japanese": [
+          "グリナード"
+        ],
+        "german": [
+          "Glynard"
+        ],
+        "french": [
+          "Glynard"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "GLYNARD"
@@ -2292,7 +2801,20 @@
       "id": "gosetsu",
       "label": "GOSETSU",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Gosetsu"
+        ],
+        "japanese": [
+          "ゴウセツ"
+        ],
+        "german": [
+          "Gosetsu"
+        ],
+        "french": [
+          "Gosetsu"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "GOSETSU"
@@ -2352,7 +2874,20 @@
       "id": "grynewaht",
       "label": "GRYNEWAHT",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Grynewaht"
+        ],
+        "japanese": [
+          "グリーンワート"
+        ],
+        "german": [
+          "Grynewaht"
+        ],
+        "french": [
+          "Grynewaht"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "GRYNEWAHT"
@@ -2362,7 +2897,20 @@
       "id": "guloolja",
       "label": "GULOOLJA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Gulool Ja"
+        ],
+        "japanese": [
+          "グルージャ"
+        ],
+        "german": [
+          "Gulool Ja"
+        ],
+        "french": [
+          "Gulool Ja"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "GULOOLJA"
@@ -2372,7 +2920,20 @@
       "id": "gulooljaja",
       "label": "GULOOLJAJA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Gulool Ja Ja"
+        ],
+        "japanese": [
+          "グルージャジャ"
+        ],
+        "german": [
+          "Gulool Ja Ja"
+        ],
+        "french": [
+          "Gulool Ja Ja"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "GULOOLJAJA"
@@ -2442,7 +3003,20 @@
       "id": "hancock",
       "label": "HANCOCK",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Hancock"
+        ],
+        "japanese": [
+          "ハンコック"
+        ],
+        "german": [
+          "Hancock"
+        ],
+        "french": [
+          "Hancock"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "HANCOCK"
@@ -2582,7 +3156,20 @@
       "id": "haurchefant",
       "label": "HAURCHEFANT",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Haurchefant"
+        ],
+        "japanese": [
+          "オルシュファン"
+        ],
+        "german": [
+          "Haurchefant"
+        ],
+        "french": [
+          "Haurchefant"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "HAURCHEFANT"
@@ -2682,7 +3269,20 @@
       "id": "hhwato",
       "label": "HHWATO",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Hhwato"
+        ],
+        "japanese": [
+          "フーワト"
+        ],
+        "german": [
+          "Hhwato"
+        ],
+        "french": [
+          "Hhwato"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "HHWATO"
@@ -2692,7 +3292,20 @@
       "id": "hien",
       "label": "HIEN",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Hien"
+        ],
+        "japanese": [
+          "ヒエン"
+        ],
+        "german": [
+          "Hien"
+        ],
+        "french": [
+          "Hien"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "HIEN"
@@ -2712,7 +3325,20 @@
       "id": "hilda",
       "label": "HILDA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Hilda"
+        ],
+        "japanese": [
+          "ヒルダ"
+        ],
+        "german": [
+          "Hilda"
+        ],
+        "french": [
+          "Hilda"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "HILDA"
@@ -2722,7 +3348,20 @@
       "id": "hoaryboulder",
       "label": "HOARYBOULDER",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Hoary Boulder"
+        ],
+        "japanese": [
+          "ホーリー・ボルダー"
+        ],
+        "german": [
+          "Grauer Felsen"
+        ],
+        "french": [
+          "Hoary Boulder"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "HOARYBOULDER"
@@ -2812,7 +3451,20 @@
       "id": "hraesvelgr",
       "label": "HRAESVELGR",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Hraesvelgr"
+        ],
+        "japanese": [
+          "フレースヴェルグ"
+        ],
+        "german": [
+          "Hraesvelgr"
+        ],
+        "french": [
+          "Hraesvelgr"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "HRAESVELGR"
@@ -2832,7 +3484,20 @@
       "id": "hunmurruk",
       "label": "HUNMURRUK",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Hunmu Rruk"
+        ],
+        "japanese": [
+          "フンムルク"
+        ],
+        "german": [
+          "Hunmu Rruk"
+        ],
+        "french": [
+          "Hunmu Rruk"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "HUNMURRUK"
@@ -2881,8 +3546,59 @@
     {
       "id": "iceheart",
       "label": "ICEHEART",
-      "npcBaseIds": [],
-      "aliases": {},
+      "npcBaseIds": [
+        1011637,
+        1012456,
+        1012609,
+        1012612,
+        1012615,
+        1012616,
+        1012619,
+        1012622,
+        1012625,
+        1012628,
+        1012631,
+        1012633,
+        1012636,
+        1012638,
+        1012645,
+        1012648,
+        1012656,
+        1012660,
+        1012663,
+        1012666,
+        1012668,
+        1012672,
+        1012675,
+        1012684,
+        1012688,
+        1012696,
+        1012747,
+        1012758,
+        1013172,
+        1013192,
+        1013588,
+        1013593,
+        1014106,
+        1014197,
+        1014201,
+        1014637,
+        1014847
+      ],
+      "aliases": {
+        "english": [
+          "Ysayle"
+        ],
+        "japanese": [
+          "イゼル"
+        ],
+        "german": [
+          "Ysayle"
+        ],
+        "french": [
+          "Ysayle"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "ICEHEART"
@@ -2922,7 +3638,20 @@
       "id": "ilberd",
       "label": "ILBERD",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Ilberd"
+        ],
+        "japanese": [
+          "イルベルド"
+        ],
+        "german": [
+          "Ilberd"
+        ],
+        "french": [
+          "Ilberd"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "ILBERD"
@@ -3102,7 +3831,20 @@
       "id": "jullus",
       "label": "JULLUS",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Jullus"
+        ],
+        "japanese": [
+          "ユルス"
+        ],
+        "german": [
+          "Jullus"
+        ],
+        "french": [
+          "Jullus"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "JULLUS"
@@ -3131,8 +3873,47 @@
     {
       "id": "kanesenna",
       "label": "KANESENNA",
-      "npcBaseIds": [],
-      "aliases": {},
+      "npcBaseIds": [
+        1003027,
+        1004747,
+        1008184,
+        1012676,
+        1013589,
+        1021701,
+        1026243,
+        1026816,
+        1026834,
+        1036958,
+        1038399,
+        1038403,
+        1038412,
+        1038414,
+        1038425,
+        1038432,
+        1038434,
+        1038442,
+        1038444,
+        1038446,
+        1038452,
+        1038454,
+        1039197,
+        1039433,
+        1042753
+      ],
+      "aliases": {
+        "english": [
+          "Kan-E-Senna"
+        ],
+        "japanese": [
+          "カヌ・エ・センナ"
+        ],
+        "german": [
+          "Kan-E-Senna"
+        ],
+        "french": [
+          "Kan-E-Senna"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "KANESENNA"
@@ -3162,7 +3943,20 @@
       "id": "katliss",
       "label": "KATLISS",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Katliss"
+        ],
+        "japanese": [
+          "カットリス"
+        ],
+        "german": [
+          "Katliss"
+        ],
+        "french": [
+          "Katliss"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "KATLISS"
@@ -3172,7 +3966,20 @@
       "id": "kemakka",
       "label": "KEMAKKA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Kemakka"
+        ],
+        "japanese": [
+          "ケマッカ"
+        ],
+        "german": [
+          "Kemakka"
+        ],
+        "french": [
+          "Kemakka"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "KEMAKKA"
@@ -3182,7 +3989,20 @@
       "id": "ketenramm",
       "label": "KETENRAMM",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Ketenramm"
+        ],
+        "japanese": [
+          "ケテンラム"
+        ],
+        "german": [
+          "Ketenramm"
+        ],
+        "french": [
+          "Ketenramm"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "KETENRAMM"
@@ -3212,7 +4032,20 @@
       "id": "koana",
       "label": "KOANA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Koana"
+        ],
+        "japanese": [
+          "コーナ"
+        ],
+        "german": [
+          "Koana"
+        ],
+        "french": [
+          "Koana"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "KOANA"
@@ -3262,7 +4095,20 @@
       "id": "krile",
       "label": "KRILE",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Krile"
+        ],
+        "japanese": [
+          "クルル"
+        ],
+        "german": [
+          "Krile"
+        ],
+        "french": [
+          "Krile"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "KRILE"
@@ -3282,7 +4128,20 @@
       "id": "lahabrea",
       "label": "LAHABREA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Lahabrea"
+        ],
+        "japanese": [
+          "ラハブレア"
+        ],
+        "german": [
+          "Lahabrea"
+        ],
+        "french": [
+          "Lahabrea"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "LAHABREA"
@@ -3372,7 +4231,20 @@
       "id": "lolorito",
       "label": "LOLORITO",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Lolorito"
+        ],
+        "japanese": [
+          "ロロリト"
+        ],
+        "german": [
+          "Lolorito"
+        ],
+        "french": [
+          "Lolorito"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "LOLORITO"
@@ -3382,7 +4254,20 @@
       "id": "lucia",
       "label": "LUCIA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Lucia"
+        ],
+        "japanese": [
+          "ルキア"
+        ],
+        "german": [
+          "Lucia"
+        ],
+        "french": [
+          "Lucia"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "LUCIA"
@@ -3402,7 +4287,20 @@
       "id": "lyna",
       "label": "LYNA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Lyna"
+        ],
+        "japanese": [
+          "ライナ"
+        ],
+        "german": [
+          "Lyna"
+        ],
+        "french": [
+          "Lyna"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "LYNA"
@@ -3412,7 +4310,20 @@
       "id": "lyse",
       "label": "LYSE",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Lyse"
+        ],
+        "japanese": [
+          "リセ"
+        ],
+        "german": [
+          "Lyse"
+        ],
+        "french": [
+          "Lyse"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "LYSE"
@@ -3442,7 +4353,20 @@
       "id": "mablu",
       "label": "MABLU",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Mablu"
+        ],
+        "japanese": [
+          "マーブル"
+        ],
+        "german": [
+          "Mablu"
+        ],
+        "french": [
+          "Mablu"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "MABLU"
@@ -3472,7 +4396,20 @@
       "id": "magnai",
       "label": "MAGNAI",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Magnai"
+        ],
+        "japanese": [
+          "マグナイ"
+        ],
+        "german": [
+          "Magnai"
+        ],
+        "french": [
+          "Magnai"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "MAGNAI"
@@ -3552,7 +4489,20 @@
       "id": "matsya",
       "label": "MATSYA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Matsya"
+        ],
+        "japanese": [
+          "マトシャ"
+        ],
+        "german": [
+          "Matsya"
+        ],
+        "french": [
+          "Matsya"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "MATSYA"
@@ -3562,7 +4512,20 @@
       "id": "maxima",
       "label": "MAXIMA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Maxima"
+        ],
+        "japanese": [
+          "マキシマ"
+        ],
+        "german": [
+          "Maxima"
+        ],
+        "french": [
+          "Maxima"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "MAXIMA"
@@ -3652,7 +4615,20 @@
       "id": "menphina",
       "label": "MENPHINA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Menphina"
+        ],
+        "japanese": [
+          "月神メネフィナ"
+        ],
+        "german": [
+          "Menphina"
+        ],
+        "french": [
+          "Menphina la Bien-aimante"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "MENPHINA"
@@ -3662,7 +4638,20 @@
       "id": "merlwyb",
       "label": "MERLWYB",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Merlwyb"
+        ],
+        "japanese": [
+          "メルウィブ"
+        ],
+        "german": [
+          "Merlwyb"
+        ],
+        "french": [
+          "Merlwyb"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "MERLWYB"
@@ -3702,7 +4691,20 @@
       "id": "metem",
       "label": "METEM",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Metem"
+        ],
+        "japanese": [
+          "メテム"
+        ],
+        "german": [
+          "Metem"
+        ],
+        "french": [
+          "Metem"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "METEM"
@@ -3712,7 +4714,20 @@
       "id": "mettius",
       "label": "METTIUS",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Mettius"
+        ],
+        "japanese": [
+          "メッティウス"
+        ],
+        "german": [
+          "Mettius"
+        ],
+        "french": [
+          "Mettius"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "METTIUS"
@@ -3732,7 +4747,20 @@
       "id": "midgardsormr",
       "label": "MIDGARDSORMR",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Midgardsormr"
+        ],
+        "japanese": [
+          "ミドガルズオルム"
+        ],
+        "german": [
+          "Midgardsormr"
+        ],
+        "french": [
+          "Midgardsormr"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "MIDGARDSORMR"
@@ -3742,7 +4770,20 @@
       "id": "mihleel",
       "label": "MIHLEEL",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Mihleel"
+        ],
+        "japanese": [
+          "ミリール"
+        ],
+        "german": [
+          "Mihleel"
+        ],
+        "french": [
+          "Mihleel"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "MIHLEEL"
@@ -3752,7 +4793,20 @@
       "id": "miilalja",
       "label": "MIILALJA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Miilal Ja"
+        ],
+        "japanese": [
+          "ミーラジャ"
+        ],
+        "german": [
+          "Miilal Ja"
+        ],
+        "french": [
+          "Miilal Ja"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "MIILALJA"
@@ -3772,7 +4826,20 @@
       "id": "minfilia",
       "label": "MINFILIA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Minfilia"
+        ],
+        "japanese": [
+          "ミンフィリア"
+        ],
+        "german": [
+          "Minfilia"
+        ],
+        "french": [
+          "Minfilia"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "MINFILIA"
@@ -3782,7 +4849,20 @@
       "id": "mitron",
       "label": "MITRON",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Mitron"
+        ],
+        "japanese": [
+          "アシエン・ミトロン"
+        ],
+        "german": [
+          "Mitron"
+        ],
+        "french": [
+          "Mitron"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "MITRON"
@@ -3792,7 +4872,20 @@
       "id": "mnaago",
       "label": "MNAAGO",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "M'naago"
+        ],
+        "japanese": [
+          "メ・ナーゴ"
+        ],
+        "german": [
+          "M'naago"
+        ],
+        "french": [
+          "M'naago"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "MNAAGO"
@@ -3802,7 +4895,20 @@
       "id": "montichaigne",
       "label": "MONTICHAIGNE",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Montichaigne"
+        ],
+        "japanese": [
+          "モンティシェーニュ"
+        ],
+        "german": [
+          "Montichaigne"
+        ],
+        "french": [
+          "Montichaigne"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "MONTICHAIGNE"
@@ -3842,7 +4948,20 @@
       "id": "moren",
       "label": "MOREN",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Moren"
+        ],
+        "japanese": [
+          "モーレン"
+        ],
+        "german": [
+          "Moren"
+        ],
+        "french": [
+          "Moren"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "MOREN"
@@ -3962,7 +5081,20 @@
       "id": "naldthal",
       "label": "NALDTHAL",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Nald'thal"
+        ],
+        "japanese": [
+          "商神ナルザル"
+        ],
+        "german": [
+          "Nald'thal"
+        ],
+        "french": [
+          "Nald'thal les Marchands"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "NALDTHAL"
@@ -3972,7 +5104,20 @@
       "id": "namikka",
       "label": "NAMIKKA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Namikka"
+        ],
+        "japanese": [
+          "ナミーカ"
+        ],
+        "german": [
+          "Namikka"
+        ],
+        "french": [
+          "Namikka"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "NAMIKKA"
@@ -4002,7 +5147,20 @@
       "id": "nanamoulnamo",
       "label": "NANAMOULNAMO",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Nanamo Ul Namo"
+        ],
+        "japanese": [
+          "ナナモ・ウル・ナモ"
+        ],
+        "german": [
+          "Nanamo Ul Namo"
+        ],
+        "french": [
+          "Nanamo Ul Namo"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "NANAMOULNAMO"
@@ -4021,8 +5179,56 @@
     {
       "id": "nero",
       "label": "NERO",
-      "npcBaseIds": [],
-      "aliases": {},
+      "npcBaseIds": [
+        1003834,
+        1003844,
+        1005521,
+        1009371,
+        1009378,
+        1011277,
+        1018011,
+        1018041,
+        1018324,
+        1018333,
+        1018370,
+        1019564,
+        1021928,
+        1021934,
+        1021938,
+        1021943,
+        1021950,
+        1021953,
+        1023685,
+        1024787,
+        1024789,
+        1024853,
+        1024992,
+        1026370,
+        1039815,
+        1039851,
+        1042764,
+        1042771,
+        1043860,
+        1058152,
+        1058244
+      ],
+      "aliases": {
+        "english": [
+          "Nero",
+          "Nero tol Scaeva"
+        ],
+        "japanese": [
+          "ネロ"
+        ],
+        "german": [
+          "Nero",
+          "Nero tol Scaeva"
+        ],
+        "french": [
+          "Nero",
+          "Nero tol Scaeva"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "NERO"
@@ -4072,7 +5278,20 @@
       "id": "nitowikwe",
       "label": "NITOWIKWE",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Nitowikwe"
+        ],
+        "japanese": [
+          "ニトウィケ"
+        ],
+        "german": [
+          "Nitowikwe"
+        ],
+        "french": [
+          "Nitowikwe"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "NITOWIKWE"
@@ -4092,7 +5311,20 @@
       "id": "nophica",
       "label": "NOPHICA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Nophica"
+        ],
+        "japanese": [
+          "地神ノフィカ"
+        ],
+        "german": [
+          "Nophica"
+        ],
+        "french": [
+          "Nophica la Mère"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "NOPHICA"
@@ -4182,7 +5414,20 @@
       "id": "oschon",
       "label": "OSCHON",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Oschon"
+        ],
+        "japanese": [
+          "旅神オシュオン"
+        ],
+        "german": [
+          "Oschon"
+        ],
+        "french": [
+          "Oschon le Vagabond"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "OSCHON"
@@ -4192,7 +5437,20 @@
       "id": "otis",
       "label": "OTIS",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Otis"
+        ],
+        "japanese": [
+          "オーティス"
+        ],
+        "german": [
+          "Otis"
+        ],
+        "french": [
+          "Otis"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "OTIS"
@@ -4342,7 +5600,20 @@
       "id": "papalymo",
       "label": "PAPALYMO",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Papalymo"
+        ],
+        "japanese": [
+          "パパリモ"
+        ],
+        "german": [
+          "Papalymo"
+        ],
+        "french": [
+          "Papalymo"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "PAPALYMO"
@@ -4421,20 +5692,61 @@
     {
       "id": "pipin",
       "label": "PIPIN",
-      "npcBaseIds": [],
-      "aliases": {},
+      "npcBaseIds": [
+        1010170,
+        1010998,
+        1011278,
+        1012389,
+        1012726,
+        1012840,
+        1015903,
+        1016073,
+        1016768,
+        1018028,
+        1018224,
+        1020354,
+        1020389,
+        1020399,
+        1020407,
+        1020420,
+        1020614,
+        1020632,
+        1020649,
+        1021722,
+        1021724,
+        1021968,
+        1022328,
+        1022332,
+        1022720,
+        1024073,
+        1024187,
+        1026829,
+        1038076,
+        1038832,
+        1039946,
+        1039964,
+        1040831,
+        1041984,
+        1058070
+      ],
+      "aliases": {
+        "english": [
+          "Pipin",
+          "Pippin"
+        ],
+        "japanese": [
+          "ピピン"
+        ],
+        "german": [
+          "Pipin"
+        ],
+        "french": [
+          "Pipin"
+        ]
+      },
       "sources": {},
       "actorTokens": [
-        "PIPIN"
-      ]
-    },
-    {
-      "id": "pippin",
-      "label": "PIPPIN",
-      "npcBaseIds": [],
-      "aliases": {},
-      "sources": {},
-      "actorTokens": [
+        "PIPIN",
         "PIPPIN"
       ]
     },
@@ -4462,7 +5774,20 @@
       "id": "prishe",
       "label": "PRISHE",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Prishe"
+        ],
+        "japanese": [
+          "プリッシュ"
+        ],
+        "german": [
+          "Prishe"
+        ],
+        "french": [
+          "Prishe"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "PRISHE"
@@ -4482,7 +5807,20 @@
       "id": "puddingway",
       "label": "PUDDINGWAY",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Puddingway"
+        ],
+        "japanese": [
+          "プディングウェイ"
+        ],
+        "german": [
+          "Puddingway"
+        ],
+        "french": [
+          "Puddingway"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "PUDDINGWAY"
@@ -4542,7 +5880,20 @@
       "id": "raganfrid",
       "label": "RAGANFRID",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Raganfrid"
+        ],
+        "japanese": [
+          "ラガンフリッド"
+        ],
+        "german": [
+          "Raganfrid"
+        ],
+        "french": [
+          "Raganfrid"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "RAGANFRID"
@@ -4562,7 +5913,20 @@
       "id": "rasho",
       "label": "RASHO",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Rasho"
+        ],
+        "japanese": [
+          "ラショウ"
+        ],
+        "german": [
+          "Rasho"
+        ],
+        "french": [
+          "Rasho"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "RASHO"
@@ -4572,7 +5936,20 @@
       "id": "raubahn",
       "label": "RAUBAHN",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Raubahn"
+        ],
+        "japanese": [
+          "ラウバーン"
+        ],
+        "german": [
+          "Raubahn"
+        ],
+        "french": [
+          "Raubahn"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "RAUBAHN"
@@ -4812,7 +6189,20 @@
       "id": "runar",
       "label": "RUNAR",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Runar"
+        ],
+        "japanese": [
+          "ルナル"
+        ],
+        "german": [
+          "Runar"
+        ],
+        "french": [
+          "Runar"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "RUNAR"
@@ -4822,7 +6212,20 @@
       "id": "ryne",
       "label": "RYNE",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Ryne"
+        ],
+        "japanese": [
+          "リーン"
+        ],
+        "german": [
+          "Ryne"
+        ],
+        "french": [
+          "Ryne"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "RYNE"
@@ -4892,7 +6295,20 @@
       "id": "sareelja",
       "label": "SAREELJA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Sareel Ja"
+        ],
+        "japanese": [
+          "サレージャ"
+        ],
+        "german": [
+          "Sareel Ja"
+        ],
+        "french": [
+          "Sareel Ja"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "SAREELJA"
@@ -4902,7 +6318,20 @@
       "id": "seiryu",
       "label": "SEIRYU",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Seiryu"
+        ],
+        "japanese": [
+          "青龍"
+        ],
+        "german": [
+          "Seiryu"
+        ],
+        "french": [
+          "Seiryû"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "SEIRYU"
@@ -4951,8 +6380,48 @@
     {
       "id": "shadowhunter",
       "label": "SHADOWHUNTER",
-      "npcBaseIds": [],
-      "aliases": {},
+      "npcBaseIds": [
+        1003831,
+        1007018,
+        1024692,
+        1027649,
+        1032582,
+        1032851,
+        1032861,
+        1033629,
+        1033633,
+        1035320,
+        1035321,
+        1035576,
+        1036280,
+        1036283,
+        1036287,
+        1036289,
+        1038803,
+        1045298,
+        1045299,
+        1045304,
+        1045307,
+        1045316,
+        1045845
+      ],
+      "aliases": {
+        "english": [
+          "Gaius",
+          "Gaius van Baelsar"
+        ],
+        "japanese": [
+          "ガイウス"
+        ],
+        "german": [
+          "Gaius",
+          "Gaius van Baelsar"
+        ],
+        "french": [
+          "Gaius",
+          "Gaius van Baelsar"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "SHADOWHUNTER"
@@ -4972,7 +6441,20 @@
       "id": "shale",
       "label": "SHALE",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Shale"
+        ],
+        "japanese": [
+          "シェール"
+        ],
+        "german": [
+          "Shale"
+        ],
+        "french": [
+          "Shale"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "SHALE"
@@ -4982,7 +6464,20 @@
       "id": "shantotto",
       "label": "SHANTOTTO",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Shantotto"
+        ],
+        "japanese": [
+          "シャントット"
+        ],
+        "german": [
+          "Shantotto"
+        ],
+        "french": [
+          "Shantotto"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "SHANTOTTO"
@@ -5012,7 +6507,20 @@
       "id": "shenza",
       "label": "SHENZA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Shenza"
+        ],
+        "japanese": [
+          "シェンダ"
+        ],
+        "german": [
+          "Shenza"
+        ],
+        "french": [
+          "Shenza"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "SHENZA"
@@ -5042,7 +6550,20 @@
       "id": "sicard",
       "label": "SICARD",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Sicard"
+        ],
+        "japanese": [
+          "シカルド"
+        ],
+        "german": [
+          "Sicard"
+        ],
+        "french": [
+          "Sicard"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "SICARD"
@@ -5052,7 +6573,20 @@
       "id": "singingway",
       "label": "SINGINGWAY",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Singingway"
+        ],
+        "japanese": [
+          "シンギングウェイ"
+        ],
+        "german": [
+          "Singingway"
+        ],
+        "french": [
+          "Singingway"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "SINGINGWAY"
@@ -5162,7 +6696,20 @@
       "id": "soluszosgalvus",
       "label": "SOLUSZOSGALVUS",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Solus zos Galvus"
+        ],
+        "japanese": [
+          "ソル・ゾス・ガルヴァス"
+        ],
+        "german": [
+          "Solus zos Galvus"
+        ],
+        "french": [
+          "Solus zos Galvus"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "SOLUSZOSGALVUS"
@@ -5252,7 +6799,20 @@
       "id": "soroban",
       "label": "SOROBAN",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Soroban"
+        ],
+        "japanese": [
+          "ソロバン"
+        ],
+        "german": [
+          "Soroban"
+        ],
+        "french": [
+          "Soroban"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "SOROBAN"
@@ -5272,7 +6832,20 @@
       "id": "sphene",
       "label": "SPHENE",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Sphene"
+        ],
+        "japanese": [
+          "スフェーン"
+        ],
+        "german": [
+          "Sphene"
+        ],
+        "french": [
+          "Sphene"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "SPHENE"
@@ -5322,7 +6895,20 @@
       "id": "suzaku",
       "label": "SUZAKU",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Suzaku"
+        ],
+        "japanese": [
+          "朱雀"
+        ],
+        "german": [
+          "Suzaku"
+        ],
+        "french": [
+          "Suzaku"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "SUZAKU"
@@ -5352,7 +6938,20 @@
       "id": "tansui",
       "label": "TANSUI",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Tansui"
+        ],
+        "japanese": [
+          "タンスイ"
+        ],
+        "german": [
+          "Tansui"
+        ],
+        "french": [
+          "Tansui"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "TANSUI"
@@ -5361,8 +6960,205 @@
     {
       "id": "tataru",
       "label": "TATARU",
-      "npcBaseIds": [],
-      "aliases": {},
+      "npcBaseIds": [
+        1003785,
+        1004603,
+        1006566,
+        1006577,
+        1007078,
+        1007081,
+        1007482,
+        1007731,
+        1007765,
+        1007817,
+        1008182,
+        1008550,
+        1008558,
+        1008569,
+        1008575,
+        1008584,
+        1008989,
+        1008997,
+        1009011,
+        1009030,
+        1009058,
+        1009059,
+        1009060,
+        1009686,
+        1010079,
+        1010095,
+        1010102,
+        1010113,
+        1010120,
+        1010132,
+        1010854,
+        1010859,
+        1010891,
+        1010906,
+        1010911,
+        1010926,
+        1010954,
+        1010960,
+        1010961,
+        1010979,
+        1010980,
+        1010981,
+        1010982,
+        1010983,
+        1010999,
+        1011020,
+        1011633,
+        1011890,
+        1011891,
+        1012183,
+        1012184,
+        1012185,
+        1012187,
+        1012189,
+        1012207,
+        1012312,
+        1012315,
+        1012319,
+        1012322,
+        1012325,
+        1012326,
+        1012336,
+        1012388,
+        1012393,
+        1012396,
+        1012398,
+        1012403,
+        1012453,
+        1012493,
+        1012580,
+        1012586,
+        1012599,
+        1012644,
+        1012693,
+        1012721,
+        1012767,
+        1012772,
+        1012777,
+        1012785,
+        1012811,
+        1012812,
+        1012858,
+        1012862,
+        1013037,
+        1013040,
+        1013127,
+        1013157,
+        1013161,
+        1013162,
+        1013179,
+        1013197,
+        1013221,
+        1013333,
+        1013381,
+        1013595,
+        1013603,
+        1014572,
+        1014644,
+        1014654,
+        1016014,
+        1016030,
+        1016032,
+        1016051,
+        1016535,
+        1016592,
+        1017778,
+        1017788,
+        1017804,
+        1017832,
+        1018034,
+        1018332,
+        1019722,
+        1019959,
+        1020214,
+        1020225,
+        1020270,
+        1020291,
+        1020396,
+        1020453,
+        1020457,
+        1020466,
+        1020530,
+        1022077,
+        1022350,
+        1022354,
+        1022358,
+        1022484,
+        1023084,
+        1024821,
+        1025140,
+        1025147,
+        1025151,
+        1025231,
+        1025468,
+        1025562,
+        1025565,
+        1025600,
+        1026481,
+        1026583,
+        1026990,
+        1029792,
+        1031257,
+        1032081,
+        1032267,
+        1033560,
+        1033818,
+        1035341,
+        1035342,
+        1035362,
+        1035457,
+        1036399,
+        1038570,
+        1038824,
+        1038855,
+        1038966,
+        1038968,
+        1038969,
+        1038976,
+        1039570,
+        1039792,
+        1039818,
+        1039836,
+        1040465,
+        1041189,
+        1041218,
+        1041232,
+        1043617,
+        1043622,
+        1043904,
+        1045729,
+        1045796,
+        1046220,
+        1046221,
+        1046225,
+        1046438,
+        1058789,
+        1058828,
+        1058861,
+        1058883,
+        1058884,
+        1058981,
+        1058995,
+        1059669
+      ],
+      "aliases": {
+        "english": [
+          "Tataru"
+        ],
+        "japanese": [
+          "タタル"
+        ],
+        "german": [
+          "Tataru"
+        ],
+        "french": [
+          "Tataru"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "TATARU"
@@ -5442,7 +7238,20 @@
       "id": "themis",
       "label": "THEMIS",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Themis"
+        ],
+        "japanese": [
+          "テミス"
+        ],
+        "german": [
+          "Themis"
+        ],
+        "french": [
+          "Thémis"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "THEMIS"
@@ -5471,8 +7280,24 @@
     {
       "id": "thordan",
       "label": "THORDAN",
-      "npcBaseIds": [],
-      "aliases": {},
+      "npcBaseIds": [
+        1012103,
+        1012205
+      ],
+      "aliases": {
+        "english": [
+          "Archbishop Thordan VII"
+        ],
+        "japanese": [
+          "トールダン7世"
+        ],
+        "german": [
+          "Papst Thordan VII."
+        ],
+        "french": [
+          "archevêque Thordan VII"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "THORDAN"
@@ -5512,7 +7337,20 @@
       "id": "tobli",
       "label": "TOBLI",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Tobli"
+        ],
+        "japanese": [
+          "トーブリ"
+        ],
+        "german": [
+          "Tobli"
+        ],
+        "french": [
+          "Tobli"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "TOBLI"
@@ -5722,7 +7560,20 @@
       "id": "urianger",
       "label": "URIANGER",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Urianger"
+        ],
+        "japanese": [
+          "ウリエンジェ"
+        ],
+        "german": [
+          "Urianger"
+        ],
+        "french": [
+          "Urianger"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "URIANGER"
@@ -5742,7 +7593,20 @@
       "id": "varis",
       "label": "VARIS",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Varis"
+        ],
+        "japanese": [
+          "ヴァリス"
+        ],
+        "german": [
+          "Varis"
+        ],
+        "french": [
+          "Varis"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "VARIS"
@@ -5792,7 +7656,20 @@
       "id": "vidofnir",
       "label": "VIDOFNIR",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Vidofnir"
+        ],
+        "japanese": [
+          "ヴィゾーヴニル"
+        ],
+        "german": [
+          "Vidofnir"
+        ],
+        "french": [
+          "Vidofnir"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "VIDOFNIR"
@@ -5951,8 +7828,32 @@
     {
       "id": "vritra",
       "label": "VRITRA",
-      "npcBaseIds": [],
-      "aliases": {},
+      "npcBaseIds": [
+        1037010,
+        1039059,
+        1039143,
+        1039182,
+        1045198,
+        1045485,
+        1045488,
+        1045661,
+        1045666,
+        1045674
+      ],
+      "aliases": {
+        "english": [
+          "Vrtra"
+        ],
+        "japanese": [
+          "ヴリトラ"
+        ],
+        "german": [
+          "Vrtra"
+        ],
+        "french": [
+          "Vrtra"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "VRITRA"
@@ -6022,7 +7923,20 @@
       "id": "wawlika",
       "label": "WAWLIKA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Wawlika"
+        ],
+        "japanese": [
+          "ワーリカ"
+        ],
+        "german": [
+          "Wawlika"
+        ],
+        "french": [
+          "Wawlika"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "WAWLIKA"
@@ -6042,7 +7956,20 @@
       "id": "wedge",
       "label": "WEDGE",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Wedge"
+        ],
+        "japanese": [
+          "ウェッジ"
+        ],
+        "german": [
+          "Wedge"
+        ],
+        "french": [
+          "Wedge"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "WEDGE"
@@ -6062,7 +7989,20 @@
       "id": "wickedthunder",
       "label": "WICKEDTHUNDER",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Wicked Thunder"
+        ],
+        "japanese": [
+          "ウィケッドサンダー"
+        ],
+        "german": [
+          "Tosender Donner"
+        ],
+        "french": [
+          "Wicked Thunder"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "WICKEDTHUNDER"
@@ -6072,7 +8012,20 @@
       "id": "wihuwte",
       "label": "WIHUWTE",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Wihuwte"
+        ],
+        "japanese": [
+          "ウィフーテ"
+        ],
+        "german": [
+          "Wihuwte"
+        ],
+        "french": [
+          "Wihuwte"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "WIHUWTE"
@@ -6082,7 +8035,20 @@
       "id": "wilfsunn",
       "label": "WILFSUNN",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Wilfsunn"
+        ],
+        "japanese": [
+          "ウィルフスン"
+        ],
+        "german": [
+          "Wilfsunn"
+        ],
+        "french": [
+          "Wilfsunn"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "WILFSUNN"
@@ -6132,7 +8098,20 @@
       "id": "wukevu",
       "label": "WUKEVU",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Wuk Evu"
+        ],
+        "japanese": [
+          "ウケブ"
+        ],
+        "german": [
+          "Wuk Evu"
+        ],
+        "french": [
+          "Wuk Evu"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "WUKEVU"
@@ -6142,7 +8121,20 @@
       "id": "xande",
       "label": "XANDE",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Xande"
+        ],
+        "japanese": [
+          "ザンデ"
+        ],
+        "german": [
+          "Xande"
+        ],
+        "french": [
+          "Xande"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "XANDE"
@@ -6202,7 +8194,20 @@
       "id": "yda",
       "label": "YDA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Yda"
+        ],
+        "japanese": [
+          "イダ"
+        ],
+        "german": [
+          "Yda"
+        ],
+        "french": [
+          "Yda"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "YDA"
@@ -6252,7 +8257,20 @@
       "id": "yotsuyu",
       "label": "YOTSUYU",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Yotsuyu"
+        ],
+        "japanese": [
+          "ヨツユ"
+        ],
+        "german": [
+          "Yotsuyu"
+        ],
+        "french": [
+          "Yotsuyu"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "YOTSUYU"
@@ -6272,7 +8290,20 @@
       "id": "yshtola",
       "label": "YSHTOLA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Y'shtola"
+        ],
+        "japanese": [
+          "ヤ・シュトラ"
+        ],
+        "german": [
+          "Y'shtola"
+        ],
+        "french": [
+          "Y'shtola"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "YSHTOLA"
@@ -6292,7 +8323,20 @@
       "id": "yugiri",
       "label": "YUGIRI",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Yugiri"
+        ],
+        "japanese": [
+          "ユウギリ"
+        ],
+        "german": [
+          "Yugiri"
+        ],
+        "french": [
+          "Yugiri"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "YUGIRI"
@@ -6312,7 +8356,20 @@
       "id": "zanuhali",
       "label": "ZANUHALI",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Zanuhali"
+        ],
+        "japanese": [
+          "ザヌハリ"
+        ],
+        "german": [
+          "Zanuhali"
+        ],
+        "french": [
+          "Zanuhali"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "ZANUHALI"
@@ -6332,7 +8389,20 @@
       "id": "zawpya",
       "label": "ZAWPYA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Zawpya"
+        ],
+        "japanese": [
+          "ダーピャ"
+        ],
+        "german": [
+          "Zawpya"
+        ],
+        "french": [
+          "Zawpya"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "ZAWPYA"
@@ -6342,7 +8412,20 @@
       "id": "zekowa",
       "label": "ZEKOWA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Zekowa"
+        ],
+        "japanese": [
+          "デコワ"
+        ],
+        "german": [
+          "Zekowa"
+        ],
+        "french": [
+          "Zekowa"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "ZEKOWA"
@@ -6361,8 +8444,44 @@
     {
       "id": "zenos",
       "label": "ZENOS",
-      "npcBaseIds": [],
-      "aliases": {},
+      "npcBaseIds": [
+        1018053,
+        1018481,
+        1018510,
+        1019097,
+        1019698,
+        1019760,
+        1019764,
+        1021665,
+        1032619,
+        1036301,
+        1038065,
+        1039156,
+        1040703,
+        1040705,
+        1041179,
+        1041945,
+        1042161,
+        1045798
+      ],
+      "aliases": {
+        "english": [
+          "Zenos viator Galvus",
+          "Zenos yae Galvus"
+        ],
+        "japanese": [
+          "ゼノス・イェー・ガルヴァス",
+          "ゼノス・ヴェトル・ガルヴァス"
+        ],
+        "german": [
+          "Zenos viator Galvus",
+          "Zenos yae Galvus"
+        ],
+        "french": [
+          "Zenos viator Galvus",
+          "Zenos yae Galvus"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "ZENOS"
@@ -6382,7 +8501,20 @@
       "id": "zereelja",
       "label": "ZEREELJA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Zereel Ja"
+        ],
+        "japanese": [
+          "ゼレージャ"
+        ],
+        "german": [
+          "Zereel Ja"
+        ],
+        "french": [
+          "Zereel Ja"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "ZEREELJA"
@@ -6412,7 +8544,20 @@
       "id": "zoraalja",
       "label": "ZORAALJA",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Zoraal Ja"
+        ],
+        "japanese": [
+          "ゾラージャ"
+        ],
+        "german": [
+          "Zoraal Ja"
+        ],
+        "french": [
+          "Zoraal Ja"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "ZORAALJA"
@@ -6422,7 +8567,20 @@
       "id": "zurmurwur",
       "label": "ZURMURWUR",
       "npcBaseIds": [],
-      "aliases": {},
+      "aliases": {
+        "english": [
+          "Zurmurwur"
+        ],
+        "japanese": [
+          "ズームーウー"
+        ],
+        "german": [
+          "Zurmurwur"
+        ],
+        "french": [
+          "Zurmurwur"
+        ]
+      },
       "sources": {},
       "actorTokens": [
         "ZURMURWUR"

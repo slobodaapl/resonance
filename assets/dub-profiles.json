@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "defaultDomain": "generic_world",
   "slotTemplates": [
     {
@@ -652,7 +652,7 @@
           "f_adult_formal"
         ]
       },
-      "fallbackDimensions": "none"
+      "fallbackDimensions": "sex_age"
     },
     {
       "id": "il_mheg_nu_mou",
@@ -677,7 +677,7 @@
           "f_adult_formal"
         ]
       },
-      "fallbackDimensions": "none"
+      "fallbackDimensions": "sex_age"
     },
     {
       "id": "rak_tika_viis",
@@ -752,7 +752,7 @@
           "f_adult_formal"
         ]
       },
-      "fallbackDimensions": "sex"
+      "fallbackDimensions": "sex_age"
     },
     {
       "id": "ancient",
@@ -852,7 +852,7 @@
           "f_adult_formal"
         ]
       },
-      "fallbackDimensions": "none"
+      "fallbackDimensions": "sex_age"
     },
     {
       "id": "southern_turali",
@@ -927,7 +927,7 @@
           "f_adult_formal"
         ]
       },
-      "fallbackDimensions": "sex"
+      "fallbackDimensions": "sex_age"
     },
     {
       "id": "hanuhanu",
@@ -952,7 +952,7 @@
           "f_adult_formal"
         ]
       },
-      "fallbackDimensions": "sex"
+      "fallbackDimensions": "sex_age"
     },
     {
       "id": "moblin",
@@ -977,7 +977,7 @@
           "f_adult_formal"
         ]
       },
-      "fallbackDimensions": "sex"
+      "fallbackDimensions": "sex_age"
     },
     {
       "id": "xbraal",
@@ -1027,7 +1027,7 @@
           "f_adult_formal"
         ]
       },
-      "fallbackDimensions": "sex"
+      "fallbackDimensions": "sex_age"
     },
     {
       "id": "shaaloani_frontier",
@@ -1152,7 +1152,7 @@
           "f_adult_formal"
         ]
       },
-      "fallbackDimensions": "none"
+      "fallbackDimensions": "sex_age"
     },
     {
       "id": "ixal",
@@ -1177,7 +1177,7 @@
           "f_adult_formal"
         ]
       },
-      "fallbackDimensions": "sex"
+      "fallbackDimensions": "sex_age"
     },
     {
       "id": "amaljaa",
@@ -1202,7 +1202,7 @@
           "f_adult_formal"
         ]
       },
-      "fallbackDimensions": "sex"
+      "fallbackDimensions": "sex_age"
     },
     {
       "id": "kobold",
@@ -1227,7 +1227,7 @@
           "f_adult_formal"
         ]
       },
-      "fallbackDimensions": "sex"
+      "fallbackDimensions": "sex_age"
     },
     {
       "id": "sahagin",
@@ -1252,7 +1252,7 @@
           "f_adult_formal"
         ]
       },
-      "fallbackDimensions": "sex"
+      "fallbackDimensions": "sex_age"
     },
     {
       "id": "vath",
@@ -1277,7 +1277,8 @@
           "f_adult_formal"
         ]
       },
-      "fallbackDimensions": "sex"
+      "fallbackDimensions": "none",
+      "sharedVoice": true
     },
     {
       "id": "gnath",
@@ -1302,7 +1303,8 @@
           "f_adult_formal"
         ]
       },
-      "fallbackDimensions": "sex"
+      "fallbackDimensions": "none",
+      "sharedVoice": true
     },
     {
       "id": "dragon",
@@ -1327,7 +1329,7 @@
           "f_adult_formal"
         ]
       },
-      "fallbackDimensions": "sex"
+      "fallbackDimensions": "sex_age"
     },
     {
       "id": "vanu_vanu",
@@ -1352,7 +1354,7 @@
           "f_adult_formal"
         ]
       },
-      "fallbackDimensions": "sex"
+      "fallbackDimensions": "sex_age"
     },
     {
       "id": "moogle",
@@ -1377,7 +1379,7 @@
           "f_adult_formal"
         ]
       },
-      "fallbackDimensions": "sex"
+      "fallbackDimensions": "sex_age"
     },
     {
       "id": "goblin",
@@ -1402,7 +1404,8 @@
           "f_adult_formal"
         ]
       },
-      "fallbackDimensions": "sex"
+      "fallbackDimensions": "none",
+      "sharedVoice": true
     },
     {
       "id": "fuath",
@@ -1427,7 +1430,7 @@
           "f_adult_formal"
         ]
       },
-      "fallbackDimensions": "none"
+      "fallbackDimensions": "sex_age"
     },
     {
       "id": "qitari",
@@ -1452,7 +1455,7 @@
           "f_adult_formal"
         ]
       },
-      "fallbackDimensions": "sex"
+      "fallbackDimensions": "sex_age"
     },
     {
       "id": "kojin",
@@ -1477,7 +1480,59 @@
           "f_adult_formal"
         ]
       },
-      "fallbackDimensions": "sex"
+      "fallbackDimensions": "sex_age"
+    },
+    {
+      "id": "mechanoid",
+      "confidence": "A",
+      "prompts": {
+        "english": "Mechanical speech with a synthetic electronic timbre, precise articulation and measured machine cadence.",
+        "neutral": "Mechanical speech with a synthetic electronic timbre, precise articulation and measured machine cadence."
+      },
+      "slotTemplates": {
+        "masculine": [
+          "m_young_light",
+          "m_adult_grounded",
+          "m_adult_resonant",
+          "m_elder_measured",
+          "m_adult_formal"
+        ],
+        "feminine": [
+          "f_young_light",
+          "f_adult_grounded",
+          "f_adult_warm",
+          "f_elder_measured",
+          "f_adult_formal"
+        ]
+      },
+      "fallbackDimensions": "none",
+      "sharedVoice": true
+    },
+    {
+      "id": "omicron",
+      "confidence": "A",
+      "prompts": {
+        "english": "Synthetic Omicron speech with a distinct electronic voice, precise articulation and measured machine cadence.",
+        "neutral": "Synthetic Omicron speech with a distinct electronic voice, precise articulation and measured machine cadence."
+      },
+      "slotTemplates": {
+        "masculine": [
+          "m_young_light",
+          "m_adult_grounded",
+          "m_adult_resonant",
+          "m_elder_measured",
+          "m_adult_formal"
+        ],
+        "feminine": [
+          "f_young_light",
+          "f_adult_grounded",
+          "f_adult_warm",
+          "f_elder_measured",
+          "f_adult_formal"
+        ]
+      },
+      "fallbackDimensions": "none",
+      "sharedVoice": true
     }
   ],
   "modifiers": [
@@ -2823,6 +2878,99 @@
         ],
         "modelBases": [
           6
+        ]
+      }
+    },
+    {
+      "id": "metadata_mechanoid",
+      "domainId": "mechanoid",
+      "modifierIds": [],
+      "speakerCategory": "non_humanoid",
+      "source": "species",
+      "priority": 150,
+      "confidence": "A",
+      "match": {
+        "modelCharaIds": [
+          2,
+          221,
+          222,
+          223,
+          253,
+          254,
+          255,
+          845,
+          885,
+          1089,
+          1107,
+          1108,
+          1109,
+          1111,
+          1112,
+          1113,
+          1114,
+          1119,
+          1121,
+          1124,
+          1125,
+          1126,
+          1127,
+          1128,
+          1129,
+          1130,
+          1135,
+          1139,
+          1140,
+          1141,
+          1143,
+          1144,
+          1145,
+          1146,
+          1150,
+          1151,
+          1153,
+          1163,
+          1431,
+          2337,
+          2583,
+          3028,
+          3902,
+          4601,
+          4890
+        ]
+      }
+    },
+    {
+      "id": "metadata_omicron",
+      "domainId": "omicron",
+      "modifierIds": [],
+      "speakerCategory": "non_humanoid",
+      "source": "species",
+      "priority": 150,
+      "confidence": "A",
+      "match": {
+        "modelCharaIds": [
+          3223,
+          3264,
+          3313,
+          3493,
+          3494,
+          3716
+        ]
+      }
+    },
+    {
+      "id": "metadata_gnath",
+      "domainId": "gnath",
+      "modifierIds": [
+        "species_gnath"
+      ],
+      "speakerCategory": "non_humanoid",
+      "source": "species",
+      "priority": 100,
+      "confidence": "A",
+      "match": {
+        "modelCharaIds": [
+          832
         ]
       }
     }

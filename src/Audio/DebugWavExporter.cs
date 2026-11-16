@@ -13,10 +13,13 @@ internal static class DebugWavExporter
     public static void Export(
         string path,
         ReadOnlySpan<float> samples,
-        float volume)
+        float volume,
+        AudioProcessingOptions? processingOptions = null,
+        bool applyBaseCloneCorrection = true)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-        var prepared = GameMixerPcmEncoder.PrepareMono44100(samples, true, Math.Clamp(volume, 0f, 2f));
+        var prepared = GameMixerPcmEncoder.PrepareMono44100(
+            samples, applyBaseCloneCorrection, Math.Clamp(volume, 0f, 2f), processingOptions);
         WriteFloat(path, prepared.Samples, prepared.SampleRate, 1);
     }
 

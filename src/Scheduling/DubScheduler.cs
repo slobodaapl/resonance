@@ -23,6 +23,8 @@ public sealed class DubScheduler : IAsyncDisposable
     private readonly string modelHash;
     private readonly string defaultLanguage;
     private readonly Func<long> cacheCaptureLimitBytes;
+    private readonly DialogueSpeech dialogueSpeech;
+    private readonly Func<bool> soundEffectsEnabled;
     private readonly object disposeGate = new();
     private readonly Task worker;
     private DubLine? generating;
@@ -35,6 +37,7 @@ public sealed class DubScheduler : IAsyncDisposable
 
     public event Action<DubLine>? LineBuffered;
     public event Action<DubLine>? PredictionStreamable;
+    public event Action<DubLine>? AudioAvailable;
     public event Action<DubLine, Exception>? LineFailed;
     public event Action<DubLine>? LineProcessed;
     public event Action? BecameIdle;
@@ -49,7 +52,8 @@ public sealed class DubScheduler : IAsyncDisposable
     }
 
     public DubScheduler(ITtsRuntime runtime, Func<DubLine, CancellationToken, ValueTask<VoiceResolution>> resolveVoice,
-        LineCache lineCache, string modelHash, string language, Func<long>? cacheCaptureLimitBytes = null)
+        LineCache lineCache, string modelHash, string language, Func<long>? cacheCaptureLimitBytes = null,
+        DialogueSpeech? dialogueSpeech = null, Func<bool>? soundEffectsEnabled = null)
     {
         this.runtime = runtime;
         this.resolveVoice = resolveVoice;
@@ -57,6 +61,8 @@ public sealed class DubScheduler : IAsyncDisposable
         this.modelHash = modelHash;
         defaultLanguage = language;
         this.cacheCaptureLimitBytes = cacheCaptureLimitBytes ?? (() => 64L * 1024 * 1024);
+        this.dialogueSpeech = dialogueSpeech ?? DialogueSpeech.WithoutEffects;
+        this.soundEffectsEnabled = soundEffectsEnabled ?? (() => true);
         worker = Task.Run(WorkerAsync);
     }
 
@@ -164,7 +170,10 @@ public sealed class DubScheduler : IAsyncDisposable
                 var operationStarted = Stopwatch.GetTimestamp();
                 var language = line.Language ?? defaultLanguage;
                 if (!line.TryTransition(DubLineState.VoiceResolving, DubLineState.Queued)) continue;
-                var resolution = resolveVoice(line, line.Token).AsTask();
+                var plan = dialogueSpeech.Prepare(line.Text, soundEffectsEnabled());
+                line.SpeechPlan = plan;
+                var resolution = plan.HasSpeech ? resolveVoice(line, line.Token).AsTask()
+                    : Task.FromResult(VoiceResolution.Ready(null));
                 var playbackAuthorized = await AuthorizeStreamingAsync(line, resolution, false).ConfigureAwait(false);
                 var voiceResolution = await resolution.ConfigureAwait(false);
                 // Resolution can finish after native playback, session
@@ -183,6 +192,15 @@ public sealed class DubScheduler : IAsyncDisposable
                 }
                 var voice = voiceResolution.Reference;
                 line.ApplyBaseCloneCorrection = voice is not null;
+                line.AudioCacheVariant = plan.CacheIdentity
+                    + (voice is not null && DialogueCues.Contains(voice.Transcript)
+                        ? ":reference-cues-v1:" + DialogueCues.Identity : string.Empty);
+                if (plan.HasCues)
+                {
+                    lock (gate)
+                        line.PredictedAudioDurationSeconds = plan.Parts.OfType<SpeechPassage>()
+                            .Sum(part => part.Text.Length / meanCharactersPerSecond) + plan.EffectDurationSeconds;
+                }
                 var seed = StableSeed($"{line.SpeakerKey}\0{language}");
                 if (line.DirectSynthesisCompleted)
                 {
@@ -220,9 +238,9 @@ public sealed class DubScheduler : IAsyncDisposable
                     && captureLimitBytes > 0
                     ? line.Audio.CreateCapture(captureLimitBytes)
                     : null;
-                var synthesis = runtime.SynthesizeAsync(
-                    new(line.Text, language, voice, null, seed),
-                    line.Audio,
+                var synthesis = dialogueSpeech.SynthesizeAsync(plan, line.Audio,
+                    (passage, sink, token) => runtime.SynthesizeAsync(
+                        new SynthesisRequest(passage, language, voice, null, seed).WithoutDialogueCues(), sink, token),
                     line.Token);
                 playbackAuthorized = await AuthorizeStreamingAsync(line, synthesis, playbackAuthorized).ConfigureAwait(false);
                 await synthesis.ConfigureAwait(false);
@@ -286,7 +304,7 @@ public sealed class DubScheduler : IAsyncDisposable
 
     private void Estimate(DubLine line, DateTimeOffset now)
     {
-        line.PredictedAudioDurationSeconds = Math.Max(0.5, line.Text.Length / meanCharactersPerSecond);
+        line.PredictedAudioDurationSeconds = Math.Max(0.5, DialogueCues.SpeechText(line.Text).Length / meanCharactersPerSecond);
         line.EstimatedGenerationSeconds = meanTimeToFirstAudioSeconds
                                           + line.PredictedAudioDurationSeconds * meanRealTimeFactor;
         if (line.ActualStatus == ActualStatus.Actual)
@@ -307,6 +325,7 @@ public sealed class DubScheduler : IAsyncDisposable
 
     private void RecordMeasurement(DubLine line, long started)
     {
+        if (line.SpeechPlan?.HasCues == true) return;
         var sampleCount = line.Audio.TotalSamplesWritten;
         var firstWrite = line.Audio.FirstWriteTimestamp;
         if (sampleCount <= 0 || firstWrite < started) return;
@@ -329,9 +348,15 @@ public sealed class DubScheduler : IAsyncDisposable
     private async Task<bool> AuthorizeStreamingAsync(DubLine line, Task phase, bool alreadyAuthorized)
     {
         if (alreadyAuthorized) return true;
+        var preparationRequested = false;
         while (!line.IsTerminal)
         {
             var bufferedSeconds = line.Audio.BufferedSamples / 24000d;
+            if (!preparationRequested && bufferedSeconds > 0)
+            {
+                preparationRequested = true;
+                AudioAvailable?.Invoke(line);
+            }
             double rtf;
             bool measured;
             lock (gate)

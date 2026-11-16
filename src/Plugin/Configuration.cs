@@ -1,4 +1,5 @@
 using Dalamud.Configuration;
+using Resonance.Audio;
 using Resonance.Bootstrap;
 using Resonance.Tts;
 
@@ -31,6 +32,10 @@ public sealed class Configuration : IPluginConfiguration
     public string? DesiredBackendDescription { get; set; }
     public BackendType? DesiredBackendType { get; set; }
     public float Volume { get; set; } = 1f;
+    public bool EnableVoiceCorrection { get; set; } = true;
+    public bool EnableLineNormalization { get; set; } = true;
+    public bool EnableDialogueSoundEffects { get; set; } = true;
+    public bool ReduceMotion { get; set; }
     // Legacy v2 JSON field. Ignored: playback always follows FFXIV's mixer.
     public int AudioOutputDeviceNumber { get; set; } = -1;
     /// <summary>
@@ -64,6 +69,9 @@ public sealed class Configuration : IPluginConfiguration
     public Dictionary<string, string>? PaletteOverrides { get; set; }
 
     [NonSerialized] private object? promptGate = new();
+
+    public AudioProcessingOptions GetAudioProcessingOptions() =>
+        new(EnableVoiceCorrection, EnableLineNormalization);
 
     public string? GetPromptOverride(string domainId, string language, string sex)
     {

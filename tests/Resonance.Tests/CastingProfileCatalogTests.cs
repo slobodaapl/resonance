@@ -6,16 +6,20 @@ namespace Resonance.Tests;
 public sealed class CastingProfileCatalogTests
 {
     [Theory]
-    [InlineData("il_mheg_nu_mou", "masculine", "young", "default")]
-    [InlineData("il_mheg_pixie", "feminine", "adult", "default")]
-    [InlineData("ananta", "masculine", "young", "feminine")]
-    [InlineData("loporrit", "masculine", "young", "default")]
-    [InlineData("loporrit", "feminine", "adult", "default")]
-    [InlineData("sylph", "masculine", "young", "default")]
-    [InlineData("sylph", "feminine", "adult", "default")]
+    [InlineData("il_mheg_nu_mou", "masculine", "young", "masculine_young")]
+    [InlineData("il_mheg_pixie", "feminine", "adult", "feminine_adult")]
+    [InlineData("ananta", "masculine", "young", "feminine_young")]
+    [InlineData("ananta", "masculine", "elder", "feminine_elder")]
+    [InlineData("loporrit", "masculine", "young", "masculine_young")]
+    [InlineData("loporrit", "feminine", "adult", "feminine_adult")]
+    [InlineData("sylph", "masculine", "young", "masculine_young")]
+    [InlineData("sylph", "feminine", "adult", "feminine_adult")]
     [InlineData("thavnairian", "masculine", "young", "masculine_young")]
     [InlineData("thavnairian", "feminine", "adult", "feminine_adult")]
-    public void FallbackDimensionsCollapseOnlyUnsupportedTraits(
+    [InlineData("thavnairian", "masculine", "elder", "masculine_elder")]
+    [InlineData("thavnairian", "feminine", "elder", "feminine_elder")]
+    [InlineData("kojin", "feminine", "unknown", "feminine_adult")]
+    public void FallbackVariantsPreserveGenderAndAgeWithinSpeciesRules(
         string domainId, string sex, string age, string expected)
     {
         var catalog = CastingProfileCatalog.Load(ProjectPath("assets", "dub-profiles.json"));
@@ -31,7 +35,7 @@ public sealed class CastingProfileCatalogTests
     {
         var catalog = CastingProfileCatalog.Load(ProjectPath("assets", "dub-profiles.json"));
 
-        Assert.Equal(4, catalog.Version);
+        Assert.Equal(5, catalog.Version);
         Assert.Equal("generic_world", catalog.DefaultDomainId);
         Assert.Empty(catalog.Validate());
         Assert.Equal(5, catalog.GetDomain("ishgardian").MasculineSlots.Count);
@@ -590,7 +594,7 @@ public sealed class CastingProfileCatalogTests
 
         Assert.Equal(english, japanese);
         Assert.NotEqual(english, differentSpeaker);
-        Assert.Equal(4, catalog.Version);
+        Assert.Equal(5, catalog.Version);
     }
 
     private static JsonObject ParseFixture(string json)

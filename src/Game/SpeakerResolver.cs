@@ -13,7 +13,7 @@ public sealed record ResolvedSpeaker(
     uint? NpcBaseId,
     string DisplayName,
     string Archetype,
-    nint ActorAddress,
+    DialogueActor? Actor,
     bool SceneLocal,
     SpeakerCastingEvidence Evidence,
     SpeakerMetadata Metadata,
@@ -29,9 +29,6 @@ public sealed class SpeakerResolver
     private readonly IObjectTable objects;
     private readonly IDataManager? dataManager;
     private readonly Func<string?> currentTerritory;
-    private readonly Dictionary<nint, bool> targetable = [];
-    private IGameObject? nextUnknown;
-    private long observedEpoch = long.MinValue;
 
     public SpeakerResolver(
         IObjectTable objects,
@@ -45,10 +42,19 @@ public sealed class SpeakerResolver
 
     public ResolvedSpeaker Resolve(ActualTalkLine line, long sessionEpoch)
     {
-        ObserveUnknownActorTransitions(sessionEpoch);
-        if (line.Speaker == "???" && nextUnknown is { } unknown && unknown.IsValid() && unknown.BaseId != 0)
-            return ResolveObject(unknown, line.Speaker);
+        if (line.Actor is { } actor)
+        {
+            var exact = objects.SearchById(actor.GameObjectId);
+            if (exact is not null && exact.IsValid()
+                && actor.Matches(exact.BaseId, exact.GameObjectId, exact.Address, (byte)exact.ObjectKind))
+                return ResolveObject(exact, line.Speaker);
 
+            // A queued actor may despawn before presentation; retain its captured identity.
+            var key = actor.StableKey;
+            return new(key, actor.NpcBaseId, line.Speaker, "neutral_adult", actor, false,
+                EmptyEvidence(key, sceneLocal: false) with { NpcBaseId = actor.NpcBaseId },
+                new SpeakerMetadata(EvidenceSource: "native-dialogue"), "masculine");
+        }
         if (line.Speaker is not "???" and not "Narrator")
         {
             var candidate = objects
@@ -66,13 +72,13 @@ public sealed class SpeakerResolver
         if (line.Speaker == "Narrator")
         {
             var evidence = EmptyEvidence("narrator", sceneLocal: false);
-            return new("narrator", null, line.Speaker, "neutral_narrator", 0, false,
+            return new("narrator", null, line.Speaker, "neutral_narrator", null, false,
                 evidence, new SpeakerMetadata(EvidenceSource: "curated"), "masculine");
         }
 
         var stableKey = $"scene:{sessionEpoch}:{line.Speaker.ToLowerInvariant()}";
         var sceneEvidence = EmptyEvidence(stableKey, sceneLocal: true);
-        return new(stableKey, null, line.Speaker, "neutral_adult", 0, true,
+        return new(stableKey, null, line.Speaker, "neutral_adult", null, true,
             sceneEvidence, new SpeakerMetadata(EvidenceSource: "scene-local"), "masculine");
     }
 
@@ -81,52 +87,27 @@ public sealed class SpeakerResolver
         if (npcBaseId == 0) return null;
         var candidate = objects
             .Where(value => value.IsValid() && value.BaseId == npcBaseId
-                && value.ObjectKind is ObjectKind.EventNpc or ObjectKind.BattleNpc)
+                && value.ObjectKind == ObjectKind.EventNpc)
             .OrderBy(value => value.CurrentDistance)
             .ThenBy(value => value.ObjectIndex)
             .FirstOrDefault();
         return candidate is null ? null : ResolveObject(candidate, displayedName);
     }
 
-    private void ObserveUnknownActorTransitions(long sessionEpoch)
-    {
-        if (observedEpoch != sessionEpoch)
-        {
-            observedEpoch = sessionEpoch;
-            targetable.Clear();
-            nextUnknown = null;
-        }
-
-        var present = new HashSet<nint>();
-        var transitioned = new List<IGameObject>();
-        foreach (var value in objects)
-        {
-            if (!value.IsValid() || value is not ICharacter character || value.BaseId == 0
-                || value.ObjectKind is not (ObjectKind.EventNpc or ObjectKind.BattleNpc)) continue;
-            present.Add(value.Address);
-            var current = character.IsTargetable;
-            if (targetable.TryGetValue(value.Address, out var previous) && !previous && current)
-                transitioned.Add(value);
-            targetable[value.Address] = current;
-        }
-        foreach (var address in targetable.Keys.Where(address => !present.Contains(address)).ToArray())
-            targetable.Remove(address);
-        if (transitioned.Count > 0)
-            nextUnknown = transitioned.OrderBy(value => value.CurrentDistance).ThenBy(value => value.ObjectIndex).First();
-    }
-
     private ResolvedSpeaker ResolveObject(IGameObject candidate, string displayedName)
     {
-        var stableKey = $"npc:{candidate.BaseId}";
+        var actor = new DialogueActor(candidate.BaseId, candidate.GameObjectId, candidate.Address,
+            (byte)candidate.ObjectKind);
+        var stableKey = actor.StableKey;
         var live = ReadLiveEvidence(candidate, stableKey);
         return new(
             stableKey,
-            candidate.BaseId,
+            actor.NpcBaseId,
             displayedName,
             live.Sex == "feminine" ? "feminine_adult" : "masculine_adult",
-            candidate.Address,
+            actor,
             false,
-            live.Evidence,
+            live.Evidence with { NpcBaseId = actor.NpcBaseId },
             live.Metadata,
             live.Sex);
     }

@@ -94,7 +94,8 @@ public sealed record CastingDomain(
     IReadOnlyList<CastingSlotTemplate> FeminineSlots,
     string? JapanesePrompt = null,
     string? GermanPrompt = null,
-    string? FrenchPrompt = null);
+    string? FrenchPrompt = null,
+    bool SharedVoice = false);
 
 public sealed record CastingModifier(
     string Id,
@@ -190,7 +191,7 @@ public sealed class CastingProfileCatalogException : FormatException
 /// </summary>
 public sealed class CastingProfileCatalog
 {
-    public const int CurrentSchemaVersion = 4;
+    public const int CurrentSchemaVersion = 5;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -529,11 +530,11 @@ public sealed class CastingProfileCatalog
     {
         var dimensions = GetDomain(resolution.DomainId).FallbackDimensions;
         var sex = NormalizeSex(evidence.Sex);
-        var age = String.Equals(evidence.Age, "young", StringComparison.Ordinal) ? "young" : "adult";
+        var age = evidence.Age is "young" or "elder" ? evidence.Age : "adult";
         return dimensions switch
         {
             "none" => "default",
-            "feminine_only" => "feminine",
+            "feminine_only" => $"feminine_{age}",
             "sex" => sex,
             "sex_age" => $"{sex}_{age}",
             _ => throw new InvalidDataException($"Unknown fallback dimensions '{dimensions}'"),
@@ -1003,6 +1004,8 @@ public sealed class CastingProfileCatalog
             if (domain.FallbackDimensions is not ("sex_age" or "sex" or "none" or "feminine_only"))
                 issues.Add(new("invalid-fallback-dimensions", $"{path}.fallbackDimensions",
                     "Fallback dimensions must be sex_age, sex, none, or feminine_only"));
+            if (domain.SharedVoice && domain.FallbackDimensions != "none")
+                issues.Add(new("invalid-shared-voice", $"{path}.sharedVoice", "A shared voice requires no fallback dimensions"));
             if (domain.SlotTemplates is null)
             {
                 issues.Add(new("missing-slot-templates", $"{path}.slotTemplates", "Domain slot templates are required"));
@@ -1312,7 +1315,7 @@ public sealed class CastingProfileCatalog
         dto.Id!, dto.Confidence!, dto.FallbackDimensions!, dto.Prompts!.English!, dto.Prompts.Neutral!, dto.Inherits,
         dto.SlotTemplates!.Masculine!.Select(id => slots[id]).ToArray(),
         dto.SlotTemplates.Feminine!.Select(id => slots[id]).ToArray(),
-        dto.Prompts.Japanese, dto.Prompts.German, dto.Prompts.French);
+        dto.Prompts.Japanese, dto.Prompts.German, dto.Prompts.French, dto.SharedVoice);
 
     private sealed class CatalogDocument
     {
@@ -1356,6 +1359,7 @@ public sealed class CastingProfileCatalog
         public string? Confidence { get; set; }
         public string? Inherits { get; set; }
         public string? FallbackDimensions { get; set; } = "sex_age";
+        public bool SharedVoice { get; set; }
         public PromptDto? Prompts { get; set; }
         public DomainSlotReferencesDto? SlotTemplates { get; set; }
     }

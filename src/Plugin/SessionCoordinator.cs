@@ -19,19 +19,20 @@ public sealed record DebugInferenceSnapshot(
     string Device,
     string VoiceDesignBackend,
     string Status,
-    IReadOnlyList<DebugBaseVoiceOption> BaseVoices);
+    IReadOnlyList<DebugBaseVoiceOption> BaseVoices,
+    bool VoicesCached = false);
 
 public sealed class SessionCoordinator : IAsyncDisposable
 {
+    private sealed record DebugVoiceCache(
+        string Language, string ModelHash, IReadOnlyList<DebugBaseVoiceOption> Options,
+        IReadOnlyDictionary<string, StoredVoiceProfile> Profiles);
+
     private sealed record PendingAutoAdvance(
         long SessionEpoch,
-        long LineSequence,
         long TalkSerial,
         string Speaker,
-        string Text,
-        IReadOnlyList<string> NextPredictionKeys);
-
-    private sealed record TalkAdvanceContext(long TalkSerial, bool? CutsceneUnskippable);
+        string Text);
 
     private sealed record FutureDialogue(
         string Key,
@@ -50,7 +51,6 @@ public sealed class SessionCoordinator : IAsyncDisposable
 
     private const string DebugLineSource = "Resonance inference debug";
     private const string PreDubLineSource = "Resonance pre-dub";
-    private const int PreDubSceneLimit = 2;
     private const int PreDubCandidateLimit = 32;
     private static readonly TimeSpan TeardownFrameworkWait = TimeSpan.FromSeconds(5);
     private readonly CutsceneDetector cutscenes;
@@ -62,13 +62,16 @@ public sealed class SessionCoordinator : IAsyncDisposable
     private readonly QuestDialoguePrefetcher prefetcher;
     private readonly MsqProgressReader msqProgress;
     private readonly CutsceneVoiceManifestProvider cutsceneVoices;
+    private readonly CutscenePreDubPlanner preDubPlanner;
     private readonly LipSyncService lipSync;
     private readonly VoiceRegistry voices;
     private readonly BootstrapService bootstrap;
     private readonly Configuration configuration;
     private readonly IPluginLog log;
     private readonly AutoAdvanceDiagnosticGate autoAdvanceDiagnostics = new();
+    private readonly CutscenePlaybackControl cutsceneControl;
     private readonly LineCache lineCache;
+    private readonly DialogueSpeech dialogueSpeech;
     private readonly string debugAudioDirectory;
     private readonly CastingProfileCatalog catalog;
     private readonly OfficialVoiceCatalog officialVoiceCatalog;
@@ -100,10 +103,11 @@ public sealed class SessionCoordinator : IAsyncDisposable
     private string? completedPreDubPlanKey;
     private int preDubLinesRemaining;
     private bool preDubFailed;
+    private long nextPreDubRefresh;
     private int suppressAutomaticAdvance;
-    private TalkAdvanceContext? talkAdvanceContext;
-    private long gameControlledAdvanceSerial;
     private long nextEpoch;
+    private long nativeVoicedTalkSerial;
+    private CancellationTokenSource? activeTalkHandling;
     private int disposed;
     private PendingAutoAdvance? pendingAutoAdvance;
     private int autoAdvanceDispatching;
@@ -119,9 +123,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
         new(StringComparer.Ordinal);
     private int baseHotLoadSafe;
     private int cutsceneBaseResidencyHeld;
-    private IReadOnlyList<DebugBaseVoiceOption> debugBaseVoices = [];
-    private readonly ConcurrentDictionary<string, StoredVoiceProfile> debugBaseProfiles = new(StringComparer.Ordinal);
-    private string? debugVoiceLanguage;
+    private IReadOnlyList<DebugBaseVoiceOption> defaultDebugBaseVoices = [];
+    private DebugVoiceCache? debugVoiceCache;
     private string debugStatus = "Idle";
     private CancellationTokenSource? debugCancellation;
     private Task? debugRefreshTask;
@@ -139,8 +142,9 @@ public sealed class SessionCoordinator : IAsyncDisposable
     private readonly HashSet<Task> coordinatorTasks = [];
     private readonly HashSet<Task> frameworkDispatchTasks = [];
     private int exclusiveOperationActive;
+    private int qualityChangeClaimed;
 
-    public bool IsSpeaking { get; private set; }
+    public bool IsSpeaking => audio?.IsPlaying == true;
     public event Action<DubLine>? LineStarted;
     public event Action<DubLine>? LineFinished;
     public event Action<string, string>? SpeakerProfileUpgraded;
@@ -167,7 +171,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
         OfficialVoiceCatalog officialVoiceCatalog,
         Func<uint, string?> territoryPlaceName,
         Configuration configuration, IPluginLog log,
-        IGameMixerAudioBackend? gameMixerBackend = null)
+        IGameMixerAudioBackend? gameMixerBackend = null, DialogueSpeech? dialogueSpeech = null)
     {
         this.cutscenes = cutscenes;
         this.talk = talk;
@@ -178,6 +182,9 @@ public sealed class SessionCoordinator : IAsyncDisposable
         this.prefetcher = prefetcher;
         this.msqProgress = msqProgress;
         this.cutsceneVoices = cutsceneVoices;
+        preDubPlanner = new(cutsceneVoices.GetManifest,
+            action => QueueFrameworkAction(action, "Pre-dub plan dispatch failed"),
+            error => log.Warning(error, "Pre-dub planning failed"));
         this.lipSync = lipSync;
         this.voices = voices;
         this.debugAudioDirectory = debugAudioDirectory;
@@ -185,10 +192,12 @@ public sealed class SessionCoordinator : IAsyncDisposable
         this.officialVoiceCatalog = officialVoiceCatalog;
         this.territoryPlaceName = territoryPlaceName;
         this.gameMixerBackend = gameMixerBackend;
+        this.dialogueSpeech = dialogueSpeech ?? DialogueSpeech.WithoutEffects;
         this.bootstrap = bootstrap;
         this.configuration = configuration;
         this.log = log;
-        debugBaseVoices = officialVoiceCatalog.Groups
+        cutsceneControl = new CutscenePlaybackControl(ApplyCutscenePauseOnFramework);
+        defaultDebugBaseVoices = officialVoiceCatalog.Groups
             .Select(value => new DebugBaseVoiceOption(value.Id, value.Label, false)).ToArray();
         lineCache = new LineCache(database, cacheDirectory, () => configuration.CacheLimitBytes);
         lineCache.Failed += error => log.Warning(error, "Line cache operation failed");
@@ -197,6 +206,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
         cutscenes.Ended += OnCutsceneEnded;
         talk.LineChanged += OnLineChanged;
         talk.PresentationReady += OnTalkPresentationReady;
+        talk.NativeVoiceStarted += OnNativeVoiceStarted;
         talk.AutoAdvanceReceiveObserved += OnAutoAdvanceReceiveObserved;
         talk.AutoAdvanceUiObserved += OnAutoAdvanceUiObserved;
         talk.Advanced += OnTalkClosed;
@@ -205,6 +215,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
         client.TerritoryChanged += OnTerritoryChanged;
         client.Logout += OnLogout;
         condition.ConditionChange += OnConditionChange;
+        framework.Update += OnPreDubUpdate;
         bootstrap.Ready += OnRuntimeReady;
         bootstrap.VoiceDesignReady += OnVoiceDesignReady;
         // OnLineChangedOnFramework also creates a missing active-cutscene
@@ -212,14 +223,40 @@ public sealed class SessionCoordinator : IAsyncDisposable
         // ordering without dropping the Talk line that exposed the gap.
     }
 
-    public bool ShouldSuppressAutomaticAdvance
+    public bool ShouldSuppressAutomaticAdvance =>
+        Volatile.Read(ref disposed) == 0 && !cutsceneControl.IsPaused && !bootstrap.IsChangingQuality
+        && session is not null && Volatile.Read(ref suppressAutomaticAdvance) != 0;
+
+    public CutsceneControlSnapshot GetCutsceneControlSnapshot()
     {
-        get
+        var snapshot = cutsceneControl.Snapshot;
+        return !bootstrap.IsChangingQuality && configuration.Enabled && cutscenes.IsInCutscene && Volatile.Read(ref disposed) == 0
+            && talk.Current?.Serial == snapshot.TalkSerial ? snapshot : CutsceneControlSnapshot.Hidden;
+    }
+
+    public void SetCutscenePaused(CutsceneControlSnapshot expected, bool paused) => QueueFrameworkAction(() =>
+    {
+        if (bootstrap.IsChangingQuality || !configuration.Enabled || !cutscenes.IsInCutscene || talk.Current?.Serial != expected.TalkSerial
+            || !talk.IsPresentationReady(expected.TalkSerial)) return;
+        cutsceneControl.TrySetPaused(expected, paused);
+    }, "Cutscene pause control dispatch failed");
+
+    private void ApplyCutscenePauseOnFramework(bool paused)
+    {
+        if (paused)
         {
-            if (session is null || Volatile.Read(ref suppressAutomaticAdvance) == 0) return false;
-            return talk.Current is not { } current
-                   || !ShouldPreserveGameControlledPacing(current.Serial);
+            Volatile.Write(ref suppressAutomaticAdvance, 0);
+            CancelActualLines();
+            CancelPreDubOnFramework();
+            domainPool?.Pause();
+            CancelSession();
         }
+        else
+        {
+            OnCutsceneStartedOnFramework();
+            if (talk.Current is { } current) OnLineChangedOnFramework(current);
+        }
+        log.Debug("Cutscene Resonance pause changed Paused={Paused}", paused);
     }
 
     public AudioBackendStatus GetAudioBackendStatus()
@@ -236,6 +273,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
 
     public void NotifyOfficialProfilePackImported() => QueueFrameworkAction(() =>
     {
+        CancelPreDubOnFramework();
+        cutsceneVoices.InvalidateCache();
         profileCache.Clear();
         ScheduleDebugBaseVoiceRefresh(CurrentLanguage());
         completedPreDubPlanKey = null;
@@ -255,56 +294,72 @@ public sealed class SessionCoordinator : IAsyncDisposable
         RequestBaseHotLoadRestore();
     }, "Pre-dub configuration refresh failed");
 
-    private void OnRuntimeReady(RuntimeManager manager) => QueueFrameworkAction(
-        () => OnRuntimeReadyOnFramework(manager), "Runtime-ready framework dispatch failed");
+    public void NotifyDialogueSoundEffectsChanged() => QueueFrameworkAction(() =>
+    {
+        if (session is { } current)
+            foreach (var line in current.Lines.Where(line => line.ActualStatus == ActualStatus.Predicted
+                         && !line.IsTerminal && line.SpeechPlan is { HasCues: true } plan
+                         && plan.EffectsEnabled != configuration.EnableDialogueSoundEffects).ToArray())
+                line.Cancel(DubLineState.Invalidated);
+        CancelPreDubOnFramework();
+        completedPreDubPlanKey = null;
+        SchedulePreDubOnFramework();
+    }, "Dialogue sound effects refresh failed");
+
+    private void OnRuntimeReady(RuntimeManager manager) => QueueFrameworkAction(() =>
+    {
+        if (!bootstrap.IsChangingQuality) OnRuntimeReadyOnFramework(manager);
+    }, "Runtime-ready framework dispatch failed");
 
     private void OnRuntimeReadyOnFramework(RuntimeManager manager)
     {
-        if (Volatile.Read(ref disposed) != 0) return;
+        if (Volatile.Read(ref disposed) != 0 || !ReferenceEquals(bootstrap.RuntimeManager, manager)
+            || ReferenceEquals(runtimeManager, manager) && scheduler is not null) return;
         runtimeManager = manager;
         manager.SetBaseHotLoadSafetyPredicate(() => new BaseHotLoadSafety(
             Volatile.Read(ref baseHotLoadSafe) != 0,
             Volatile.Read(ref baseHotLoadSafetyGeneration)));
         manager.SelectionChanged += OnBackendSelectionChanged;
-        audio ??= new AudioEngine(gameMixerBackend);
-        audio.Started += lipSync.Start;
-        audio.Finished += _ => lipSync.Stop();
-        audio.Started += line => QueueFrameworkAction(() =>
+        if (audio is null)
         {
-            IsSpeaking = true;
-            LineStarted?.Invoke(line);
-        }, "Audio-start framework dispatch failed");
-        audio.Finished += line => QueueFrameworkAction(() =>
-        {
-            IsSpeaking = false;
-            LineFinished?.Invoke(line);
-        }, "Audio-finish notification framework dispatch failed");
-        audio.Finished += line =>
-        {
-            CompleteDebugPlayback(line);
-            QueueFrameworkAction(() => OnAudioFinished(line), "Audio-finished framework dispatch failed");
-        };
-        audio.Failed += (line, error) =>
-        {
-            CompleteDebugPlayback(line, error);
-            QueueFrameworkAction(() => OnAudioFailed(line, error), "Audio-failure framework dispatch failed");
-        };
-        audio.Started += line => QueueFrameworkAction(() =>
-        {
-            if (line.SourceQuest == DebugLineSource) Volatile.Write(ref debugPlaybackActive, 1);
-        }, "Debug audio-start framework dispatch failed");
-        audio.Finished += line => QueueFrameworkAction(() =>
-        {
-            if (line.SourceQuest != DebugLineSource) return;
-            Volatile.Write(ref debugPlaybackActive, 0);
-            if (line.State == DubLineState.Completed) Volatile.Write(ref debugStatus, $"{line.SpeakerName}: playback passed");
-            line.Dispose();
-        }, "Debug audio-finish framework dispatch failed");
-        audio.Finished += line => QueueFrameworkAction(() =>
-        {
-            if (line.SourceQuest != DebugLineSource || audioBackendSession.IsSceneLocked) return;
-            audioBackendSession.EndDebug();
-        }, "Debug audio session restore dispatch failed");
+            audio = new AudioEngine(gameMixerBackend);
+            audio.Started += lipSync.Start;
+            audio.Finished += lipSync.Stop;
+            audio.Started += line => QueueFrameworkAction(() =>
+            {
+                LineStarted?.Invoke(line);
+            }, "Audio-start framework dispatch failed");
+            audio.Finished += line => QueueFrameworkAction(() =>
+            {
+                LineFinished?.Invoke(line);
+            }, "Audio-finish notification framework dispatch failed");
+            audio.Finished += line =>
+            {
+                CompleteDebugPlayback(line);
+                QueueFrameworkAction(() => OnAudioFinished(line), "Audio-finished framework dispatch failed");
+            };
+            audio.Failed += (line, error) =>
+            {
+                CompleteDebugPlayback(line, error);
+                QueueFrameworkAction(() => OnAudioFailed(line, error), "Audio-failure framework dispatch failed");
+            };
+            audio.Started += line => QueueFrameworkAction(() =>
+            {
+                if (line.SourceQuest == DebugLineSource) Volatile.Write(ref debugPlaybackActive, 1);
+            }, "Debug audio-start framework dispatch failed");
+            audio.Finished += line => QueueFrameworkAction(() =>
+            {
+                if (line.SourceQuest != DebugLineSource) return;
+                Volatile.Write(ref debugPlaybackActive, 0);
+                if (line.State == DubLineState.Completed) Volatile.Write(ref debugStatus, $"{line.SpeakerName}: playback passed");
+                line.Dispose();
+            }, "Debug audio-finish framework dispatch failed");
+            audio.Finished += line => QueueFrameworkAction(() =>
+            {
+                if (line.SourceQuest != DebugLineSource || audioBackendSession.IsSceneLocked) return;
+                audioBackendSession.EndDebug();
+            }, "Debug audio session restore dispatch failed");
+        }
         var language = CurrentLanguage();
         Volatile.Write(ref frameworkLanguage, language);
         scheduler = new DubScheduler(
@@ -313,18 +368,28 @@ public sealed class SessionCoordinator : IAsyncDisposable
             lineCache,
             manager.ModelHash,
             language,
-            () => Math.Min(Math.Max(0, configuration.CacheLimitBytes), 256L * 1024 * 1024));
+            () => Math.Min(Math.Max(0, configuration.CacheLimitBytes), 256L * 1024 * 1024),
+            dialogueSpeech, () => configuration.EnableDialogueSoundEffects);
         scheduler.LineBuffered += line => QueueFrameworkAction(
             () => OnLineBuffered(line), "Buffered-line framework dispatch failed");
-        scheduler.PredictionStreamable += _ => QueueFrameworkAction(
-            TryCompleteAutoAdvance, "Prediction-streamable framework dispatch failed");
+        scheduler.AudioAvailable += line =>
+        {
+            if (!String.Equals(line.SourceQuest, PreDubLineSource, StringComparison.Ordinal)
+                && !bootstrap.IsChangingQuality && !cutsceneControl.IsPaused
+                && !line.Token.IsCancellationRequested && gameMixerBackend is { } mixer)
+                _ = ObservePreparedAudioAsync(line, mixer, configuration.Volume);
+        };
         scheduler.LineFailed += (line, error) =>
         {
             log.Error(error, "Synthesis failed for line {Serial}", line.Sequence);
             QueueFrameworkAction(() =>
             {
-                if (line.ActualStatus == ActualStatus.Actual && session?.Epoch == line.SessionEpoch)
+                if (!cutsceneControl.IsPaused && line.ActualStatus == ActualStatus.Actual && session?.Epoch == line.SessionEpoch
+                    && line.ActualTalkSerial is { } serial && talk.Current?.Serial == serial)
+                {
                     Volatile.Write(ref suppressAutomaticAdvance, 0);
+                    cutsceneControl.HideLine(serial);
+                }
             }, "Failed-line auto-advance release dispatch failed");
         };
         scheduler.LineProcessed += OnSchedulerLineProcessed;
@@ -337,7 +402,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
     private void OnVoiceDesignReady(string designPath, string codecPath)
     {
         var manager = bootstrap.RuntimeManager;
-        if (manager is null || Volatile.Read(ref disposed) != 0) return;
+        if (manager is null || Volatile.Read(ref disposed) != 0 || bootstrap.IsChangingQuality
+            || designPath != bootstrap.VoiceDesignPath || codecPath != bootstrap.ActiveModels?.CodecPath) return;
         voiceDesignPath = designPath;
         voiceDesignCodecPath = codecPath;
         QueueFrameworkAction(() => InitializeDomainPoolOnFramework(manager),
@@ -346,7 +412,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
 
     private void InitializeDomainPoolOnFramework(RuntimeManager manager)
     {
-        if (Volatile.Read(ref disposed) != 0 || domainPool is not null) return;
+        if (Volatile.Read(ref disposed) != 0 || domainPool is not null
+            || !ReferenceEquals(runtimeManager, manager) || !ReferenceEquals(bootstrap.RuntimeManager, manager)) return;
         var pool = new CastingDomainPool(
             voices,
             catalog,
@@ -479,23 +546,23 @@ public sealed class SessionCoordinator : IAsyncDisposable
     private async Task SwitchVoiceDesignBackendAsync(
         VoiceDesigner designer, string backendName, TaskCompletionSource completion)
     {
+        var entered = false;
         try
         {
             await Task.Yield();
             await debugGate.WaitAsync(officialObservationShutdown.Token).ConfigureAwait(false);
-            try
-            {
-                await designer.SwitchBackendAsync(backendName, officialObservationShutdown.Token)
-                    .ConfigureAwait(false);
-            }
-            finally { debugGate.Release(); }
+            entered = true;
+            if (bootstrap.IsStopping || !ReferenceEquals(voiceDesigner, designer)) return;
+            await designer.SwitchBackendAsync(backendName, officialObservationShutdown.Token)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (officialObservationShutdown.IsCancellationRequested) { }
         catch (Exception error)
         {
             log.Error(error, "VoiceDesign backend migration failed");
             var manager = runtimeManager;
-            if (manager is not null && Volatile.Read(ref disposed) == 0)
+            if (manager is not null && !bootstrap.IsStopping && Volatile.Read(ref disposed) == 0
+                && ReferenceEquals(voiceDesigner, designer))
             {
                 try
                 {
@@ -532,6 +599,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
         }
         finally
         {
+            if (entered) debugGate.Release();
             lock (backendSwitchGate)
             {
                 completion.TrySetResult();
@@ -546,15 +614,18 @@ public sealed class SessionCoordinator : IAsyncDisposable
     private void OnCutsceneStartedOnFramework()
     {
         if (Volatile.Read(ref disposed) != 0) return;
+        cutsceneControl.BeginScene();
+        cutsceneControl.HideLine(cutsceneControl.Snapshot.TalkSerial);
         CancelPreDubOnFramework();
         InvalidateBaseHotLoadSafetyOnFramework();
         domainPool?.Pause();
         domainPool?.ResetActivation();
         domainPool?.ActivateTerritory(territoryPlaceName(client.TerritoryType));
         CancelSession();
+        cutsceneVoices.Reset();
+        if (cutsceneControl.IsPaused || bootstrap.IsChangingQuality || !bootstrap.IsReady) return;
         SelectSceneAudioBackend();
         session = new CutsceneSession(Interlocked.Increment(ref nextEpoch), client.TerritoryType);
-        cutsceneVoices.Reset();
         cutsceneSpeakerKeys.Clear();
         cutsceneSpeakerAssignments.Clear();
         prefetcher.BeginSession();
@@ -568,6 +639,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
     private void OnCutsceneEndedOnFramework()
     {
         if (Volatile.Read(ref disposed) != 0) return;
+        cutsceneControl.EndScene();
+        Volatile.Write(ref suppressAutomaticAdvance, 0);
         domainPool?.Pause();
         cutsceneVoices.Reset();
         CancelSession();
@@ -590,6 +663,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
             OnCutsceneStartedOnFramework();
             return;
         }
+        cutsceneControl.EndScene();
+        Volatile.Write(ref suppressAutomaticAdvance, 0);
         CancelPreDubOnFramework();
         InvalidateBaseHotLoadSafetyOnFramework();
         domainPool?.Pause();
@@ -608,10 +683,13 @@ public sealed class SessionCoordinator : IAsyncDisposable
     private void OnLogoutOnFramework()
     {
         if (Volatile.Read(ref disposed) != 0) return;
+        cutsceneControl.EndScene();
+        Volatile.Write(ref suppressAutomaticAdvance, 0);
         InvalidateBaseHotLoadSafetyOnFramework();
         domainPool?.Pause();
         domainPool?.ResetActivation();
         CancelPreDubOnFramework();
+        msqProgress.Reset();
         CancelSession();
         EndSceneAudioBackend();
     }
@@ -622,9 +700,10 @@ public sealed class SessionCoordinator : IAsyncDisposable
     private void OnConditionChangeOnFramework(ConditionFlag flag, bool value)
     {
         if (Volatile.Read(ref disposed) != 0) return;
-        if (flag != ConditionFlag.InCombat) return;
+        if (flag is not (ConditionFlag.InCombat or ConditionFlag.BetweenAreas or ConditionFlag.BetweenAreas51)) return;
         if (value)
         {
+            domainPool?.Pause();
             CancelPreDubOnFramework();
             InvalidateBaseHotLoadSafetyOnFramework();
         }
@@ -656,46 +735,109 @@ public sealed class SessionCoordinator : IAsyncDisposable
         RequestBaseHotLoadRestore();
     }
 
+    private void OnPreDubUpdate(IFramework _)
+    {
+        if (Volatile.Read(ref disposed) != 0) return;
+        var now = Environment.TickCount64;
+        if (now < nextPreDubRefresh) return;
+        nextPreDubRefresh = now + 2000;
+        try { SchedulePreDubOnFramework(); }
+        catch (Exception error) { log.Warning(error, "MSQ pre-dub refresh failed"); }
+    }
+
     private void SchedulePreDubOnFramework()
     {
-        var manager = runtimeManager;
-        if (Volatile.Read(ref disposed) != 0 || !configuration.Enabled
-            || !configuration.PreDubUpcomingCutscenes
-            || cutscenes.IsInCutscene || condition[ConditionFlag.InCombat]
-            || scheduler is null || manager is null || !manager.IsReady
-            || bootstrap.State != BootstrapState.Ready || manager.IsSwitching
-            || Volatile.Read(ref debugRunning) != 0 || Volatile.Read(ref debugPlaybackActive) != 0
-            || Volatile.Read(ref exclusiveOperationActive) != 0)
-            return;
+        if (!CanPreDubOnFramework()) return;
+        var manager = runtimeManager!;
 
         IReadOnlyList<uint> candidates;
-        try { candidates = msqProgress.GetUpcomingTrackedCutscenes(PreDubCandidateLimit); }
+        try { candidates = msqProgress.GetUpcomingCutscenes(PreDubCandidateLimit); }
         catch (Exception error)
         {
             log.Warning(error, "MSQ pre-dub frontier could not be read");
             return;
         }
 
-        var scenes = new List<(uint CutsceneId, CutsceneVoiceLine[] Lines)>();
-        foreach (var cutsceneId in candidates)
+        if (candidates.Count == 0)
         {
-            var manifest = cutsceneVoices.GetManifest(cutsceneId);
-            if (manifest is null) continue;
-            var synthetic = manifest.Lines
-                .Where(line => !line.IsVoiced && !line.IsPlayerChoice)
-                .ToArray();
-            if (synthetic.Length == 0) continue;
-            scenes.Add((cutsceneId, synthetic));
-            if (scenes.Count == PreDubSceneLimit) break;
+            var hadPreDub = preDubSession is not null;
+            CancelPreDubOnFramework();
+            if (hadPreDub)
+            {
+                UpdateBaseHotLoadSafetyOnFramework();
+                RequestBaseHotLoadRestore();
+            }
+            return;
         }
-        if (scenes.Count == 0) return;
+        var context = cutsceneVoices.SnapshotKey();
+        var key = PreDubRequestKey(manager, context, candidates);
+        var language = CurrentLanguage();
+        var modelHash = manager.ModelHash;
+        var availability = new Dictionary<string, bool>(StringComparer.Ordinal);
+        _ = preDubPlanner.Request(key, candidates, context,
+            scenes => ApplyPreDubPlanOnFramework(manager, key, scenes), CanPrepareAsync);
+
+        async ValueTask<bool> CanPrepareAsync(CutsceneVoiceLine line, CancellationToken token)
+        {
+            var group = line.OfficialGroupId is { Length: > 0 }
+                ? officialVoiceCatalog.GetGroup(line.OfficialGroupId)
+                : officialVoiceCatalog.Resolve(line.ActorNpcBaseId, line.ActorToken, language);
+            if (group is null) return false;
+            if (availability.TryGetValue(group.Id, out var available)) return available;
+            var profile = await voices.GetBestVoiceByStableKeyAsync(
+                OfficialVoiceCatalog.CanonicalSpeakerKey(group.Id), language, modelHash, token)
+                .ConfigureAwait(false);
+            availability[group.Id] = available = profile is { Kind: VoiceProfileKind.Official };
+            return available;
+        }
+    }
+
+    private static string PreDubRequestKey(RuntimeManager manager, CutsceneManifestKey context,
+        IReadOnlyList<uint> candidates) =>
+        $"{manager.ModelHash}\0{context.TextLanguage}\0{context.VoiceLanguage}\0{String.Join(",", candidates)}";
+
+    private bool IsChangingAreas => condition[ConditionFlag.BetweenAreas] || condition[ConditionFlag.BetweenAreas51];
+
+    private bool CanPreDubOnFramework() => Volatile.Read(ref disposed) == 0 && client.IsLoggedIn
+        && configuration.Enabled && configuration.PreDubUpcomingCutscenes
+        && !cutscenes.IsInCutscene && !condition[ConditionFlag.InCombat] && !IsChangingAreas
+        && scheduler is not null && runtimeManager is { IsReady: true, IsSwitching: false }
+        && bootstrap.State == BootstrapState.Ready
+        && Volatile.Read(ref debugRunning) == 0 && Volatile.Read(ref debugPlaybackActive) == 0
+        && Volatile.Read(ref exclusiveOperationActive) == 0;
+
+    private void ApplyPreDubPlanOnFramework(RuntimeManager manager, string key, IReadOnlyList<PreDubScene> scenes)
+    {
+        var currentScheduler = scheduler;
+        if (!ReferenceEquals(manager, runtimeManager) || currentScheduler is null || !CanPreDubOnFramework())
+        {
+            preDubPlanner.Cancel();
+            return;
+        }
+        if (key != PreDubRequestKey(manager, cutsceneVoices.SnapshotKey(),
+            msqProgress.GetUpcomingCutscenes(PreDubCandidateLimit)))
+        {
+            preDubPlanner.Cancel();
+            SchedulePreDubOnFramework();
+            return;
+        }
+        if (scenes.Count == 0)
+        {
+            if (preDubSession is not null)
+            {
+                CancelPreDubSessionOnFramework();
+                UpdateBaseHotLoadSafetyOnFramework();
+                RequestBaseHotLoadRestore();
+            }
+            return;
+        }
 
         var language = CurrentLanguage();
         var planKey = $"{manager.ModelHash}\0{language}\0{String.Join(",", scenes.Select(scene => scene.CutsceneId))}";
         if (preDubSession is not null)
         {
             if (String.Equals(preDubPlanKey, planKey, StringComparison.Ordinal)) return;
-            CancelPreDubOnFramework();
+            CancelPreDubSessionOnFramework();
         }
         if (String.Equals(completedPreDubPlanKey, planKey, StringComparison.Ordinal)) return;
 
@@ -747,7 +889,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
         preDubFailed = false;
         EnsureCutsceneBaseResidency();
         InvalidateBaseHotLoadSafetyOnFramework();
-        foreach (var line in added) scheduler.Enqueue(line);
+        foreach (var line in added) currentScheduler.Enqueue(line);
         log.Information(
             "MSQ pre-dub scheduled Scenes={Scenes} Lines={Lines} DeferredActors={DeferredActors}",
             String.Join(",", scenes.Select(scene => scene.CutsceneId)), added.Count, unresolved);
@@ -780,12 +922,21 @@ public sealed class SessionCoordinator : IAsyncDisposable
         UpdateBaseHotLoadSafetyOnFramework();
         RequestBaseHotLoadRestore();
         if (failed)
-            log.Warning("MSQ pre-dub stopped with one or more uncached lines; retry deferred until next safe-state change");
+        {
+            preDubPlanner.Cancel();
+            log.Warning("MSQ pre-dub stopped with one or more uncached lines; retrying at the next safe refresh");
+        }
         else
             log.Information("MSQ pre-dub completed Plan={Plan}", completedKey ?? String.Empty);
     }
 
     private void CancelPreDubOnFramework()
+    {
+        preDubPlanner.Cancel();
+        CancelPreDubSessionOnFramework();
+    }
+
+    private void CancelPreDubSessionOnFramework()
     {
         var current = preDubSession;
         if (current is null) return;
@@ -802,6 +953,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
     {
         var safe = !cutscenes.IsInCutscene
                    && !condition[ConditionFlag.InCombat]
+                    && !IsChangingAreas
                    && preDubSession is null
                    && scheduler?.HasUrgentWork != true
                    && bootstrap.State == BootstrapState.Ready
@@ -858,8 +1010,25 @@ public sealed class SessionCoordinator : IAsyncDisposable
 
     private void OnLineChangedOnFramework(ActualTalkLine line)
     {
-        if (Volatile.Read(ref disposed) != 0 || !configuration.Enabled
+        if (Volatile.Read(ref disposed) != 0 || !configuration.Enabled || bootstrap.IsChangingQuality || !bootstrap.IsReady
             || (!cutscenes.IsInCutscene && scheduler?.HasUrgentWork != true)) return;
+        if (cutsceneControl.IsPaused)
+        {
+            try
+            {
+                var declared = cutsceneVoices.Resolve(line);
+                if (configuration.PreDubUpcomingCutscenes && cutsceneVoices.CurrentCutsceneId is { } pausedSceneId)
+                    msqProgress.ObserveCutscene(pausedSceneId);
+                cutsceneControl.ObserveLine(line.Serial, line.NativeVoice is null
+                    && !cutsceneVoices.CurrentDialogueIsNative && declared?.IsPlayerChoice != true);
+            }
+            catch (Exception error)
+            {
+                cutsceneControl.ObserveLine(line.Serial, false);
+                log.Warning(error, "Paused cutscene dialogue classification failed");
+            }
+            return;
+        }
         if (session is null && cutscenes.IsInCutscene)
         {
             log.Warning("Recovering missing cutscene synthesis session from Talk line Serial={Serial}",
@@ -869,9 +1038,6 @@ public sealed class SessionCoordinator : IAsyncDisposable
         if (session is null || scheduler is null) return;
         Interlocked.Increment(ref talkIdleGeneration);
         InvalidateBaseHotLoadSafetyOnFramework();
-        Volatile.Write(ref gameControlledAdvanceSerial, 0);
-        Volatile.Write(ref talkAdvanceContext,
-            new(line.Serial, cutsceneVoices.IsCurrentCutsceneUnskippable()));
         // Own autoplay from the first observed frame. CUTB/native detection
         // releases it for player choices or genuine native VO; synthetic
         // resolution must not race the game's text-speed timer.
@@ -879,15 +1045,22 @@ public sealed class SessionCoordinator : IAsyncDisposable
         var capturedSession = session;
         ResolvedSpeaker capturedResolved;
         CutsceneVoiceLine? declaredVoice;
+        bool declaredNativeVoice;
         string language;
         string? firstTerritory;
         try
         {
             capturedResolved = SnapshotResolvedSpeaker(speakers.Resolve(line, capturedSession.Epoch));
+            log.Debug("Talk actor snapshot Serial={Serial} Source={Source} NpcBaseId={NpcBaseId} GameObjectId={GameObjectId} RowKey={RowKey}",
+                line.Serial, line.Actor is null ? "fallback" : "native", capturedResolved.NpcBaseId ?? 0,
+                line.Actor?.GameObjectId ?? 0, line.RowKey ?? "unavailable");
             language = CurrentLanguage();
             firstTerritory = territoryPlaceName(capturedSession.TerritoryId);
             declaredVoice = cutsceneVoices.Resolve(line);
-            if (declaredVoice is null)
+            if (configuration.PreDubUpcomingCutscenes && cutsceneVoices.CurrentCutsceneId is { } sceneId)
+                msqProgress.ObserveCutscene(sceneId);
+            declaredNativeVoice = line.NativeVoice is not null || cutsceneVoices.CurrentDialogueIsNative;
+            if (declaredVoice is null && !declaredNativeVoice)
             {
                 LogCutb(
                     "CUTB lookup missed TalkSerial={TalkSerial} Reason={Reason}",
@@ -925,6 +1098,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
         Interlocked.Exchange(ref pendingAutoAdvance, null);
         CancelAutoAdvanceRetry();
         CancelActualLines();
+        cutsceneControl.ObserveLine(line.Serial, !declaredNativeVoice && declaredVoice?.IsPlayerChoice != true);
         if (declaredVoice is { IsPlayerChoice: true })
         {
             Volatile.Write(ref suppressAutomaticAdvance, 0);
@@ -933,56 +1107,58 @@ public sealed class SessionCoordinator : IAsyncDisposable
                 line.Serial, declaredVoice.Key);
             return;
         }
-        if (declaredVoice is { IsVoiced: true })
+        if (declaredNativeVoice)
         {
             Volatile.Write(ref suppressAutomaticAdvance, 0);
             LogCutb(
                 "CUTB declared native VO TalkSerial={Serial} Key={Key} Actor={Actor}",
-                line.Serial, declaredVoice.Key, declaredVoice.ActorToken);
+                line.Serial, declaredVoice?.Key ?? "ambiguous-native", declaredVoice?.ActorToken ?? "unknown");
+            if (declaredVoice is not null)
+                QueueLineHandling(line, capturedSession, capturedResolved, language, firstTerritory,
+                    declaredVoice, nativeOnly: true);
             return;
         }
         QueueLineHandling(line, capturedSession, capturedResolved, language, firstTerritory, declaredVoice);
     }
 
-    private bool ShouldPreserveGameControlledPacing(long talkSerial)
-    {
-        if (Volatile.Read(ref gameControlledAdvanceSerial) == talkSerial) return true;
-        var context = Volatile.Read(ref talkAdvanceContext);
-        if (context is null || context.TalkSerial != talkSerial
-            || !TalkAdvancePolicy.ShouldPreserveGameControlledPacing(
-                context.CutsceneUnskippable,
-                talk.IsAutomaticOnlyPresentation(talkSerial))) return false;
-        Volatile.Write(ref gameControlledAdvanceSerial, talkSerial);
-        if (configuration.AutoAdvanceDiagnostics)
-            log.Information(
-                "Preserving game-controlled pacing for unskippable automatic-only Talk line Serial={Serial}",
-                talkSerial);
-        return true;
-    }
-
     private void QueueLineHandling(ActualTalkLine line, CutsceneSession capturedSession,
         ResolvedSpeaker capturedResolved, string language, string? firstTerritory,
-        CutsceneVoiceLine? declaredVoice)
+        CutsceneVoiceLine? declaredVoice, bool nativeOnly = false)
     {
+        var future = declaredVoice is null ? null : cutsceneVoices.GetSyntheticFuture(declaredVoice)
+            .Where(value => !String.IsNullOrWhiteSpace(value.Text))
+            .Select(value => new FutureDialogue(value.Key, value.ActorToken, value.Text,
+                value.OfficialGroupId, value.ActorNpcBaseId)).ToArray();
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        CancellationTokenSource cancellation;
         lock (coordinatorTaskGate)
         {
             if (Volatile.Read(ref disposed) != 0) return;
+            cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                capturedSession.CancellationToken, officialObservationShutdown.Token);
+            var previous = Interlocked.Exchange(ref activeTalkHandling, cancellation);
+            try { previous?.Cancel(); }
+            catch (ObjectDisposedException) { }
             coordinatorTasks.Add(completion.Task);
         }
         _ = ObserveLineHandlingAsync(completion, line, capturedSession, capturedResolved, language,
-            firstTerritory, declaredVoice);
+            firstTerritory, declaredVoice, future, nativeOnly, cancellation);
     }
 
     private async Task ObserveLineHandlingAsync(TaskCompletionSource completion, ActualTalkLine line,
         CutsceneSession capturedSession, ResolvedSpeaker capturedResolved, string language,
-        string? firstTerritory, CutsceneVoiceLine? declaredVoice)
+        string? firstTerritory, CutsceneVoiceLine? declaredVoice,
+        IReadOnlyList<FutureDialogue>? future, bool nativeOnly, CancellationTokenSource cancellation)
     {
         try
         {
             await HandleLineAsync(line, capturedSession, capturedResolved, language, firstTerritory,
-                    declaredVoice)
+                    declaredVoice, future, nativeOnly, cancellation.Token)
                 .ConfigureAwait(false);
+            completion.TrySetResult();
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
             completion.TrySetResult();
         }
         catch (Exception error)
@@ -992,24 +1168,32 @@ public sealed class SessionCoordinator : IAsyncDisposable
         }
         finally
         {
+            Interlocked.CompareExchange(ref activeTalkHandling, null, cancellation);
+            cancellation.Dispose();
             lock (coordinatorTaskGate) coordinatorTasks.Remove(completion.Task);
         }
     }
 
     private async Task HandleLineAsync(
         ActualTalkLine actual, CutsceneSession capturedSession, ResolvedSpeaker capturedResolved,
-        string language, string? firstTerritory, CutsceneVoiceLine? declaredVoice)
+        string language, string? firstTerritory, CutsceneVoiceLine? declaredVoice,
+        IReadOnlyList<FutureDialogue>? anchoredFuture, bool nativeOnly, CancellationToken operationToken)
     {
-        using var lineCancellation = CancellationTokenSource.CreateLinkedTokenSource(
-            capturedSession.CancellationToken, officialObservationShutdown.Token);
-        var operationToken = lineCancellation.Token;
         await eventGate.WaitAsync(operationToken).ConfigureAwait(false);
+        var actualScheduled = false;
         try
         {
             if (Volatile.Read(ref disposed) != 0) return;
             var current = capturedSession;
             var currentScheduler = scheduler;
-            if (currentScheduler is null || !IsCurrent(current)) return;
+            bool IsCurrentLine() => IsCurrent(current) && talk.Current?.Serial == actual.Serial;
+            if (currentScheduler is null || !IsCurrentLine()) return;
+            if (nativeOnly)
+            {
+                await ReconcileFutureDialogueAsync(current, currentScheduler, anchoredFuture ?? [],
+                    language, firstTerritory, preserveExisting: true, operationToken).ConfigureAwait(false);
+                return;
+            }
             var resolved = capturedResolved;
             var voiceSex = catalog.ResolveVoiceSex(resolved.Evidence, resolved.Sex);
             if (!String.Equals(voiceSex, resolved.Sex, StringComparison.Ordinal))
@@ -1040,14 +1224,14 @@ public sealed class SessionCoordinator : IAsyncDisposable
                 : await voices.ResolveSpeakerAsync(
                     resolved.StableKey, resolved.NpcBaseId, resolved.DisplayName,
                     current.TerritoryId, language, resolved.Metadata, operationToken).ConfigureAwait(false);
-            if (!IsCurrent(current)) return;
+            if (!IsCurrentLine()) return;
             if (stored is not null)
             {
                 speakerKeys[stored.Id] = stored.StableKey;
                 await AttachShippedOfficialProfileAsync(stored.Id, resolved, officialGroup, language,
                     operationToken).ConfigureAwait(false);
             }
-            if (officialGroup is not null && stored is not null
+            if (officialGroup is not null && stored is not null && DialogueCues.HasSpeech(actual.Text)
                 && await voices.GetBestVoiceAsync(stored.Id, language,
                     (runtimeManager ?? throw new InvalidOperationException("Base runtime is unavailable")).ModelHash,
                     operationToken).ConfigureAwait(false) is null)
@@ -1055,7 +1239,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
                 // A known dubbed character without a learned Base reference is
                 // intentionally silent. Never manufacture a generic designed
                 // identity while native observations are still being learned.
-                Volatile.Write(ref suppressAutomaticAdvance, 0);
+                QueueFrameworkAction(() => ReleaseTalkControl(current, actual.Serial),
+                    "Missing-profile dialogue control release failed");
                 return;
             }
             var casting = resolved.SceneLocal
@@ -1063,7 +1248,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
                 : await ResolveCastingAsync(stored!, resolved, current.TerritoryId, firstTerritory,
                     operationToken)
                     .ConfigureAwait(false);
-            if (!IsCurrent(current)) return;
+            if (!IsCurrentLine()) return;
             if (!resolved.SceneLocal) domainPool?.ActivateResolution(casting);
             var slot = catalog.SelectBestSlot(casting, resolved.Evidence);
             var assignment = new ResolvedLineSpeaker(
@@ -1074,11 +1259,17 @@ public sealed class SessionCoordinator : IAsyncDisposable
                 casting,
                 resolved.Sex,
                 resolved.Archetype,
-                resolved.ActorAddress,
+                resolved.Actor,
                 slot.Id,
                 language);
             var line = current.PromotePrediction(
                 actual.Speaker, actual.Text, assignment, predictionKey: declaredVoice?.Key);
+            if (line?.SpeechPlan is { HasCues: true } prepared
+                && prepared.EffectsEnabled != configuration.EnableDialogueSoundEffects)
+            {
+                line.Cancel(DubLineState.Invalidated);
+                line = null;
+            }
             var promotedPrediction = line is not null;
             if (line is null)
             {
@@ -1093,6 +1284,12 @@ public sealed class SessionCoordinator : IAsyncDisposable
             line.TransientSpeaker = resolved.SceneLocal;
             if (resolved.SceneLocal) line.SpeakerId = null;
             line.ActualTalkSerial = actual.Serial;
+            if (Volatile.Read(ref nativeVoicedTalkSerial) == actual.Serial)
+            {
+                line.TryMarkNativeVoiced(DubLineState.Predicted, DubLineState.Queued,
+                    DubLineState.VoiceResolving, DubLineState.Generating, DubLineState.Buffered, DubLineState.Active);
+                return;
+            }
             cutsceneSpeakerKeys[NormalizeSpeakerToken(actual.Speaker)] = assignment.SpeakerKey;
             cutsceneSpeakerAssignments[NormalizeSpeakerToken(actual.Speaker)] = assignment;
             if (declaredVoice is not null)
@@ -1106,41 +1303,30 @@ public sealed class SessionCoordinator : IAsyncDisposable
                 }
             }
             if (!line.TryMarkNotVoiced()) return;
-            EnsureCutsceneBaseResidency();
+            if (DialogueCues.HasSpeech(line.Text)) EnsureCutsceneBaseResidency();
             Volatile.Write(ref suppressAutomaticAdvance, 1);
             if (promotedPrediction && line.State == DubLineState.Buffered && line.Audio.ProducerCompleted)
                 QueueFrameworkAction(() => OnLineBuffered(line),
                     "Promoted-line framework dispatch failed");
             else if (!promotedPrediction || line.State == DubLineState.Predicted)
                 currentScheduler.Enqueue(line);
+            actualScheduled = true;
 
-            if (declaredVoice is not null)
+            if (anchoredFuture is not null)
             {
-                var immediate = cutsceneVoices.GetImmediateSuccessors(declaredVoice)
-                    .Where(value => !value.IsVoiced && !value.IsPlayerChoice)
-                    .Select(value => value.Key).Distinct(StringComparer.Ordinal).ToArray();
-                line.NextPredictionKeys = immediate;
-                line.NextPredictionKey = immediate.Length == 1 ? immediate[0] : null;
-                var future = cutsceneVoices.GetSyntheticFuture(declaredVoice)
-                    .Select(value => new FutureDialogue(value.Key, value.ActorToken, value.Text,
-                        value.OfficialGroupId, value.ActorNpcBaseId))
-                    .ToArray();
                 await ReconcileFutureDialogueAsync(
-                        current, currentScheduler, future, language, firstTerritory,
+                        current, currentScheduler, anchoredFuture, language, firstTerritory,
                         preserveExisting: promotedPrediction, operationToken)
                     .ConfigureAwait(false);
             }
             else
             {
-                var update = prefetcher.Observe(actual.Speaker, actual.Text);
+                var update = prefetcher.Observe(actual.Speaker, actual.Text,
+                    actorKey: actual.Actor?.StableKey);
                 if (update.Synchronized)
                 {
                     var future = update.Future.Select(value => new FutureDialogue(
                         $"{value.QuestSheet}\0{value.Index}", value.Speaker, value.Text)).ToArray();
-                    line.NextPredictionKey = future.FirstOrDefault()?.Key;
-                    line.NextPredictionKeys = line.NextPredictionKey is null
-                        ? []
-                        : [line.NextPredictionKey];
                     await ReconcileFutureDialogueAsync(
                             current, currentScheduler, future, language, firstTerritory,
                             preserveExisting: promotedPrediction, operationToken)
@@ -1148,13 +1334,18 @@ public sealed class SessionCoordinator : IAsyncDisposable
                 }
                 else if (update.Resynchronized)
                 {
-                    line.NextPredictionKey = null;
-                    line.NextPredictionKeys = [];
                     current.ReconcilePredictions([], preserveExisting: false);
                 }
             }
         }
-        catch (Exception error) { log.Error(error, "Failed to schedule Talk line"); }
+        catch (OperationCanceledException) when (operationToken.IsCancellationRequested) { throw; }
+        catch (Exception error)
+        {
+            log.Error(error, "Failed to schedule Talk line");
+            if (!actualScheduled)
+                QueueFrameworkAction(() => ReleaseTalkControl(capturedSession, actual.Serial),
+                    "Failed dialogue control release dispatch failed");
+        }
         finally { eventGate.Release(); }
     }
 
@@ -1206,7 +1397,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
                 cutsceneSpeakerKeys[normalizedActor] = stored.StableKey;
                 cutsceneSpeakerAssignments[normalizedActor] = new(
                     stored.StableKey, live.DisplayName, stored.Id, live.Evidence, casting,
-                    live.Sex, live.Archetype, live.ActorAddress,
+                    live.Sex, live.Archetype, live.Actor,
                     catalog.SelectBestSlot(casting, live.Evidence).Id, language);
                 continue;
             }
@@ -1216,6 +1407,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
             cutsceneSpeakerKeys[normalizedActor] = match.StableKey;
             profileCache[ProfileCacheKey(match.StableKey, language, modelHash)] = match.Profile;
         }
+        token.ThrowIfCancellationRequested();
         var predictions = future.Select(value =>
         {
             var official = value.OfficialGroupId is { Length: > 0 }
@@ -1243,6 +1435,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
         var added = current.ReconcilePredictions(predictions, preserveExisting);
         foreach (var line in added)
         {
+            token.ThrowIfCancellationRequested();
             if (!IsCurrent(current))
             {
                 line.Cancel(DubLineState.Invalidated);
@@ -1281,8 +1474,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
                 predictedProfile = await GetShippedOfficialProfileAsync(group, language, token)
                     .ConfigureAwait(false);
                 if (predictedProfile is null)
-                    throw new InvalidOperationException(
-                        $"Official voice profile '{officialGroupId}' is unavailable for {language}");
+                    return VoiceResolution.DeferredPrediction;
             }
             if (predictedProfile is not null)
             {
@@ -1335,9 +1527,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
             return VoiceResolution.Ready(pooled.Reference);
         }
         var evidence = line.CastingEvidence ?? new SpeakerCastingEvidence(line.SpeakerKey, Sex: line.VoiceSex);
-        var fallbackProfile = await voices.GetBestVoiceByStableKeyAsync(
-            VoiceRegistry.DomainFallbackSpeakerKey(casting.DomainId,
-                catalog.FallbackVariantId(casting, evidence)), language, currentModelHash, token)
+        var fallbackProfile = await voices.GetFallbackVoiceAsync(
+            casting.DomainId, catalog.FallbackVariantId(casting, evidence), language, currentModelHash, token)
             .ConfigureAwait(false);
         if (fallbackProfile is not null)
         {
@@ -1363,9 +1554,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
         line.Casting = casting;
         var currentModelHash = (runtimeManager
             ?? throw new InvalidOperationException("Base runtime is unavailable")).ModelHash;
-        var fallbackProfile = await voices.GetBestVoiceByStableKeyAsync(
-            VoiceRegistry.DomainFallbackSpeakerKey(casting.DomainId,
-                catalog.FallbackVariantId(casting, evidence)), language, currentModelHash, token)
+        var fallbackProfile = await voices.GetFallbackVoiceAsync(
+            casting.DomainId, catalog.FallbackVariantId(casting, evidence), language, currentModelHash, token)
             .ConfigureAwait(false);
         if (fallbackProfile is not null)
             return VoiceResolution.Ready(fallbackProfile.Reference);
@@ -1539,7 +1729,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
         var inCombat = condition[ConditionFlag.InCombat];
         var manager = runtimeManager;
         var designer = voiceDesigner;
-        var canWork = !inCutscene && !inCombat && preDubSession is null
+        var canWork = client.IsLoggedIn && !inCutscene && !inCombat && !IsChangingAreas && preDubSession is null
                       && scheduler?.HasUrgentWork != true
                       && bootstrap.State == BootstrapState.Ready
                       && manager?.IsSwitching != true
@@ -1631,9 +1821,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
         }
         if (profile is null)
         {
-            var fallback = await voices.GetBestVoiceByStableKeyAsync(
-                VoiceRegistry.DomainFallbackSpeakerKey(casting.DomainId,
-                    catalog.FallbackVariantId(casting, resolved.Evidence)),
+            var fallback = await voices.GetFallbackVoiceAsync(
+                casting.DomainId, catalog.FallbackVariantId(casting, resolved.Evidence),
                 language, modelHash, token).ConfigureAwait(false);
             if (fallback is not null)
                 profile = await voices.SaveAndAssignAsync(speaker.Id, fallback, token).ConfigureAwait(false);
@@ -1686,17 +1875,22 @@ public sealed class SessionCoordinator : IAsyncDisposable
 
     private void OnLineBuffered(DubLine line)
     {
+        if (cutsceneControl.IsPaused || !configuration.Enabled || line.IsTerminal) return;
         if (String.Equals(line.SourceQuest, PreDubLineSource, StringComparison.Ordinal)) return;
+        if (line.SpeechPlan?.IsSilent == true)
+        {
+            line.Cancel(DubLineState.Cancelled);
+            if (line.ActualStatus == ActualStatus.Actual && session is { } currentSession
+                && line.ActualTalkSerial is { } talkSerial)
+                ReleaseTalkControl(currentSession, talkSerial);
+            return;
+        }
         if (line.ActualStatus == ActualStatus.Predicted)
         {
             if (gameMixerBackend is { } mixer)
             {
                 var gain = configuration.Volume;
-                _ = ObservePreparedPredictionAsync(line, mixer, gain);
-            }
-            else
-            {
-                TryCompleteAutoAdvance();
+                _ = ObservePreparedAudioAsync(line, mixer, gain);
             }
             return;
         }
@@ -1720,40 +1914,54 @@ public sealed class SessionCoordinator : IAsyncDisposable
         if (line is not null) OnLineBuffered(line);
     }, "Talk presentation-ready framework dispatch failed");
 
-    private async Task ObservePreparedPredictionAsync(
+    private void OnNativeVoiceStarted(ActualTalkLine actual) => QueueFrameworkAction(() =>
+    {
+        if (talk.Current?.Serial != actual.Serial) return;
+        cutsceneControl.HideLine(actual.Serial);
+        if (session is not { } current) return;
+        Volatile.Write(ref nativeVoicedTalkSerial, actual.Serial);
+        foreach (var line in current.Lines.Where(line => line.ActualTalkSerial == actual.Serial))
+        {
+            scheduler?.NativeVoiceStarted(current.Epoch, line.Sequence);
+            line.TryMarkNativeVoiced(DubLineState.Predicted, DubLineState.Queued,
+                DubLineState.VoiceResolving, DubLineState.Generating, DubLineState.Buffered, DubLineState.Active);
+        }
+        audio?.Stop(discardPreparedGameMixerAssets: false);
+        lipSync.Stop();
+        Interlocked.Exchange(ref pendingAutoAdvance, null);
+        CancelAutoAdvanceRetry();
+        Volatile.Write(ref suppressAutomaticAdvance, 0);
+        log.Debug("Native voice owns Talk Serial={Serial} RowKey={RowKey} Resource={Resource}",
+            actual.Serial, actual.RowKey ?? "unavailable", actual.NativeVoice?.ResourcePath ?? "unavailable");
+    }, "Native-voice precedence framework dispatch failed");
+
+    private async Task ObservePreparedAudioAsync(
         DubLine line, IGameMixerAudioBackend mixer, float volume)
     {
         try
         {
             await mixer.PrepareAsync(line, volume, line.Token).ConfigureAwait(false);
-            QueueFrameworkAction(TryCompleteAutoAdvance,
-                "Prepared-prediction auto-advance dispatch failed");
         }
         catch (OperationCanceledException) when (line.Token.IsCancellationRequested) { }
         catch (Exception error)
         {
-            log.Warning(error, "Game-mixer preparation failed for predicted line {Sequence}", line.Sequence);
+            log.Warning(error, "Game-mixer preparation failed for line {Sequence}", line.Sequence);
             line.Cancel(DubLineState.Failed);
-            QueueFrameworkAction(TryCompleteAutoAdvance,
-                "Failed-prediction auto-advance dispatch failed");
+            QueueFrameworkAction(() => OnAudioFailed(line, error), "Audio preparation failure dispatch failed");
         }
     }
 
     private void OnAudioFinished(DubLine line)
     {
-        if (!configuration.AutoAdvanceDubbedCutsceneDialogue
+        if (cutsceneControl.IsPaused || !configuration.AutoAdvanceDubbedCutsceneDialogue
             || line.SourceQuest == DebugLineSource
-            || line.ActualStatus != ActualStatus.Actual
-            || line.State != DubLineState.Completed
-            || line.NativeVoiceStatus == NativeVoiceStatus.NativeVoiced
             || line.ActualTalkSerial is not { } serial
             || !cutscenes.IsInCutscene
             || session is not { } current
-            || talk.Current?.Serial != serial
-            || ShouldPreserveGameControlledPacing(serial)) return;
+            || talk.Current?.Serial is not { } currentSerial
+            || !AutoAdvancePolicy.CanAdvanceCompletedLine(line, current.Epoch, currentSerial)) return;
         Interlocked.Exchange(ref pendingAutoAdvance,
-            new(current.Epoch, line.Sequence, serial, line.SpeakerName, line.Text,
-                line.NextPredictionKeys));
+            new(current.Epoch, serial, line.SpeakerName, line.Text));
         TryCompleteAutoAdvance();
     }
 
@@ -1761,9 +1969,15 @@ public sealed class SessionCoordinator : IAsyncDisposable
     {
         log.Warning(error, "Selected audio backend failed for line {Sequence}; backend remains scene-locked",
             line.Sequence);
-        if (line.ActualStatus == ActualStatus.Actual && session?.Epoch == line.SessionEpoch)
+        if (!cutsceneControl.IsPaused && line.ActualStatus == ActualStatus.Actual && session?.Epoch == line.SessionEpoch
+            && line.ActualTalkSerial is { } serial && talk.Current?.Serial == serial)
+        {
             Volatile.Write(ref suppressAutomaticAdvance, 0);
-        IsSpeaking = false;
+            cutsceneControl.HideLine(serial);
+            lipSync.Stop(line);
+            Interlocked.Exchange(ref pendingAutoAdvance, null);
+            CancelAutoAdvanceRetry();
+        }
     }
 
     private void TryCompleteAutoAdvance()
@@ -1771,36 +1985,14 @@ public sealed class SessionCoordinator : IAsyncDisposable
         var pending = Volatile.Read(ref pendingAutoAdvance);
         var current = session;
         if (pending is null) return;
-        if (current is null || current.Epoch != pending.SessionEpoch
+        if (cutsceneControl.IsPaused || current is null || current.Epoch != pending.SessionEpoch
             || current.CancellationToken.IsCancellationRequested
             || !configuration.AutoAdvanceDubbedCutsceneDialogue)
         {
-            Interlocked.CompareExchange(ref pendingAutoAdvance, null, pending);
-            CancelAutoAdvanceRetry();
+            CompleteAutoAdvance(pending);
             return;
         }
-        if (ShouldPreserveGameControlledPacing(pending.TalkSerial))
-        {
-            Interlocked.CompareExchange(ref pendingAutoAdvance, null, pending);
-            CancelAutoAdvanceRetry();
-            return;
-        }
-        var successorState = AutoAdvancePolicy.GetSuccessorSetState(
-            current.Lines, pending.NextPredictionKeys,
-            true);
-        if (successorState == AutoAdvanceSuccessorState.Waiting)
-        {
-            // The next prediction may still be resolving.  Keep one bounded
-            // retry task alive so readiness events are not the sole progress
-            // path; the task exits on Talk/session invalidation or disposal.
-            ScheduleAutoAdvanceRetry(pending);
-            return;
-        }
-        if (successorState == AutoAdvanceSuccessorState.Unavailable)
-            log.Warning("Auto-advance successor {PredictionKey} is unavailable; advancing after completed playback",
-                pending.NextPredictionKeys.Count == 0
-                    ? "unknown"
-                    : String.Join(',', pending.NextPredictionKeys));
+        // Speculative preparation cannot gate progression.
         // Framework dispatch can fail transiently while Talk is redrawing.
         // Keep the request until the exact guarded advance succeeds; the
         // dispatch gate prevents repeated queued attempts from spinning.
@@ -1811,7 +2003,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
             {
                 try
                 {
-                    if (configuration.AutoAdvanceDubbedCutsceneDialogue && cutscenes.IsInCutscene
+                    if (!cutsceneControl.IsPaused && configuration.AutoAdvanceDubbedCutsceneDialogue && cutscenes.IsInCutscene
                         && ReferenceEquals(Volatile.Read(ref pendingAutoAdvance), pending))
                     {
                         if (talk.TryAdvance(pending.TalkSerial, pending.Speaker, pending.Text))
@@ -1906,6 +2098,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
     {
         var current = session;
         return Volatile.Read(ref disposed) == 0
+            && !cutsceneControl.IsPaused
+            && ReferenceEquals(Volatile.Read(ref pendingAutoAdvance), pending)
             && configuration.AutoAdvanceDubbedCutsceneDialogue
             && current is not null && current.Epoch == pending.SessionEpoch
             && !current.CancellationToken.IsCancellationRequested;
@@ -1933,7 +2127,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
         CancellationTokenSource? cancellation;
         lock (autoAdvanceRetryGate)
         {
-            Interlocked.CompareExchange(ref pendingAutoAdvance, null, pending);
+            if (!ReferenceEquals(Interlocked.CompareExchange(ref pendingAutoAdvance, null, pending), pending)) return;
             cancellation = autoAdvanceRetryCancellation;
             autoAdvanceRetryCancellation = null;
             autoAdvanceRetryTask = null;
@@ -1964,19 +2158,21 @@ public sealed class SessionCoordinator : IAsyncDisposable
         catch (Exception error) { log.Warning(error, "Auto-advance retry task failed during shutdown"); }
     }
 
-    private void OnTalkClosed(ActualTalkLine? _) => QueueFrameworkAction(
-        OnTalkClosedOnFramework, "Talk-close framework dispatch failed");
+    private void OnTalkClosed(ActualTalkLine? closed) => QueueFrameworkAction(() =>
+    {
+        if (TalkAdvancePolicy.CanClosePresentation(closed?.Serial, talk.Current?.Serial))
+            OnTalkClosedOnFramework();
+    }, "Talk-close framework dispatch failed");
 
     private void OnTalkClosedOnFramework()
     {
         if (Volatile.Read(ref disposed) != 0) return;
+        cutsceneControl.HideLine(cutsceneControl.Snapshot.TalkSerial);
         autoAdvanceDiagnostics.Reset();
         Interlocked.Exchange(ref pendingAutoAdvance, null);
         CancelAutoAdvanceRetry();
         Volatile.Write(ref autoAdvanceDispatching, 0);
         Volatile.Write(ref suppressAutomaticAdvance, 0);
-        Volatile.Write(ref talkAdvanceContext, null);
-        Volatile.Write(ref gameControlledAdvanceSerial, 0);
         audio?.Stop();
         lipSync.Stop();
         CancelActualLines();
@@ -2011,6 +2207,9 @@ public sealed class SessionCoordinator : IAsyncDisposable
 
     private void CancelActualLines()
     {
+        var pending = Interlocked.Exchange(ref activeTalkHandling, null);
+        try { pending?.Cancel(); }
+        catch (ObjectDisposedException) { }
         if (session is not { } current) return;
         foreach (var line in current.Lines.Where(line => line.ActualStatus == ActualStatus.Actual && !line.IsTerminal))
             line.Cancel(DubLineState.Invalidated);
@@ -2185,7 +2384,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
     };
 
     private static bool SameActorEvidence(ResolvedSpeaker expected, ResolvedSpeaker observed) =>
-        expected.ActorAddress == observed.ActorAddress && expected.NpcBaseId == observed.NpcBaseId;
+        expected.Actor == observed.Actor && expected.NpcBaseId == observed.NpcBaseId;
 
     private void ScheduleDebugBaseVoiceRefresh(string language)
     {
@@ -2257,8 +2456,15 @@ public sealed class SessionCoordinator : IAsyncDisposable
     }
 
     private bool IsCurrent(CutsceneSession candidate) =>
-        Volatile.Read(ref disposed) == 0 && ReferenceEquals(session, candidate)
+        Volatile.Read(ref disposed) == 0 && !cutsceneControl.IsPaused && !bootstrap.IsChangingQuality && ReferenceEquals(session, candidate)
         && !candidate.CancellationToken.IsCancellationRequested;
+
+    private void ReleaseTalkControl(CutsceneSession expected, long serial)
+    {
+        if (cutsceneControl.IsPaused || !ReferenceEquals(session, expected) || talk.Current?.Serial != serial) return;
+        Volatile.Write(ref suppressAutomaticAdvance, 0);
+        cutsceneControl.HideLine(serial);
+    }
 
     private void CancelSession(bool avoidFrameworkDispatch = false)
     {
@@ -2267,11 +2473,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
         Interlocked.Exchange(ref pendingAutoAdvance, null);
         CancelAutoAdvanceRetry();
         Volatile.Write(ref autoAdvanceDispatching, 0);
-        Volatile.Write(ref talkAdvanceContext, null);
-        Volatile.Write(ref gameControlledAdvanceSerial, 0);
         audio?.Stop();
         lipSync.Stop(avoidFrameworkDispatch);
-        IsSpeaking = false;
         if (session is { } current) scheduler?.InvalidateEpoch(current.Epoch);
         session?.Dispose();
         session = null;
@@ -2342,6 +2545,172 @@ public sealed class SessionCoordinator : IAsyncDisposable
             await manager.SetDesiredAsync(backend, operationToken).ConfigureAwait(false);
         });
 
+    public Task ApplyAutomaticBackendAsync(CancellationToken token) =>
+        RunCoordinatorExclusiveAsync(token, async operationToken =>
+        {
+            var manager = runtimeManager
+                ?? throw new InvalidOperationException("The inference runtime is not ready");
+            await manager.RefreshBackendsAsync(operationToken).ConfigureAwait(false);
+        });
+
+    public Task RefreshDeviceMemoryAsync(CancellationToken token) =>
+        RunCoordinatorExclusiveAsync(token, operationToken =>
+            (runtimeManager ?? throw new InvalidOperationException("The inference runtime is not ready"))
+                .RefreshDeviceMemoryAsync(operationToken));
+
+    public async Task SetQualityAsync(QualityPreset quality,
+        Func<string, CancellationToken, Task> prepareProfiles, CancellationToken token)
+    {
+        _ = ModelQualitySelection.Resolve(quality);
+        if (bootstrap.ActiveModels?.Quality == quality && bootstrap.IsReady) return;
+        if (Interlocked.CompareExchange(ref qualityChangeClaimed, 1, 0) != 0)
+            throw new InvalidOperationException("A model quality change is already running");
+        bootstrap.SetQualityChanging(true);
+        try
+        {
+            CancelDebugInference();
+            await RunCoordinatorExclusiveAsync(token, async operationToken =>
+            {
+                await DispatchFrameworkActionAsync(() =>
+                {
+                    CancelActualLines();
+                    CancelPreDubOnFramework();
+                    CancelSession();
+                    cutsceneControl.HideLine(cutsceneControl.Snapshot.TalkSerial);
+                    Volatile.Write(ref suppressAutomaticAdvance, 0);
+                }, operationToken).ConfigureAwait(false);
+                var target = await bootstrap.PrepareQualityAsync(quality, operationToken).ConfigureAwait(false);
+                await prepareProfiles(target.ModelHash, operationToken).ConfigureAwait(false);
+                var previous = bootstrap.ActiveModels;
+                var detached = false;
+                try
+                {
+                    detached = true;
+                    await ReleaseModelServicesAsync().ConfigureAwait(false);
+                    await bootstrap.SwitchQualityAsync(target, operationToken).ConfigureAwait(false);
+                    await BindCurrentModelServicesAsync(operationToken).ConfigureAwait(false);
+                    operationToken.ThrowIfCancellationRequested();
+                    await DispatchFrameworkActionAsync(() =>
+                    {
+                        if (bootstrap.IsStopping) throw new OperationCanceledException();
+                        bootstrap.CommitQuality(quality);
+                    }, CancellationToken.None).ConfigureAwait(false);
+                    log.Information("Voice quality switched to {Quality} on {Backend}", quality,
+                        runtimeManager?.Selection?.Effective.Name ?? "unavailable");
+                }
+                catch (Exception failure)
+                {
+                    if (detached && previous is not null && bootstrap.CanRestoreQuality)
+                    {
+                        try
+                        {
+                            await ReleaseModelServicesAsync().ConfigureAwait(false);
+                            if (bootstrap.ActiveModels?.ModelHash != previous.ModelHash
+                                || bootstrap.RuntimeManager is not { IsReady: true })
+                                await bootstrap.SwitchQualityAsync(previous, CancellationToken.None).ConfigureAwait(false);
+                            await BindCurrentModelServicesAsync(CancellationToken.None).ConfigureAwait(false);
+                        }
+                        catch (Exception rollbackFailure)
+                        {
+                            var aggregate = new AggregateException("Model change and restoring model services failed", failure, rollbackFailure);
+                            bootstrap.FailQualityChange(aggregate);
+                            throw aggregate;
+                        }
+                    }
+                    else if (!bootstrap.IsStopping) bootstrap.FailQualityChange(failure);
+                    throw;
+                }
+            }).ConfigureAwait(false);
+        }
+        finally
+        {
+            try
+            {
+                Task? migration;
+                lock (backendSwitchGate) migration = backendSwitchTask;
+                if (migration is not null && !bootstrap.IsStopping)
+                    await migration.ConfigureAwait(false);
+            }
+            finally
+            {
+                bootstrap.SetQualityChanging(false);
+                Volatile.Write(ref qualityChangeClaimed, 0);
+            }
+            if (Volatile.Read(ref disposed) == 0 && !bootstrap.IsStopping)
+                QueueFrameworkAction(() =>
+                {
+                    if (!bootstrap.IsReady) return;
+                    UpdateBaseHotLoadSafetyOnFramework();
+                    RequestBaseHotLoadRestore();
+                    if (talk.Current is { } current) OnLineChangedOnFramework(current);
+                    SchedulePreDubOnFramework();
+                }, "Model change dialogue restore failed");
+        }
+    }
+
+    private async Task ReleaseModelServicesAsync()
+    {
+        var failures = new List<Exception>();
+        var manager = runtimeManager;
+        runtimeManager = null;
+        if (manager is not null) manager.SelectionChanged -= OnBackendSelectionChanged;
+        await eventGate.WaitAsync().ConfigureAwait(false);
+        eventGate.Release();
+        var oldScheduler = scheduler;
+        scheduler = null;
+        if (oldScheduler is not null)
+        {
+            try { await oldScheduler.DisposeAsync().ConfigureAwait(false); }
+            catch (Exception failure) { failures.Add(failure); }
+        }
+        var oldPool = domainPool;
+        domainPool = null;
+        if (oldPool is not null)
+        {
+            try { await oldPool.DisposeAsync().ConfigureAwait(false); }
+            catch (Exception failure) { failures.Add(failure); }
+        }
+        Task<VoiceDesigner>? initialization;
+        lock (coordinatorTaskGate) initialization = voiceDesignerInitialization;
+        if (initialization is not null)
+        {
+            try { await initialization.ConfigureAwait(false); }
+            catch (Exception failure) when (manager?.HasNativeOwnershipFailure == true) { failures.Add(failure); }
+            catch (Exception) { }
+        }
+        lock (coordinatorTaskGate) voiceDesignerInitialization = null;
+        if (voiceDesigner is { } designer)
+        {
+            try
+            {
+                await designer.DisposeAsync().ConfigureAwait(false);
+                voiceDesigner = null;
+            }
+            catch (Exception failure) { failures.Add(failure); }
+        }
+        voiceDesignPath = null;
+        voiceDesignCodecPath = null;
+        Volatile.Write(ref debugVoiceCache, null);
+        if (failures.Count > 0) throw new AggregateException("Retiring model services failed", failures);
+    }
+
+    private async Task BindCurrentModelServicesAsync(CancellationToken token)
+    {
+        var manager = bootstrap.RuntimeManager
+            ?? throw new InvalidOperationException("The replacement runtime is unavailable");
+        var models = bootstrap.ActiveModels
+            ?? throw new InvalidOperationException("The replacement model assets are unavailable");
+        await DispatchFrameworkActionAsync(() =>
+        {
+            if (!ReferenceEquals(bootstrap.RuntimeManager, manager)) return;
+            OnRuntimeReadyOnFramework(manager);
+            voiceDesignPath = models.DesignPath;
+            voiceDesignCodecPath = models.CodecPath;
+            if (models.DesignPath is not null) InitializeDomainPoolOnFramework(manager);
+        }, token).ConfigureAwait(false);
+        await RefreshDebugBaseVoicesAsync(CurrentLanguage(), token).ConfigureAwait(false);
+    }
+
     public Task RebuildBackendBenchmarkAsync(CancellationToken token) =>
         RunCoordinatorExclusiveAsync(token, async operationToken =>
         {
@@ -2374,6 +2743,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
     {
         CancellationTokenSource? linked = null;
         var entered = false;
+        Exception? failure = null;
+        CancellationToken cancelled = default;
         try
         {
             linked = CancellationTokenSource.CreateLinkedTokenSource(
@@ -2387,59 +2758,79 @@ public sealed class SessionCoordinator : IAsyncDisposable
             if (domainPool is { } pool)
                 await pool.WaitForIdleAsync(linked.Token).ConfigureAwait(false);
             await operation(linked.Token).ConfigureAwait(false);
-            completion.TrySetResult();
         }
         catch (OperationCanceledException error) when (linked?.IsCancellationRequested == true)
         {
-            completion.TrySetCanceled(error.CancellationToken);
+            cancelled = error.CancellationToken.IsCancellationRequested ? error.CancellationToken : linked!.Token;
         }
         catch (Exception error)
         {
-            completion.TrySetException(error);
+            failure = error;
         }
         finally
         {
-            if (entered)
+            try
             {
-                try
-                {
-                    if (CanRestoreAfterExclusiveOperation())
-                    {
-                        var state = await CaptureFrameworkStateAsync(officialObservationShutdown.Token)
-                            .ConfigureAwait(false);
-                        if (CanRestoreAfterExclusiveOperation())
-                            domainPool?.ActivateTerritory(state.TerritoryPlaceName);
-                    }
-                }
-                catch (Exception) when (!CanRestoreAfterExclusiveOperation()) { }
-                catch (Exception error)
-                {
-                    log.Warning(error, "Failed to restore casting-domain activation after exclusive operation");
-                }
-                Volatile.Write(ref exclusiveOperationActive, 0);
-                if (CanRestoreAfterExclusiveOperation())
+                if (entered)
                 {
                     try
                     {
-                        await CaptureFrameworkStateAsync(officialObservationShutdown.Token).ConfigureAwait(false);
+                        if (CanRestoreAfterExclusiveOperation())
+                        {
+                            var state = await CaptureFrameworkStateAsync(officialObservationShutdown.Token)
+                                .ConfigureAwait(false);
+                            if (CanRestoreAfterExclusiveOperation())
+                                domainPool?.ActivateTerritory(state.TerritoryPlaceName);
+                        }
                     }
                     catch (Exception) when (!CanRestoreAfterExclusiveOperation()) { }
                     catch (Exception error)
                     {
-                        log.Warning(error, "Failed to recompute Base hot-load safety after exclusive operation");
+                        log.Warning(error, "Failed to restore casting-domain activation after exclusive operation");
+                    }
+                    Volatile.Write(ref exclusiveOperationActive, 0);
+                    if (CanRestoreAfterExclusiveOperation())
+                    {
+                        try
+                        {
+                            await CaptureFrameworkStateAsync(officialObservationShutdown.Token).ConfigureAwait(false);
+                        }
+                        catch (Exception) when (!CanRestoreAfterExclusiveOperation()) { }
+                        catch (Exception error)
+                        {
+                            log.Warning(error, "Failed to recompute Base hot-load safety after exclusive operation");
+                        }
+                    }
+                    if (CanRestoreAfterExclusiveOperation())
+                    {
+                        RequestBaseHotLoadRestore();
+                        QueueFrameworkAction(SchedulePreDubOnFramework,
+                            "Pre-dub restore after exclusive operation failed");
                     }
                 }
-                if (CanRestoreAfterExclusiveOperation())
-                {
-                    RequestBaseHotLoadRestore();
-                    QueueFrameworkAction(SchedulePreDubOnFramework,
-                        "Pre-dub restore after exclusive operation failed");
-                }
-                debugGate.Release();
             }
-            lock (coordinatorTaskGate) coordinatorTasks.Remove(completion.Task);
-            linked?.Dispose();
+            catch (Exception cleanupFailure)
+            {
+                failure = failure is null ? cleanupFailure : new AggregateException(failure, cleanupFailure);
+            }
+            finally
+            {
+                if (entered)
+                {
+                    Volatile.Write(ref exclusiveOperationActive, 0);
+                    try { debugGate.Release(); }
+                    catch (Exception releaseFailure)
+                    {
+                        failure = failure is null ? releaseFailure : new AggregateException(failure, releaseFailure);
+                    }
+                }
+                linked?.Dispose();
+            }
         }
+        if (failure is not null) completion.TrySetException(failure);
+        else if (cancelled.IsCancellationRequested) completion.TrySetCanceled(cancelled);
+        else completion.TrySetResult();
+        lock (coordinatorTaskGate) coordinatorTasks.Remove(completion.Task);
     }
 
     private bool CanRestoreAfterExclusiveOperation() =>
@@ -2448,6 +2839,17 @@ public sealed class SessionCoordinator : IAsyncDisposable
         && !framework.IsFrameworkUnloading;
 
     public CastingPoolSnapshot? GetCastingPoolSnapshot() => domainPool?.Snapshot;
+
+    public PlaybackActivity GetPlaybackActivity()
+    {
+        var lines = session?.Lines;
+        return new(
+            IsSpeaking,
+            lines?.Any(line => line.State is DubLineState.Generating or DubLineState.VoiceResolving) == true
+                || Volatile.Read(ref debugRunning) != 0,
+            cutsceneControl.IsPaused,
+            gameMixerBackend?.OutputPeak);
+    }
 
     public DebugInferenceSnapshot GetDebugInferenceSnapshot(string language)
     {
@@ -2459,9 +2861,10 @@ public sealed class SessionCoordinator : IAsyncDisposable
         var ready = bootstrap.State == BootstrapState.Ready
                     && manager is not null && selected is not null && voiceDesignPath is not null && audio is not null
                     && manager.IsReady && (designer is null || designer.IsReady)
-                    && Volatile.Read(ref exclusiveOperationActive) == 0
+                    && !bootstrap.IsChangingQuality && Volatile.Read(ref exclusiveOperationActive) == 0
                     && !normalPlayback;
-        var readiness = cutscenes.IsInCutscene
+        var readiness = bootstrap.IsChangingQuality ? "Changing model quality"
+            : cutscenes.IsInCutscene
             ? "Unavailable during a cutscene"
             : condition[ConditionFlag.InCombat]
                 ? "Unavailable during combat"
@@ -2474,8 +2877,9 @@ public sealed class SessionCoordinator : IAsyncDisposable
                             ? "Ready; VoiceDesign loads on first use"
                             : "Base and VoiceDesign initialized"
                         : "Waiting for model files, runtime, and audio initialization";
-        var cachedLanguage = Volatile.Read(ref debugVoiceLanguage);
-        if (!String.Equals(cachedLanguage, normalizedLanguage, StringComparison.Ordinal))
+        var cached = Volatile.Read(ref debugVoiceCache);
+        var cacheMatches = cached?.Language == normalizedLanguage && cached.ModelHash == manager?.ModelHash;
+        if (!cacheMatches)
             readiness += "; refresh Base voices for this language";
         return new(
             ready && !cutscenes.IsInCutscene && !condition[ConditionFlag.InCombat],
@@ -2484,10 +2888,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
             selected is null ? "Preparing..." : $"{selected.Description} ({selected.Type})",
             designer?.BackendName ?? "not loaded",
             Volatile.Read(ref debugStatus),
-            String.Equals(cachedLanguage, normalizedLanguage, StringComparison.Ordinal)
-                ? Volatile.Read(ref debugBaseVoices)
-                : officialVoiceCatalog.Groups.Select(value =>
-                    new DebugBaseVoiceOption(value.Id, value.Label, false)).ToArray());
+            cacheMatches ? cached!.Options : defaultDebugBaseVoices,
+            cacheMatches);
     }
 
     private Task<DebugInferenceSnapshot> CaptureDebugInferenceSnapshotAsync(
@@ -2527,31 +2929,39 @@ public sealed class SessionCoordinator : IAsyncDisposable
 
     public async Task RefreshDebugBaseVoicesAsync(string language, CancellationToken token)
     {
+        var cache = await LoadDebugBaseVoicesAsync(language, token).ConfigureAwait(false);
+        if (cache.ModelHash == Volatile.Read(ref runtimeManager)?.ModelHash)
+            Volatile.Write(ref debugVoiceCache, cache);
+    }
+
+    private async Task<DebugVoiceCache> LoadDebugBaseVoicesAsync(string language, CancellationToken token)
+    {
         var normalizedLanguage = NormalizeLanguage(language);
+        var modelHash = (runtimeManager
+            ?? throw new InvalidOperationException("Base runtime is unavailable")).ModelHash;
         var options = new List<DebugBaseVoiceOption>(officialVoiceCatalog.Groups.Count);
-        debugBaseProfiles.Clear();
+        var profiles = new Dictionary<string, StoredVoiceProfile>(StringComparer.Ordinal);
         foreach (var group in officialVoiceCatalog.Groups)
         {
             var profile = await voices.GetBestVoiceByStableKeyAsync(
                 OfficialVoiceCatalog.CanonicalSpeakerKey(group.Id), normalizedLanguage,
-                (runtimeManager ?? throw new InvalidOperationException("Base runtime is unavailable")).ModelHash,
-                token).ConfigureAwait(false);
+                modelHash, token).ConfigureAwait(false);
             if (profile is { Kind: VoiceProfileKind.Official })
-                debugBaseProfiles[group.Id] = profile;
-            var ready = debugBaseProfiles.ContainsKey(group.Id);
+                profiles[group.Id] = profile;
+            var ready = profiles.ContainsKey(group.Id);
             options.Add(new(group.Id, group.Label, ready,
                 ready ? "Ready" : "Not installed"));
         }
         var groupLabels = officialVoiceCatalog.Groups.Select(value => value.Label).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var captured in await voices.GetOfficialVoiceProfilesAsync(normalizedLanguage, token).ConfigureAwait(false))
+        foreach (var captured in await voices.GetOfficialVoiceProfilesAsync(normalizedLanguage,
+                     modelHash, token).ConfigureAwait(false))
         {
             if (groupLabels.Contains(captured.DisplayName)) continue;
             var key = $"captured:{captured.Profile.Id}";
-            debugBaseProfiles[key] = captured.Profile;
+            profiles[key] = captured.Profile;
             options.Add(new(key, captured.DisplayName, true, "Ready — captured"));
         }
-        Volatile.Write(ref debugBaseVoices, options);
-        Volatile.Write(ref debugVoiceLanguage, normalizedLanguage);
+        return new(normalizedLanguage, modelHash, options, profiles);
     }
 
     private Task AttachShippedOfficialProfileAsync(
@@ -2608,14 +3018,14 @@ public sealed class SessionCoordinator : IAsyncDisposable
         string text,
         string instruction,
         string language,
-        CancellationToken token) => RunDebugAsync("VoiceDesign", text, language, false, token, async (line, activeToken) =>
+        CancellationToken token) => RunDebugAsync("VoiceDesign", text, language, false, token, async (passage, output, activeToken) =>
     {
         var designer = await EnsureVoiceDesignerAsync(activeToken).ConfigureAwait(false);
         var backend = runtimeManager?.Selection?.Effective.Name
                       ?? throw new InvalidOperationException("No inference device is selected");
         await designer.SwitchBackendAsync(backend, activeToken).ConfigureAwait(false);
         await designer.SynthesizeDesignedLineOnlyAsync(
-            line.Text, instruction, 0x5245534f4e414e43L, line.Language!, line.Audio, activeToken).ConfigureAwait(false);
+            passage, instruction, 0x5245534f4e414e43L, NormalizeLanguage(language), output, activeToken).ConfigureAwait(false);
     });
 
     public async Task RunBaseDebugAsync(
@@ -2625,11 +3035,20 @@ public sealed class SessionCoordinator : IAsyncDisposable
         CancellationToken token)
     {
         var normalizedLanguage = NormalizeLanguage(language);
-        if (!String.Equals(Volatile.Read(ref debugVoiceLanguage), normalizedLanguage, StringComparison.Ordinal))
-            await RefreshDebugBaseVoicesAsync(normalizedLanguage, token).ConfigureAwait(false);
-        await RunDebugAsync($"Base-{presetKey}", text, normalizedLanguage, true, token, async (line, activeToken) =>
+        var modelHash = runtimeManager?.ModelHash
+            ?? throw new InvalidOperationException("Base runtime is not initialized");
+        var cache = Volatile.Read(ref debugVoiceCache);
+        if (cache?.Language != normalizedLanguage || cache.ModelHash != modelHash)
         {
-            if (!debugBaseProfiles.TryGetValue(presetKey, out var profile))
+            cache = await LoadDebugBaseVoicesAsync(normalizedLanguage, token).ConfigureAwait(false);
+            Volatile.Write(ref debugVoiceCache, cache);
+        }
+        // A language refresh must not change the profile of an in-flight preview.
+        cache.Profiles.TryGetValue(presetKey, out var selectedProfile);
+        var profile = selectedProfile;
+        await RunDebugAsync($"Base-{presetKey}", text, normalizedLanguage, true, token, async (passage, output, activeToken) =>
+        {
+            if (profile is null)
             {
                 var group = officialVoiceCatalog.Groups.SingleOrDefault(value => value.Id == presetKey)
                             ?? throw new InvalidOperationException("The selected official voice group does not exist");
@@ -2642,15 +3061,13 @@ public sealed class SessionCoordinator : IAsyncDisposable
                               .ConfigureAwait(false)
                           ?? throw new InvalidOperationException(
                               "The selected character's official profile pack is not installed");
-                debugBaseProfiles[presetKey] = profile;
                 await RefreshDebugBaseVoicesAsync(normalizedLanguage, activeToken).ConfigureAwait(false);
             }
             var manager = runtimeManager ?? throw new InvalidOperationException("Base runtime is not initialized");
             await manager.SynthesizeAsync(
-                new(line.Text, line.Language!, profile.Reference, null, 0x4241534554455354L),
-                line.Audio,
+                new SynthesisRequest(passage, normalizedLanguage, profile.Reference, null, 0x4241534554455354L)
+                    .WithoutDialogueCues(), output,
                 activeToken).ConfigureAwait(false);
-            line.Audio.Complete();
         }).ConfigureAwait(false);
     }
 
@@ -2682,7 +3099,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
         string language,
         bool applyBaseCloneCorrection,
         CancellationToken token,
-        Func<DubLine, CancellationToken, Task> synthesize)
+        Func<string, StreamingAudioBuffer, CancellationToken, Task> synthesize)
     {
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (debugCancellationGate)
@@ -2702,7 +3119,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
         string language,
         bool applyBaseCloneCorrection,
         CancellationToken token,
-        Func<DubLine, CancellationToken, Task> synthesize,
+        Func<string, StreamingAudioBuffer, CancellationToken, Task> synthesize,
         TaskCompletionSource completion)
     {
         try
@@ -2725,7 +3142,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
         string language,
         bool applyBaseCloneCorrection,
         CancellationToken token,
-        Func<DubLine, CancellationToken, Task> synthesize)
+        Func<string, StreamingAudioBuffer, CancellationToken, Task> synthesize)
     {
         if (String.IsNullOrWhiteSpace(text)) throw new ArgumentException("Sample sentence is empty", nameof(text));
         using var coordinatorCancellation = CancellationTokenSource.CreateLinkedTokenSource(
@@ -2755,6 +3172,12 @@ public sealed class SessionCoordinator : IAsyncDisposable
             domainPool?.Pause();
             if (domainPool is { } pool)
                 await pool.WaitForIdleAsync(cancellation.Token).ConfigureAwait(false);
+            var speechPlan = dialogueSpeech.Prepare(text.Trim(), configuration.EnableDialogueSoundEffects);
+            if (speechPlan.IsSilent)
+            {
+                Volatile.Write(ref debugStatus, $"{kind}: no speech or available effects in this sample");
+                return;
+            }
             Volatile.Write(ref debugStatus, $"{kind}: generating on {snapshot.Device}");
             line = new DubLine
             {
@@ -2767,7 +3190,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
                 Language = NormalizeLanguage(language),
                 ActualStatus = ActualStatus.Actual,
                 NativeVoiceStatus = NativeVoiceStatus.NotVoiced,
-                ApplyBaseCloneCorrection = applyBaseCloneCorrection,
+                ApplyBaseCloneCorrection = applyBaseCloneCorrection && speechPlan.HasSpeech,
+                SpeechPlan = speechPlan,
                 PlaybackDeadline = DateTimeOffset.MaxValue,
             };
             line.TryTransition(DubLineState.Generating, DubLineState.Predicted);
@@ -2784,7 +3208,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
             }
             await DispatchFrameworkActionAsync(() => audio!.Play(line, configuration.Volume),
                 cancellation.Token).ConfigureAwait(false);
-            await synthesize(line, cancellation.Token).ConfigureAwait(false);
+            await dialogueSpeech.SynthesizeAsync(speechPlan, line.Audio, synthesize, cancellation.Token).ConfigureAwait(false);
             if (debugCapture is not null)
             {
                 var captured = await debugCapture.DrainAsync(cancellation.Token).ConfigureAwait(false);
@@ -2796,7 +3220,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
                 var rawPath = outputStem + "-raw.wav";
                 var correctedPath = outputStem + "-corrected.wav";
                 DebugWavExporter.ExportRaw(rawPath, captured);
-                DebugWavExporter.Export(correctedPath, captured, configuration.Volume);
+                DebugWavExporter.Export(correctedPath, captured, configuration.Volume,
+                    configuration.GetAudioProcessingOptions(), line.ApplyBaseCloneCorrection);
                 debugCapture.Dispose();
                 Volatile.Write(ref debugStatus,
                     $"{kind}: raw/corrected WAVs saved to {debugAudioDirectory}; playback active");
@@ -2896,6 +3321,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
 
     private async ValueTask DisposeCoreAsync(bool disposingFromFrameworkThread)
     {
+        cutsceneControl.EndScene();
         var failures = new List<Exception>();
         void Record(string resource, Exception error)
         {
@@ -2952,6 +3378,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
         cutscenes.Ended -= OnCutsceneEnded;
         talk.LineChanged -= OnLineChanged;
         talk.PresentationReady -= OnTalkPresentationReady;
+        talk.NativeVoiceStarted -= OnNativeVoiceStarted;
         talk.AutoAdvanceReceiveObserved -= OnAutoAdvanceReceiveObserved;
         talk.AutoAdvanceUiObserved -= OnAutoAdvanceUiObserved;
         talk.Advanced -= OnTalkClosed;
@@ -2960,6 +3387,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
         client.TerritoryChanged -= OnTerritoryChanged;
         client.Logout -= OnLogout;
         condition.ConditionChange -= OnConditionChange;
+        framework.Update -= OnPreDubUpdate;
         bootstrap.Ready -= OnRuntimeReady;
         bootstrap.VoiceDesignReady -= OnVoiceDesignReady;
         if (runtimeManager is not null) runtimeManager.SelectionChanged -= OnBackendSelectionChanged;
@@ -2984,6 +3412,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
             await BestEffortAsync("Coordinator maintenance", () => Task.WhenAll(coordinatorOperations));
         if (frameworkDispatchOperations.Length > 0)
             await BestEffortFrameworkAsync("Framework dispatch", () => Task.WhenAll(frameworkDispatchOperations));
+        await BestEffortAsync("Pre-dub planning", () => preDubPlanner.DisposeAsync().AsTask());
+        await BestEffortAsync("MSQ catalogue loading", () => msqProgress.DisposeAsync().AsTask());
         await BestEffortAsync("Auto-advance retry", StopAutoAdvanceRetryAsync);
         await BestEffortAsync("Debug Base-voice refresh", WaitForDebugBaseVoiceRefreshShutdownAsync);
         // Session cancellation was published before any asynchronous drain.

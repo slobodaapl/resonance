@@ -22,21 +22,29 @@ public sealed class BootstrapService : IAsyncDisposable
     private readonly string referenceExtractionDirectory;
     private readonly object disposeGate = new();
     private readonly IProcessLifetimeLease lifetimeLease;
+    private readonly Func<PreparedModelQuality, CancellationToken, Task<RuntimeManager>> runtimeFactory;
     private Task? task;
     private Task? optionalRuntimeTask;
     private Task? disposeTask;
     private int disposed;
+    private int changingQuality;
 
     public BootstrapState State { get; private set; } = BootstrapState.Starting;
     public RuntimeManager? RuntimeManager { get; private set; }
-    public bool IsReady => RuntimeManager is { IsReady: true, HasNativeOwnershipFailure: false }
-                           && State is not BootstrapState.Failed and not BootstrapState.Stopped;
+    public bool IsReady => !IsChangingQuality && RuntimeManager is { IsReady: true, HasNativeOwnershipFailure: false }
+                           && State is BootstrapState.Ready or BootstrapState.DownloadingVoiceDesign;
+    public bool IsChangingQuality => Volatile.Read(ref changingQuality) != 0;
+    internal bool IsStopping => Volatile.Read(ref disposed) != 0 || shutdown.IsCancellationRequested;
+    internal bool CanRestoreQuality => !IsStopping && !lifetimeLease.IsPoisoned
+        && RuntimeManager?.HasNativeOwnershipFailure != true;
+    internal PreparedModelQuality? ActiveModels { get; private set; }
     public string? VoiceDesignPath { get; private set; }
     public Exception? Failure { get; private set; }
     public bool? CudaDriverAvailable { get; private set; }
     public bool IsWineRuntime { get; private set; }
     public IReadOnlyList<string> MissingProtonCudaVariables { get; private set; } = [];
     public AssetProgress? CurrentProgress { get; private set; }
+    public IReadOnlyList<AssetArtifact> ModelAssets { get; private set; } = [];
     public event Action<BootstrapState>? StateChanged;
     public event Action<AssetProgress>? Progress;
     public event Action<RuntimeManager>? Ready;
@@ -46,12 +54,14 @@ public sealed class BootstrapService : IAsyncDisposable
     public event Action? CudaDriverProbeCompleted;
 
     internal BootstrapService(string pluginDirectory, string dataDirectory, Configuration configuration, Action saveConfiguration,
-        IProcessLifetimeLease lifetimeLease)
+        IProcessLifetimeLease lifetimeLease,
+        Func<PreparedModelQuality, CancellationToken, Task<RuntimeManager>>? runtimeFactory = null,
+        HttpClient? modelHttpClient = null)
     {
         this.lifetimeLease = lifetimeLease ?? throw new ArgumentNullException(nameof(lifetimeLease));
         manifestPath = Path.Combine(pluginDirectory, "assets", "models.json");
         runtimeManifestPath = Path.Combine(pluginDirectory, "assets", "runtimes.json");
-        assets = new AssetManager(Path.Combine(dataDirectory, "models"));
+        assets = new AssetManager(Path.Combine(dataDirectory, "models"), modelHttpClient);
         runtimeDirectory = Path.Combine(dataDirectory, "runtimes");
         referenceExtractorPath = StageReferenceExtractor(pluginDirectory, dataDirectory);
         referenceExtractionDirectory = Path.Combine(dataDirectory, "reference-extraction");
@@ -65,6 +75,7 @@ public sealed class BootstrapService : IAsyncDisposable
         runtimePacks.Progress += ReportProgress;
         this.configuration = configuration;
         this.saveConfiguration = saveConfiguration;
+        this.runtimeFactory = runtimeFactory ?? CreateRuntimeAsync;
     }
 
     private static string StageReferenceExtractor(string pluginDirectory, string dataDirectory)
@@ -132,7 +143,9 @@ public sealed class BootstrapService : IAsyncDisposable
         try
         {
             var manifest = await AssetManager.LoadManifestAsync(manifestPath, token).ConfigureAwait(false);
-            var selectedAssets = ModelQualitySelection.Resolve(configuration.Quality);
+            ModelAssets = manifest.Artifacts;
+            var quality = configuration.Quality;
+            var selectedAssets = ModelQualitySelection.Resolve(quality);
             var baseModel = manifest.Artifacts.Single(value => value.Id == selectedAssets.Base);
             var tokenizer = manifest.Artifacts.Single(value => value.Id == selectedAssets.Tokenizer);
             var design = manifest.Artifacts.Single(value => value.Id == selectedAssets.VoiceDesign);
@@ -151,32 +164,9 @@ public sealed class BootstrapService : IAsyncDisposable
             var codecPath = await assets.EnsureAsync(tokenizer, token).ConfigureAwait(false);
 
             SetState(BootstrapState.InitializingRuntime);
-            var runtimeVersion = typeof(BootstrapService).Assembly.GetName().Version?.ToString() ?? "0";
-            var manager = new RuntimeManager(configuration, saveConfiguration, basePath, codecPath,
-                baseModel.Sha256, design.Sha256, runtimeVersion, runtimeDirectory,
-                referenceExtractorPath, referenceExtractionDirectory,
-                nativeFailureReporter: lifetimeLease.Poison);
-            manager.SetPluginLifetimeLease(lifetimeLease);
+            ActiveModels = new(quality, basePath, codecPath, null, baseModel.Sha256, design.Sha256);
+            var manager = await runtimeFactory(ActiveModels, token).ConfigureAwait(false);
             RuntimeManager = manager;
-            try
-            {
-                await manager.InitializeAsync(token).ConfigureAwait(false);
-            }
-            catch (Exception initializationError)
-            {
-                try
-                {
-                    await manager.DisposeAsync().ConfigureAwait(false);
-                }
-                catch (Exception cleanupError)
-                {
-                    lifetimeLease.Poison(new AggregateException(
-                        "Runtime initialization and cleanup both failed", initializationError, cleanupError));
-                    throw new AggregateException("Runtime initialization and cleanup both failed",
-                        initializationError, cleanupError);
-                }
-                throw;
-            }
             SetState(BootstrapState.Ready);
             Ready?.Invoke(manager);
             optionalRuntimeTask = EnsureOptionalRuntimesAsync(manager, token);
@@ -184,6 +174,7 @@ public sealed class BootstrapService : IAsyncDisposable
             {
                 SetState(BootstrapState.DownloadingVoiceDesign);
                 VoiceDesignPath = await assets.EnsureAsync(design, token).ConfigureAwait(false);
+                ActiveModels = ActiveModels with { DesignPath = VoiceDesignPath };
                 if (optionalRuntimeTask is not null) await optionalRuntimeTask.ConfigureAwait(false);
                 VoiceDesignReady?.Invoke(VoiceDesignPath, codecPath);
                 SetState(BootstrapState.Ready);
@@ -211,6 +202,163 @@ public sealed class BootstrapService : IAsyncDisposable
         {
             Failure = error;
             SetState(BootstrapState.Failed);
+        }
+    }
+
+    internal void SetQualityChanging(bool value) => Volatile.Write(ref changingQuality, value ? 1 : 0);
+
+    internal void CancelPendingOperations() => shutdown.Cancel();
+
+    internal void CommitQuality(QualityPreset quality)
+    {
+        var previous = configuration.Quality;
+        var benchmark = configuration.BackendBenchmark;
+        configuration.Quality = quality;
+        configuration.BackendBenchmark = null;
+        try { saveConfiguration(); }
+        catch
+        {
+            configuration.Quality = previous;
+            configuration.BackendBenchmark = benchmark;
+            throw;
+        }
+    }
+
+    internal void FailQualityChange(Exception failure)
+    {
+        Failure = failure;
+        SetState(IsStopping ? BootstrapState.Stopped : BootstrapState.Failed);
+    }
+
+    internal async Task<PreparedModelQuality> PrepareQualityAsync(QualityPreset quality, CancellationToken token)
+    {
+        if (task is { } startup) await startup.WaitAsync(token).ConfigureAwait(false);
+        ThrowIfSwitchUnavailable(token);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, shutdown.Token);
+        if (ModelAssets.Count == 0)
+            ModelAssets = (await AssetManager.LoadManifestAsync(manifestPath, linked.Token).ConfigureAwait(false)).Artifacts;
+        var ids = ModelQualitySelection.Resolve(quality);
+        var model = ModelAssets.Single(value => value.Id == ids.Base);
+        var codec = ModelAssets.Single(value => value.Id == ids.Tokenizer);
+        var design = ModelAssets.Single(value => value.Id == ids.VoiceDesign);
+        if (new[] { model, codec, design }.Any(value => value.Abi != QwenNative.AbiVersion))
+            throw new InvalidDataException("Selected model assets do not match the native runtime ABI");
+        var previousState = State;
+        try
+        {
+            SetState(BootstrapState.DownloadingBase);
+            var basePath = await assets.EnsureAsync(model, linked.Token).ConfigureAwait(false);
+            var codecPath = await assets.EnsureAsync(codec, linked.Token).ConfigureAwait(false);
+            SetState(BootstrapState.DownloadingVoiceDesign);
+            var designPath = await assets.EnsureAsync(design, linked.Token).ConfigureAwait(false);
+            return new(quality, basePath, codecPath, designPath, model.Sha256, design.Sha256);
+        }
+        finally { SetState(IsStopping ? BootstrapState.Stopped : previousState); }
+    }
+
+    internal async Task SwitchQualityAsync(PreparedModelQuality models, CancellationToken token)
+    {
+        ThrowIfSwitchUnavailable(token);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, shutdown.Token);
+        var previous = ActiveModels;
+        SetState(BootstrapState.InitializingRuntime);
+        try
+        {
+            await RetireRuntimeAsync().ConfigureAwait(false);
+            ThrowIfSwitchUnavailable(linked.Token);
+            var manager = await runtimeFactory(models, linked.Token).ConfigureAwait(false);
+            RuntimeManager = manager;
+            ThrowIfSwitchUnavailable(linked.Token);
+            PublishRuntime(models, manager);
+        }
+        catch (Exception failure)
+        {
+            if (IsStopping || lifetimeLease.IsPoisoned || previous is null)
+            {
+                if (IsStopping && !lifetimeLease.IsPoisoned)
+                    await RetireRuntimeAsync().ConfigureAwait(false);
+                FailQualityChange(failure);
+                throw;
+            }
+            try
+            {
+                await RetireRuntimeAsync().ConfigureAwait(false);
+                ThrowIfSwitchUnavailable(shutdown.Token);
+                var restored = await runtimeFactory(previous, shutdown.Token).ConfigureAwait(false);
+                RuntimeManager = restored;
+                ThrowIfSwitchUnavailable(shutdown.Token);
+                PublishRuntime(previous, restored);
+            }
+            catch (Exception rollbackFailure)
+            {
+                var aggregate = new AggregateException("Model switch and restoring the previous quality failed", failure, rollbackFailure);
+                FailQualityChange(aggregate);
+                throw aggregate;
+            }
+            throw;
+        }
+    }
+
+    private void ThrowIfSwitchUnavailable(CancellationToken token)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+        token.ThrowIfCancellationRequested();
+        if (IsStopping) throw new OperationCanceledException(shutdown.Token);
+        if (lifetimeLease.IsPoisoned)
+            throw new InvalidOperationException("Native inference ownership is poisoned; restart is required");
+    }
+
+    private async Task RetireRuntimeAsync()
+    {
+        if (RuntimeManager is not { } previous) return;
+        try { await previous.DisposeAsync().ConfigureAwait(false); }
+        catch (Exception failure)
+        {
+            lifetimeLease.Poison(failure);
+            throw;
+        }
+        RuntimeManager = null;
+    }
+
+    private void PublishRuntime(PreparedModelQuality models, RuntimeManager manager)
+    {
+        RuntimeManager = manager;
+        ActiveModels = models;
+        VoiceDesignPath = models.DesignPath;
+        Failure = null;
+        SetState(BootstrapState.Ready);
+        Ready?.Invoke(manager);
+        if (models.DesignPath is { } design) VoiceDesignReady?.Invoke(design, models.CodecPath);
+    }
+
+    private async Task<RuntimeManager> CreateRuntimeAsync(PreparedModelQuality models, CancellationToken token)
+    {
+        var version = typeof(BootstrapService).Assembly.GetName().Version?.ToString() ?? "0";
+        var manager = new RuntimeManager(configuration, saveConfiguration, models.BasePath, models.CodecPath,
+            models.ModelHash, models.DesignHash, version, runtimeDirectory, referenceExtractorPath,
+            referenceExtractionDirectory, nativeFailureReporter: lifetimeLease.Poison);
+        manager.SetPluginLifetimeLease(lifetimeLease);
+        RuntimeManager = manager;
+        try
+        {
+            await manager.InitializeAsync(token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            return manager;
+        }
+        catch (Exception failure)
+        {
+            try
+            {
+                await manager.DisposeAsync().ConfigureAwait(false);
+                RuntimeManager = null;
+            }
+            catch (Exception cleanupFailure)
+            {
+                var aggregate = new AggregateException("Runtime initialization and cleanup both failed", failure, cleanupFailure);
+                lifetimeLease.Poison(aggregate);
+                throw aggregate;
+            }
+            throw;
         }
     }
 

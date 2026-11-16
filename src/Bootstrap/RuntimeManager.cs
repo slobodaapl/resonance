@@ -88,12 +88,14 @@ public sealed class RuntimeManager : ITtsRuntime
     private int runtimeDisposalFailed;
     private int disposed;
     private Task? disposeTask;
+    private DeviceMemorySnapshot? deviceMemory;
 
     public string ModelHash { get; }
     public string BenchmarkIdentity { get; private set; } = string.Empty;
     public BackendSelection? Selection { get; private set; }
     private BackendSelection? lastStableSelection;
     public IReadOnlyList<BackendInfo> DetectedBackends { get; private set; } = [];
+    public DeviceMemorySnapshot? DeviceMemory => Volatile.Read(ref deviceMemory);
     public ITtsRuntime Runtime => this;
     public RuntimeCapabilities Capabilities
     {
@@ -108,10 +110,12 @@ public sealed class RuntimeManager : ITtsRuntime
         }
     }
     public bool IsSwitching => Volatile.Read(ref switching) != 0;
+    public bool BaseModelLoaded => useExternalBaseHost ? baseHost is { ContextReady: true }
+        : runtime is not null || testSeam?.BaseRuntimeReady == true;
     internal bool UsesExternalBaseHost => useExternalBaseHost;
     internal IProcessLifetimeLease PluginLifetimeLease => pluginLifetimeLease
         ?? throw new InvalidOperationException("Plugin process lifetime lease is not attached");
-    public bool IsReady => (useExternalBaseHost
+    public bool IsReady => Volatile.Read(ref disposed) == 0 && (useExternalBaseHost
             ? Selection is { } selection
                 && (baseHost is null
                     || IsBaseHostReadyForBackend(baseHost, selection.Effective.Name))
@@ -301,7 +305,7 @@ public sealed class RuntimeManager : ITtsRuntime
 
             var linked = CancellationTokenSource.CreateLinkedTokenSource(
                 token, baseHotLoadShutdown.Token);
-            var task = RestoreBaseHotLoadAsync(linked.Token, safety.Generation);
+            var task = Task.Run(() => RestoreBaseHotLoadAsync(linked.Token, safety.Generation));
             baseHotLoadCancellation = linked;
             baseHotLoadTask = task;
             baseHotLoadObserverTask = ObserveBaseHotLoadAsync(task, linked);
@@ -622,6 +626,7 @@ public sealed class RuntimeManager : ITtsRuntime
                 DetectedBackends = await Task.Run(() => QwenCppRuntime.EnumerateBackends(
                     runtimePackDirectory, ownsProcessLease: false,
                     pluginLifetimeLease: PluginLifetimeLease), token).ConfigureAwait(false);
+                PublishDeviceMemory(DetectedBackends);
                 BenchmarkIdentity = BackendBenchmark.Identity(runtimeVersion, ModelHash, designModelHash, configuration.Compute, DetectedBackends);
                 var selection = selector.Select(configuration, DetectedBackends, BenchmarkIdentity);
                 try
@@ -735,6 +740,37 @@ public sealed class RuntimeManager : ITtsRuntime
         finally { gate.Release(); }
     }
 
+    private void PublishDeviceMemory(IReadOnlyList<BackendInfo> devices)
+    {
+        var resident = baseHost is { ContextReady: true } host ? host.ActiveBackendId
+            : runtime is not null ? Selection?.Effective.Name : null;
+        var physicalId = devices.FirstOrDefault(value => value.Name == resident)?.PhysicalDeviceId;
+        Volatile.Write(ref deviceMemory, new(DateTimeOffset.UtcNow, devices, resident, physicalId,
+            resident is null ? 0 : new FileInfo(talkerPath).Length));
+    }
+
+    public async Task RefreshDeviceMemoryAsync(CancellationToken token)
+    {
+        await WaitForBaseOwnershipAsync(nameof(RefreshDeviceMemoryAsync), token).ConfigureAwait(false);
+        try
+        {
+            await gate.WaitAsync(token).ConfigureAwait(false);
+            try
+            {
+                ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+                ThrowIfNativeOwnershipPoisoned();
+                NativeOperationStarted("memory-snapshot");
+                var detected = await Task.Run(() => QwenCppRuntime.EnumerateBackends(
+                    runtimePackDirectory, ownsProcessLease: false,
+                    pluginLifetimeLease: PluginLifetimeLease), token).ConfigureAwait(false);
+                PublishDeviceMemory(detected);
+                DetectedBackends = detected;
+            }
+            finally { gate.Release(); }
+        }
+        finally { baseOwnershipGate.Release(); }
+    }
+
     public async Task RefreshBackendsAsync(CancellationToken token)
     {
         await CancelReferenceExtractionAsync().ConfigureAwait(false);
@@ -753,6 +789,7 @@ public sealed class RuntimeManager : ITtsRuntime
                         ownsProcessLease: false,
                         pluginLifetimeLease: PluginLifetimeLease,
                         refreshSearchPaths: true), token).ConfigureAwait(false);
+                PublishDeviceMemory(detected);
                 var identity = BackendBenchmark.Identity(
                     runtimeVersion, ModelHash, designModelHash, configuration.Compute, detected);
                 var selection = selector.Select(configuration, detected, identity);

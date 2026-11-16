@@ -12,6 +12,7 @@ public static class StreamingStartPolicy
         if (bufferedAudioSeconds <= 0) return false;
         if (producerCompleted) return true;
         if (bufferedAudioSeconds >= estimatedRemainingGenerationSeconds) return true;
-        return measuredRealTimeFactor <= 1.0 && secondsSinceLineObserved >= 1.0;
+        return (measuredRealTimeFactor <= 1.0 || Double.IsPositiveInfinity(measuredRealTimeFactor))
+               && bufferedAudioSeconds >= 0.16 && secondsSinceLineObserved >= 1.0;
     }
 }

@@ -13,7 +13,8 @@ public interface IGameResourceOverride : IDisposable
 public interface IGameMixerSoundPlayer
 {
     Task<nint> PlayAsync(string virtualPath, CancellationToken token);
-    Task StopAsync(nint playback);
+    Task WaitForCompletionAsync(nint playback, string resourcePath, CancellationToken token);
+    Task StopAsync(nint playback, string resourcePath);
 }
 
 public interface IGameMixerAudioBackend : IDisposable
@@ -21,6 +22,7 @@ public interface IGameMixerAudioBackend : IDisposable
     bool IsAvailable { get; }
     bool IsHealthy { get; }
     string Diagnostic { get; }
+    float? OutputPeak => null;
     Task PrepareAsync(DubLine line, float volume, CancellationToken token);
     void Play(
         DubLine line,
@@ -40,6 +42,7 @@ public sealed class FfxivGameMixerAudioBackend : IGameMixerAudioBackend
     private sealed record Playback(long Generation, DubLine Line, CancellationTokenSource Cancellation)
     {
         public nint NativePlayback;
+        public string? NativePath;
         public Task? StopTask;
         public Task? RunTask;
     }
@@ -51,9 +54,12 @@ public sealed class FfxivGameMixerAudioBackend : IGameMixerAudioBackend
     private readonly TimeSpan outputDrainGuard;
     private readonly TimeSpan mappingGrace;
     private readonly Func<CancellationToken, Task<NativeScdTemplate>>? loadNativeScdTemplate;
+    private readonly Func<AudioProcessingOptions>? processingOptions;
     private readonly CancellationTokenSource lifetimeCancellation = new();
     private Playback? playback;
     private readonly Dictionary<DubLine, PreparedPlayback> prepared = [];
+    private readonly Dictionary<DubLine, Task> preparing = [];
+    private long preparationGeneration;
     private long generation;
     private int faulted;
     private string diagnostic;
@@ -65,7 +71,8 @@ public sealed class FfxivGameMixerAudioBackend : IGameMixerAudioBackend
         IGameMixerSoundPlayer soundPlayer,
         TimeSpan? outputDrainGuard = null,
         TimeSpan? mappingGrace = null,
-        Func<CancellationToken, Task<NativeScdTemplate>>? loadNativeScdTemplate = null)
+        Func<CancellationToken, Task<NativeScdTemplate>>? loadNativeScdTemplate = null,
+        Func<AudioProcessingOptions>? processingOptions = null)
     {
         this.resourceOverride = resourceOverride ?? throw new ArgumentNullException(nameof(resourceOverride));
         try
@@ -74,6 +81,7 @@ public sealed class FfxivGameMixerAudioBackend : IGameMixerAudioBackend
             this.outputDrainGuard = outputDrainGuard ?? DefaultOutputDrainGuard;
             this.mappingGrace = mappingGrace ?? GameMixerAssetStore.DefaultGrace;
             this.loadNativeScdTemplate = loadNativeScdTemplate;
+            this.processingOptions = processingOptions;
             if (this.outputDrainGuard < TimeSpan.Zero || this.outputDrainGuard > TimeSpan.FromSeconds(1))
                 throw new ArgumentOutOfRangeException(nameof(outputDrainGuard));
             if (this.mappingGrace < TimeSpan.Zero || this.mappingGrace > TimeSpan.FromMinutes(1))
@@ -150,10 +158,9 @@ public sealed class FfxivGameMixerAudioBackend : IGameMixerAudioBackend
 
     private sealed record PreparedPlayback(
         PublishedGameMixerAsset Asset,
-        double DurationSeconds,
         bool MappingAdded);
 
-    public async Task PrepareAsync(DubLine line, float volume, CancellationToken token)
+    public Task PrepareAsync(DubLine line, float volume, CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(line);
         if (!IsHealthy) throw new InvalidOperationException(Diagnostic);
@@ -162,13 +169,28 @@ public sealed class FfxivGameMixerAudioBackend : IGameMixerAudioBackend
             if (prepared.ContainsKey(line))
             {
                 line.PlaybackAssetReady = true;
-                return;
+                return Task.CompletedTask;
             }
+            if (!preparing.TryGetValue(line, out var task))
+            {
+                var expectedGeneration = preparationGeneration;
+                var processing = processingOptions?.Invoke() ?? AudioProcessingOptions.Default;
+                task = Task.Run(() => PrepareCoreAsync(line, volume, expectedGeneration, processing));
+                preparing.Add(line, task);
+            }
+            return task.WaitAsync(token);
         }
+    }
+
+    private async Task PrepareCoreAsync(
+        DubLine line, float volume, long expectedGeneration, AudioProcessingOptions processing)
+    {
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(line.Token, lifetimeCancellation.Token);
+        var token = cancellation.Token;
         var source = await DrainProducerAsync(line, token).ConfigureAwait(false);
         token.ThrowIfCancellationRequested();
         var pcm = GameMixerPcmEncoder.PrepareMono44100(
-            source, line.ApplyBaseCloneCorrection, Math.Clamp(volume, 0f, 2f));
+            source, line.ApplyBaseCloneCorrection, Math.Clamp(volume, 0f, 2f), processing);
         var template = loadNativeScdTemplate is null
             ? null
             : await loadNativeScdTemplate(token).ConfigureAwait(false);
@@ -192,9 +214,9 @@ public sealed class FfxivGameMixerAudioBackend : IGameMixerAudioBackend
             mappingAdded = true;
             lock (gate)
             {
-                if (Volatile.Read(ref disposed) != 0 || line.IsTerminal)
+                if (Volatile.Read(ref disposed) != 0 || line.IsTerminal || preparationGeneration != expectedGeneration)
                     throw new OperationCanceledException(token);
-                prepared[line] = new(asset, pcm.DurationSeconds, mappingAdded);
+                prepared[line] = new(asset, mappingAdded);
                 line.PlaybackAssetReady = true;
             }
         }
@@ -213,7 +235,7 @@ public sealed class FfxivGameMixerAudioBackend : IGameMixerAudioBackend
         {
             current = playback;
             if (current is { NativePlayback: not 0 } active)
-                current.StopTask = StopNativePlaybackAsync(active.NativePlayback);
+                current.StopTask ??= StopNativePlaybackAsync(active.NativePlayback, active.NativePath!);
             playback = null;
             generation++;
         }
@@ -253,6 +275,8 @@ public sealed class FfxivGameMixerAudioBackend : IGameMixerAudioBackend
         {
             stale = prepared.Values.ToArray();
             prepared.Clear();
+            preparing.Clear();
+            preparationGeneration++;
         }
         foreach (var item in stale)
         {
@@ -288,8 +312,13 @@ public sealed class FfxivGameMixerAudioBackend : IGameMixerAudioBackend
             // The native call is intentionally made at volume 1.0. Configured
             // plugin/game gain is already applied to the encoded PCM, while
             // the SCD is categorized as Voice by the native player.
-            current.NativePlayback = await soundPlayer.PlayAsync(
+            var nativePlayback = await soundPlayer.PlayAsync(
                 asset.VirtualPath, current.Cancellation.Token).ConfigureAwait(false);
+            lock (gate)
+            {
+                current.NativePath = asset.LocalPath;
+                current.NativePlayback = nativePlayback;
+            }
             if (current.NativePlayback == 0)
                 throw new InvalidOperationException("FFXIV SoundManager rejected the Resonance SCD");
             if (!resourceOverride.IsAvailable)
@@ -298,9 +327,14 @@ public sealed class FfxivGameMixerAudioBackend : IGameMixerAudioBackend
             current.Cancellation.Token.ThrowIfCancellationRequested();
             if (!IsCurrent(current)) return;
             started(current.Line);
-            var completionDelay = TimeSpan.FromSeconds(ready.DurationSeconds) + outputDrainGuard;
-            if (completionDelay > TimeSpan.Zero)
-                await Task.Delay(completionDelay, current.Cancellation.Token).ConfigureAwait(false);
+            await soundPlayer.WaitForCompletionAsync(current.NativePlayback, asset.LocalPath,
+                current.Cancellation.Token).ConfigureAwait(false);
+            if (outputDrainGuard > TimeSpan.Zero)
+                await Task.Delay(outputDrainGuard, current.Cancellation.Token).ConfigureAwait(false);
+            if (!IsCurrent(current)) return;
+            lock (gate)
+                current.StopTask ??= StopNativePlaybackAsync(current.NativePlayback, current.NativePath!);
+            await current.StopTask.ConfigureAwait(false);
             if (!IsCurrent(current)) return;
             if (current.Line.TryTransition(DubLineState.Completed, DubLineState.Active))
             {
@@ -343,6 +377,9 @@ public sealed class FfxivGameMixerAudioBackend : IGameMixerAudioBackend
         }
         finally
         {
+            lock (gate)
+                if (current.NativePlayback != 0 && current.StopTask is null)
+                    current.StopTask = StopNativePlaybackAsync(current.NativePlayback, current.NativePath!);
             if (current.StopTask is { } stopTask)
             {
                 try { await stopTask.ConfigureAwait(false); }
@@ -396,11 +433,11 @@ public sealed class FfxivGameMixerAudioBackend : IGameMixerAudioBackend
         assets.Cleanup(DateTimeOffset.UtcNow);
     }
 
-    private async Task StopNativePlaybackAsync(nint playback)
+    private async Task StopNativePlaybackAsync(nint playback, string resourcePath)
     {
         try
         {
-            await soundPlayer.StopAsync(playback)
+            await soundPlayer.StopAsync(playback, resourcePath)
                 .WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
         }
         catch (Exception error) { MarkFaulted($"FFXIV sound stop failed: {error.Message}"); }

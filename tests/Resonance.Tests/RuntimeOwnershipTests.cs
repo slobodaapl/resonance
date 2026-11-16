@@ -11,6 +11,7 @@ public sealed class RuntimeOwnershipTests
     [Theory]
     [InlineData(nameof(RuntimeManager.EnsureReadyAsync))]
     [InlineData(nameof(RuntimeManager.RefreshBackendsAsync))]
+    [InlineData(nameof(RuntimeManager.RefreshDeviceMemoryAsync))]
     [InlineData(nameof(RuntimeManager.BenchmarkAndApplyAsync))]
     [InlineData(nameof(RuntimeManager.SetDesiredAsync))]
     [InlineData(nameof(RuntimeManager.SynthesizeAsync))]
@@ -70,6 +71,7 @@ public sealed class RuntimeOwnershipTests
         {
             nameof(RuntimeManager.EnsureReadyAsync) => manager.EnsureReadyAsync(token),
             nameof(RuntimeManager.RefreshBackendsAsync) => manager.RefreshBackendsAsync(token),
+            nameof(RuntimeManager.RefreshDeviceMemoryAsync) => manager.RefreshDeviceMemoryAsync(token),
             nameof(RuntimeManager.BenchmarkAndApplyAsync) => manager.BenchmarkAndApplyAsync(designPath, token),
             nameof(RuntimeManager.SetDesiredAsync) => manager.SetDesiredAsync(backend, token),
             nameof(RuntimeManager.SynthesizeAsync) => SynthesizeAsync(manager, token),

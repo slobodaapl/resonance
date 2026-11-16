@@ -1,4 +1,5 @@
 using Dalamud.Plugin.Services;
+using Dalamud.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.Event;
 using Lumina.Excel;
 using Lumina.Excel.Sheets;
@@ -6,46 +7,49 @@ using Lumina.Text.ReadOnly;
 
 namespace Resonance.Game;
 
-public sealed class CutsceneVoiceManifestProvider(
-    IDataManager dataManager,
-    IClientState clientState,
-    IPluginLog log,
-    CutscenePlanStore? planStore = null)
+public sealed class CutsceneVoiceManifestProvider
 {
-    private readonly Dictionary<(uint CutsceneId, string Language), CutsceneVoiceManifest?> cache = [];
+    private readonly IDataManager dataManager;
+    private readonly IClientState clientState;
+    private readonly IPluginLog log;
+    private readonly CutscenePlanStore? planStore;
+    private readonly Func<int>? voiceLanguage;
+    private readonly CutsceneManifestCache cache;
     private CutsceneVoiceManifest? activeManifest;
     private readonly HashSet<string> frontier = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, HashSet<string>> actorIdentities = new(StringComparer.Ordinal);
     public string LastStatus { get; private set; } = "not-queried";
+    public bool CurrentDialogueIsNative { get; private set; }
+    public uint? CurrentCutsceneId { get; private set; }
+
+    public CutsceneVoiceManifestProvider(IDataManager dataManager, IClientState clientState, IPluginLog log,
+        CutscenePlanStore? planStore = null, Func<int>? voiceLanguage = null)
+    {
+        this.dataManager = dataManager;
+        this.clientState = clientState;
+        this.log = log;
+        this.planStore = planStore;
+        this.voiceLanguage = voiceLanguage;
+        cache = new(Load);
+    }
+
+    internal void InvalidateCache() => cache.Clear();
 
     public void Reset()
     {
-        cache.Clear();
         activeManifest = null;
         frontier.Clear();
+        actorIdentities.Clear();
         LastStatus = "not-queried";
-    }
-
-    public bool? IsCurrentCutsceneUnskippable()
-    {
-        try
-        {
-            var cutsceneId = ReadCurrentCutsceneId();
-            if (cutsceneId is null) return null;
-            var workIndices = dataManager.GetExcelSheet<CutsceneWorkIndex>();
-            return workIndices.TryGetRow(cutsceneId.Value, out var workIndex)
-                ? workIndex.WorkIndex == 0
-                : null;
-        }
-        catch (Exception error)
-        {
-            log.Warning(error, "Current cutscene skippability could not be read");
-            return null;
-        }
+        CurrentDialogueIsNative = false;
+        CurrentCutsceneId = null;
     }
 
     public CutsceneVoiceLine? Resolve(ActualTalkLine talk)
     {
-        var cutsceneId = ReadCurrentCutsceneId();
+        CurrentDialogueIsNative = talk.Row is not null && talk.NativeVoice is not null;
+        var cutsceneId = talk.Row is { CutsceneId: > 0 } source ? source.CutsceneId : ReadCurrentCutsceneId();
+        CurrentCutsceneId = cutsceneId;
         if (cutsceneId is null)
         {
             LastStatus = "no-active-play-cutscene-task";
@@ -61,35 +65,49 @@ public sealed class CutsceneVoiceManifestProvider(
         {
             activeManifest = manifest;
             frontier.Clear();
+            actorIdentities.Clear();
             foreach (var node in manifest.StartNodes) frontier.Add(node.NodeId);
         }
-        var matches = manifest.MatchFrontier(talk.Speaker, talk.Text, frontier);
+        var npcBaseId = talk.Actor?.NpcBaseId;
+        var knownActors = talk.Actor is { } actor ? actorIdentities.GetValueOrDefault(actor.StableKey) : null;
+        var speaker = talk.Actor is null ? talk.Speaker : String.Empty;
+        var matches = manifest.MatchFrontier(speaker, talk.Text, frontier, npcBaseId, knownActors,
+            talk.RowKey, talk.Row?.Offset);
         if (matches.Count == 0 && frontier.Count != 0)
-            matches = manifest.MatchFrontier(talk.Speaker, talk.Text, []);
+            matches = manifest.MatchFrontier(speaker, talk.Text, [], npcBaseId, knownActors,
+                talk.RowKey, talk.Row?.Offset);
         CutsceneVoiceLine? line = null;
         if (matches.Count != 0 && AreVoiceEquivalent(matches))
         {
             line = matches[0];
+            if (talk.Actor is { } observed)
+            {
+                if (!actorIdentities.TryGetValue(observed.StableKey, out var identities))
+                    actorIdentities[observed.StableKey] = identities = new(StringComparer.Ordinal);
+                foreach (var match in matches) identities.Add(CutsceneVoiceManifest.ActorIdentity(match));
+            }
             frontier.Clear();
             foreach (var next in manifest.Successors(matches)) frontier.Add(next.NodeId);
         }
-        LastStatus = line is null
-            ? matches.Count > 1
-                ? $"ambiguous-dialogue:{cutsceneId.Value}"
-                : $"dialogue-not-in-manifest:{cutsceneId.Value}"
-            : $"matched:{line.Key}";
+        CurrentDialogueIsNative = talk.NativeVoice is not null || (talk.Row is not null
+            ? line?.IsVoiced == true
+            : line?.IsVoiced ?? manifest.HasOnlyNativeDialogue(talk.Text, npcBaseId));
+        LastStatus = line is not null ? $"matched:{line.Key}"
+            : CurrentDialogueIsNative ? $"native-dialogue-with-ambiguous-speaker:{cutsceneId.Value}"
+            : matches.Count > 1 ? $"ambiguous-dialogue:{cutsceneId.Value}"
+            : $"dialogue-not-in-manifest:{cutsceneId.Value}";
         return line;
     }
 
-    public CutsceneVoiceManifest? GetManifest(uint cutsceneId)
+    internal CutsceneManifestKey SnapshotKey(uint cutsceneId = 0)
     {
-        var language = clientState.ClientLanguage.ToString().ToLowerInvariant();
-        var key = (cutsceneId, language);
-        if (cache.TryGetValue(key, out var manifest)) return manifest;
-        manifest = Load(cutsceneId, language);
-        cache[key] = manifest;
-        return manifest;
+        var language = clientState.ClientLanguage;
+        return new(cutsceneId, (int)language, voiceLanguage?.Invoke() ?? (int)language);
     }
+
+    public CutsceneVoiceManifest? GetManifest(uint cutsceneId) => GetManifest(SnapshotKey(cutsceneId));
+
+    internal CutsceneVoiceManifest? GetManifest(CutsceneManifestKey key) => cache.Get(key);
 
     public IReadOnlyList<CutsceneVoiceLine> GetSyntheticFuture(CutsceneVoiceLine current) =>
         activeManifest is null
@@ -107,29 +125,44 @@ public sealed class CutsceneVoiceManifestProvider(
         var first = lines[0];
         return lines.All(line => line.IsVoiced == first.IsVoiced
                                  && line.IsPlayerChoice == first.IsPlayerChoice
-                                 && String.Equals(line.ActorToken, first.ActorToken,
-                                     StringComparison.OrdinalIgnoreCase));
+                                 && CutsceneVoiceManifest.ActorIdentity(line)
+                                     == CutsceneVoiceManifest.ActorIdentity(first));
     }
 
-    private CutsceneVoiceManifest? Load(uint cutsceneId, string language)
+    private CutsceneVoiceManifest? Load(CutsceneManifestKey key)
     {
+        var cutsceneId = key.CutsceneId;
+        var textLanguage = (ClientLanguage)key.TextLanguage;
+        var language = textLanguage.ToString().ToLowerInvariant();
         try
         {
-            var cutscenes = dataManager.GetExcelSheet<Cutscene>(clientState.ClientLanguage);
+            var cutscenes = dataManager.GetExcelSheet<Cutscene>(textLanguage);
             if (!cutscenes.TryGetRow(cutsceneId, out var cutscene)) return null;
             var cutscenePath = cutscene.Path.ExtractText();
             if (String.IsNullOrWhiteSpace(cutscenePath)) return null;
             var cutb = dataManager.GetFile($"cut/{cutscenePath}.cutb");
             if (cutb is null) return null;
-            var packed = planStore?.TryLoad(
-                cutsceneId, cutscenePath, language, cutb.Data, LoadVoiceSheet);
-            if (packed is not null) return packed;
-            return CutsceneVoiceManifestParser.Parse(
+            var local = CutsceneVoiceManifestParser.Parse(
                 cutsceneId,
                 cutscenePath,
                 cutb.Data,
-                LoadVoiceSheet,
-                LanguageCode(language));
+                name => LoadVoiceSheet(name, textLanguage),
+                LanguageCode(language), key.VoiceLanguage);
+            CutsceneVoiceManifest? packed = null;
+            try { packed = planStore?.TryLoad(cutsceneId, cutscenePath, language, cutb.Data,
+                name => LoadVoiceSheet(name, textLanguage)); }
+            catch (Exception error)
+            {
+                log.Warning(error, "Packed cutscene metadata rejected for {CutsceneId}; using local game data", cutsceneId);
+            }
+            if (packed is null) return local;
+            var metadata = packed.Lines.GroupBy(line => line.SourceKey, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+            var lines = local.Lines.Select(line => metadata.TryGetValue(line.SourceKey, out var source)
+                ? line with { OfficialGroupId = source.OfficialGroupId, ActorTokenHash = source.ActorTokenHash,
+                    ActorNpcBaseId = source.ActorNpcBaseId }
+                : line).ToArray();
+            return new(cutsceneId, cutscenePath, lines, local.Edges);
         }
         catch (Exception error)
         {
@@ -138,11 +171,11 @@ public sealed class CutsceneVoiceManifestProvider(
         }
     }
 
-    private IReadOnlyDictionary<string, string>? LoadVoiceSheet(string sheetName)
+    private IReadOnlyDictionary<string, string>? LoadVoiceSheet(string sheetName, ClientLanguage language)
     {
         try
         {
-            var rows = dataManager.GetExcelSheet<RawRow>(clientState.ClientLanguage, sheetName);
+            var rows = dataManager.GetExcelSheet<RawRow>(language, sheetName);
             var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var row in rows)
             {

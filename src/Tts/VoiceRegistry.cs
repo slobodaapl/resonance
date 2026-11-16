@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Resonance.Data;
+using Resonance.Game;
 
 namespace Resonance.Tts;
 
@@ -140,6 +141,26 @@ public sealed class VoiceRegistry(Database database)
     public static string DomainFallbackSpeakerKey(string domainId, string variantId = "default") =>
         $"fallback:{domainId}:{variantId}";
 
+    public async Task<StoredVoiceProfile?> GetFallbackVoiceAsync(
+        string domainId, string variantId, string language, string modelHash, CancellationToken token)
+    {
+        var variants = new List<string> { variantId };
+        var parts = variantId.Split('_');
+        if (parts.Length == 2 && parts[0] is "masculine" or "feminine")
+        {
+            if (parts[1] == "elder") variants.Add(parts[0] + "_adult");
+            variants.Add(parts[0]);
+            variants.Add("default");
+        }
+        foreach (var variant in variants)
+        {
+            var profile = await GetBestVoiceByStableKeyAsync(
+                DomainFallbackSpeakerKey(domainId,variant),language,modelHash,token).ConfigureAwait(false);
+            if (profile is not null) return profile;
+        }
+        return null;
+    }
+
     public Task<SpeakerIdentity> ResolveSpeakerAsync(
         string stableKey,
         uint? npcBaseId,
@@ -257,6 +278,10 @@ public sealed class VoiceRegistry(Database database)
 
     public Task<IReadOnlyList<NamedVoiceProfile>> GetOfficialVoiceProfilesAsync(
         string language,
+        CancellationToken token) => GetOfficialVoiceProfilesAsync(language, null, token);
+
+    public Task<IReadOnlyList<NamedVoiceProfile>> GetOfficialVoiceProfilesAsync(
+        string language, string? modelHash,
         CancellationToken token) => database.ReadAsync(async connection =>
     {
         await using var command = connection.CreateCommand();
@@ -270,10 +295,12 @@ public sealed class VoiceRegistry(Database database)
             JOIN speaker s ON s.id=sv.speaker_id
             JOIN voice_profile p ON p.id=sv.profile_id
             WHERE p.kind=$kind AND p.language=$language
+              AND ($model_hash IS NULL OR p.model_hash=$model_hash)
             ORDER BY s.display_name COLLATE NOCASE,p.created_utc DESC,p.id DESC
             """;
         command.Parameters.AddWithValue("$kind", (int)VoiceProfileKind.Official);
         command.Parameters.AddWithValue("$language", language);
+        command.Parameters.AddWithValue("$model_hash", (object?)modelHash ?? DBNull.Value);
         var result = new List<NamedVoiceProfile>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
@@ -324,6 +351,251 @@ public sealed class VoiceRegistry(Database database)
             await transaction.CommitAsync(token).ConfigureAwait(false);
             return profileId == profile.Id ? profile : profile with { Id = profileId };
         }, token);
+
+    public Task<int> ReconcileOfficialAssignmentsAsync(
+        OfficialVoiceCatalog catalog, string modelHash, CancellationToken token) => database.ReadAsync(async connection =>
+    {
+        await using var transaction = connection.BeginTransaction();
+        var identities = new Dictionary<long, string?>();
+        await using (var select = connection.CreateCommand())
+        {
+            select.Transaction = transaction;
+            select.CommandText = """
+                SELECT s.id,s.npc_base_id,COALESCE(a.language,'english'),COALESCE(a.alias,s.display_name)
+                FROM speaker s LEFT JOIN speaker_alias a ON a.speaker_id=s.id
+                WHERE s.stable_key LIKE 'npc:%'
+                """;
+            await using var reader = await select.ExecuteReaderAsync(token).ConfigureAwait(false);
+            while (await reader.ReadAsync(token).ConfigureAwait(false))
+            {
+                var group = catalog.Resolve(reader.IsDBNull(1) ? null : Convert.ToUInt32(reader.GetInt64(1)),
+                    reader.GetString(3), reader.GetString(2));
+                if (group is null) continue;
+                var id = reader.GetInt64(0);
+                if (identities.TryGetValue(id, out var previous) && previous != group.Id)
+                    identities[id] = null;
+                else
+                    identities.TryAdd(id, group.Id);
+            }
+        }
+        var profiles = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
+        await using (var select = connection.CreateCommand())
+        {
+            select.Transaction = transaction;
+            select.CommandText = """
+                SELECT s.stable_key,p.language,p.id
+                FROM speaker s JOIN speaker_voice sv ON sv.speaker_id=s.id
+                JOIN voice_profile p ON p.id=sv.profile_id
+                WHERE s.stable_key LIKE 'official:%' AND p.kind=2 AND p.model_hash=$model
+                ORDER BY sv.priority DESC,p.created_utc DESC,p.id
+                """;
+            select.Parameters.AddWithValue("$model", modelHash);
+            await using var reader = await select.ExecuteReaderAsync(token).ConfigureAwait(false);
+            while (await reader.ReadAsync(token).ConfigureAwait(false))
+            {
+                var key = reader.GetString(0);
+                if (!profiles.TryGetValue(key, out var languages))
+                    profiles[key] = languages = new(StringComparer.Ordinal);
+                languages.TryAdd(reader.GetString(1), reader.GetString(2));
+            }
+        }
+        await using var assign = connection.CreateCommand();
+        assign.Transaction = transaction;
+        assign.CommandText = """
+            INSERT INTO speaker_voice(speaker_id,profile_id,priority,assigned_utc)
+            SELECT $speaker,$profile,200,$utc
+            WHERE COALESCE((SELECT p.kind FROM speaker_voice sv JOIN voice_profile p ON p.id=sv.profile_id
+              WHERE sv.speaker_id=$speaker AND p.language=$language AND p.model_hash=$model
+              ORDER BY sv.priority DESC,p.created_utc DESC,p.id LIMIT 1),0)<>2
+            ON CONFLICT(speaker_id,profile_id) DO UPDATE SET priority=excluded.priority
+            WHERE speaker_voice.priority<>excluded.priority
+            """;
+        var speakerParameter = assign.Parameters.Add("$speaker", SqliteType.Integer);
+        var profileParameter = assign.Parameters.Add("$profile", SqliteType.Text);
+        var languageParameter = assign.Parameters.Add("$language", SqliteType.Text);
+        assign.Parameters.AddWithValue("$model", modelHash);
+        assign.Parameters.AddWithValue("$utc", DateTimeOffset.UtcNow.ToString("O"));
+        var changed = 0;
+        foreach (var (speakerId, groupId) in identities)
+        {
+            if (groupId is null
+                || !profiles.TryGetValue(OfficialVoiceCatalog.CanonicalSpeakerKey(groupId), out var languages))
+                continue;
+            speakerParameter.Value = speakerId;
+            foreach (var (language, profileId) in languages)
+            {
+                profileParameter.Value = profileId;
+                languageParameter.Value = language;
+                changed += await assign.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+            }
+        }
+        await transaction.CommitAsync(token).ConfigureAwait(false);
+        return changed;
+    }, token);
+
+    public Task<int> ReconcileRegionalAssignmentsAsync(
+        CastingProfileCatalog catalog, string modelHash, CancellationToken token) => database.ReadAsync(async connection =>
+    {
+        await using var transaction = connection.BeginTransaction();
+        var sharedDomains = JsonSerializer.Serialize(catalog.Domains.Where(domain => domain.SharedVoice).Select(domain => domain.Id));
+        var sharedModels = catalog.MetadataRules
+            .SelectMany(rule => rule.Match.ModelCharaIds).Distinct()
+            .Select(model => (Model: model, Casting: catalog.Resolve(new SpeakerCastingEvidence(
+                "metadata", Category: "non_humanoid", ModelCharaId: model))))
+            .Where(value => value.Casting.Source == CastingEvidenceSource.Species
+                && catalog.GetDomain(value.Casting.DomainId).SharedVoice)
+            .ToDictionary(value => value.Model, value => value.Casting.DomainId);
+        // Exact shared model identities supersede automatic casts saved before those models were identified.
+        await using (var recast = connection.CreateCommand())
+        {
+            recast.Transaction = transaction;
+            recast.CommandText = """
+                INSERT INTO speaker_casting(speaker_id,domain_id,variant_traits_json,evidence_source,
+                  territory_id,catalog_version,is_stable,assigned_utc)
+                SELECT s.id,m.value,'{}','Species',s.first_territory,$catalog,1,$utc
+                FROM speaker s JOIN json_each($models) m ON s.model_chara_id=CAST(m.key AS INTEGER)
+                WHERE s.stable_key NOT LIKE 'fallback:%' AND s.stable_key NOT LIKE 'official:%'
+                  AND COALESCE(s.race,0)=0
+                  AND EXISTS(SELECT 1 FROM speaker f JOIN speaker_voice sv ON sv.speaker_id=f.id
+                    JOIN voice_profile p ON p.id=sv.profile_id
+                    WHERE f.stable_key='fallback:'||m.value||':default'
+                      AND p.model_hash=$model AND p.kind=1 AND p.catalog_version=$catalog)
+                ON CONFLICT(speaker_id) DO UPDATE SET domain_id=excluded.domain_id,
+                  variant_traits_json=excluded.variant_traits_json,evidence_source=excluded.evidence_source,
+                  catalog_version=excluded.catalog_version,is_stable=1,assigned_utc=excluded.assigned_utc
+                WHERE speaker_casting.domain_id<>excluded.domain_id
+                """;
+            recast.Parameters.AddWithValue("$models", JsonSerializer.Serialize(sharedModels));
+            recast.Parameters.AddWithValue("$model", modelHash);
+            recast.Parameters.AddWithValue("$catalog", catalog.Version);
+            recast.Parameters.AddWithValue("$utc", DateTimeOffset.UtcNow.ToString("O"));
+            await recast.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+        }
+        var outdated = new List<(long Speaker, string Key, string Domain, string Language, string Profile,
+            string? Traits, string? FallbackKey)>();
+        await using (var select = connection.CreateCommand())
+        {
+            select.Transaction = transaction;
+            select.CommandText = """
+                WITH current AS (
+                  SELECT sv.speaker_id,p.*,
+                    ROW_NUMBER() OVER(PARTITION BY sv.speaker_id,p.language
+                      ORDER BY sv.priority DESC,p.created_utc DESC,p.id) AS rank
+                  FROM speaker_voice sv JOIN voice_profile p ON p.id=sv.profile_id
+                  WHERE p.model_hash=$model)
+                SELECT s.id,s.stable_key,COALESCE(c.domain_id,p.domain_id),p.language,p.id,p.traits_json,
+                  (SELECT f.stable_key FROM speaker f JOIN speaker_voice fv ON fv.speaker_id=f.id
+                   WHERE fv.profile_id=p.id AND f.stable_key LIKE 'fallback:%' LIMIT 1) AS fallback_key
+                FROM current p JOIN speaker s ON s.id=p.speaker_id
+                LEFT JOIN speaker_casting c ON c.speaker_id=s.id
+                WHERE p.rank=1 AND p.kind=1
+                  AND (COALESCE(p.catalog_version,0)<$catalog
+                    OR COALESCE(c.domain_id,p.domain_id) IN (SELECT value FROM json_each($shared))
+                    OR (EXISTS(SELECT 1 FROM pool_voice pv WHERE pv.profile_id=p.id)
+                      AND COALESCE(CASE WHEN json_valid(p.source_metadata)
+                        THEN json_extract(p.source_metadata,'$.conditioningCatalogVersion') END,0)<$catalog)
+                    OR EXISTS(SELECT 1 FROM speaker f JOIN speaker_voice fv ON fv.speaker_id=f.id
+                      JOIN voice_profile fresh ON fresh.id=fv.profile_id
+                      WHERE f.stable_key LIKE 'fallback:%' AND fresh.kind=1
+                        AND fresh.domain_id=COALESCE(c.domain_id,p.domain_id)
+                        AND fresh.model_hash=$model AND fresh.language=p.language
+                        AND fresh.catalog_version=$catalog AND fresh.created_utc>p.created_utc))
+                  AND s.stable_key NOT LIKE 'fallback:%' AND s.stable_key NOT LIKE 'official:%'
+                  AND COALESCE(c.domain_id,p.domain_id) IS NOT NULL
+                  AND (EXISTS(SELECT 1 FROM pool_voice pv WHERE pv.profile_id=p.id)
+                       OR fallback_key IS NOT NULL)
+                  AND COALESCE(CASE WHEN json_valid(p.source_metadata)
+                    THEN json_extract(p.source_metadata,'$.promptOverride') END,0)=0
+                """;
+            select.Parameters.AddWithValue("$model", modelHash);
+            select.Parameters.AddWithValue("$catalog", catalog.Version);
+            select.Parameters.AddWithValue("$shared", sharedDomains);
+            await using var reader = await select.ExecuteReaderAsync(token).ConfigureAwait(false);
+            while (await reader.ReadAsync(token).ConfigureAwait(false))
+                outdated.Add((reader.GetInt64(0),reader.GetString(1),reader.GetString(2),reader.GetString(3),
+                    reader.GetString(4),reader.IsDBNull(5) ? null : reader.GetString(5),
+                    reader.IsDBNull(6) ? null : reader.GetString(6)));
+        }
+        var changed = 0;
+        foreach (var row in outdated)
+        {
+            var domain = catalog.Domains.FirstOrDefault(value => value.Id == row.Domain);
+            if (domain is null) continue;
+            var traits = await LoadKnownTraits(connection, transaction, row.Speaker, null, token).ConfigureAwait(false);
+            MergeTraits(traits, DeserializeTraits(row.Traits));
+            var slot = domain.MasculineSlots.Concat(domain.FeminineSlots)
+                .FirstOrDefault(value => String.Equals(value.Id, Trait(traits,"slotid"), StringComparison.Ordinal));
+            var oldVariant = row.FallbackKey?.Split(':')[^1];
+            var sex = Trait(traits,"sex") ?? slot?.Sex
+                ?? (Trait(traits,"gender") == "1" || oldVariant?.StartsWith("feminine", StringComparison.Ordinal) == true
+                    ? "feminine" : "masculine");
+            var age = Trait(traits,"age") ?? slot?.Age
+                ?? (oldVariant?.EndsWith("_young", StringComparison.Ordinal) == true ? "young" : "adult");
+            var resolution = new CastingResolution(row.Domain, [], CastingEvidenceSource.Generic,
+                null,null,catalog.Version,false,false,[],[row.Domain],[]);
+            var variant = catalog.FallbackVariantId(resolution,
+                new SpeakerCastingEvidence(row.Key, Sex: sex, Age: age));
+            await using var lookup = connection.CreateCommand();
+            lookup.Transaction = transaction;
+            lookup.CommandText = """
+                SELECT p.id FROM speaker s JOIN speaker_voice sv ON sv.speaker_id=s.id
+                JOIN voice_profile p ON p.id=sv.profile_id
+                WHERE s.stable_key=$key AND p.kind=1 AND p.language=$language
+                  AND p.model_hash=$model AND p.catalog_version=$catalog
+                ORDER BY sv.priority DESC,p.created_utc DESC,p.id LIMIT 1
+                """;
+            lookup.Parameters.AddWithValue("$key", DomainFallbackSpeakerKey(row.Domain, variant));
+            lookup.Parameters.AddWithValue("$language", row.Language);
+            lookup.Parameters.AddWithValue("$model", modelHash);
+            lookup.Parameters.AddWithValue("$catalog", catalog.Version);
+            if (await lookup.ExecuteScalarAsync(token).ConfigureAwait(false) is not string replacement) continue;
+            if (replacement == row.Profile) continue;
+            await using var update = connection.CreateCommand();
+            update.Transaction = transaction;
+            update.CommandText = """
+                DELETE FROM speaker_voice WHERE speaker_id=$speaker AND profile_id=$old;
+                DELETE FROM pool_voice WHERE profile_id=$old AND assigned_speaker_id=$speaker;
+                INSERT INTO speaker_voice(speaker_id,profile_id,priority,assigned_utc)
+                VALUES($speaker,$new,100,$utc)
+                ON CONFLICT(speaker_id,profile_id) DO UPDATE SET priority=100,assigned_utc=excluded.assigned_utc;
+                """;
+            update.Parameters.AddWithValue("$speaker", row.Speaker);
+            update.Parameters.AddWithValue("$old", row.Profile);
+            update.Parameters.AddWithValue("$new", replacement);
+            update.Parameters.AddWithValue("$utc", DateTimeOffset.UtcNow.ToString("O"));
+            await update.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+            changed++;
+        }
+        await using (var retire = connection.CreateCommand())
+        {
+            retire.Transaction = transaction;
+            retire.CommandText = """
+                DELETE FROM pool_voice AS pv WHERE state=0
+                  AND EXISTS(SELECT 1 FROM voice_profile p WHERE p.id=pv.profile_id AND p.model_hash=$model
+                    AND (COALESCE(p.catalog_version,0)<$catalog
+                      OR pv.domain_id IN (SELECT value FROM json_each($shared))
+                      OR COALESCE(CASE WHEN json_valid(p.source_metadata)
+                        THEN json_extract(p.source_metadata,'$.conditioningCatalogVersion') END,0)<$catalog
+                      OR EXISTS(SELECT 1 FROM speaker f JOIN speaker_voice fv ON fv.speaker_id=f.id
+                        JOIN voice_profile fresh ON fresh.id=fv.profile_id
+                        WHERE f.stable_key LIKE 'fallback:%' AND fresh.kind=1 AND fresh.domain_id=pv.domain_id
+                          AND fresh.model_hash=$model AND fresh.language=pv.language
+                          AND fresh.catalog_version=$catalog AND fresh.created_utc>p.created_utc))
+                    AND COALESCE(CASE WHEN json_valid(p.source_metadata)
+                      THEN json_extract(p.source_metadata,'$.promptOverride') END,0)=0)
+                  AND EXISTS(SELECT 1 FROM speaker s JOIN speaker_voice sv ON sv.speaker_id=s.id
+                    JOIN voice_profile p ON p.id=sv.profile_id
+                    WHERE s.stable_key LIKE 'fallback:'||pv.domain_id||':%'
+                      AND p.language=pv.language AND p.model_hash=$model AND p.catalog_version=$catalog)
+                """;
+            retire.Parameters.AddWithValue("$model", modelHash);
+            retire.Parameters.AddWithValue("$catalog", catalog.Version);
+            retire.Parameters.AddWithValue("$shared", sharedDomains);
+            await retire.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+        }
+        await transaction.CommitAsync(token).ConfigureAwait(false);
+        return changed;
+    }, token);
 
     public Task<SpeakerCasting?> GetSpeakerCastingAsync(long speakerId, CancellationToken token) =>
         database.ReadAsync(connection => GetSpeakerCastingCore(connection, speakerId, token), token);

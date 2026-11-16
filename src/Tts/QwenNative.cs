@@ -100,6 +100,21 @@ internal static unsafe partial class QwenNative
         internal ulong MemoryTotal;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct GgmlDeviceProperties
+    {
+        internal nint Name;
+        internal nint Description;
+        internal nuint MemoryFree;
+        internal nuint MemoryTotal;
+        internal int Type;
+        internal nint DeviceId;
+        internal byte Async;
+        internal byte HostBuffer;
+        internal byte BufferFromHostPointer;
+        internal byte Events;
+    }
+
     [LibraryImport(Library, EntryPoint = "qt_get_abi_info")]
     internal static partial void GetAbiInfo(out AbiInfo info);
     [LibraryImport(Library, EntryPoint = "qt_backend_count")]

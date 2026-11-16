@@ -36,7 +36,7 @@ public sealed class CutsceneSessionTests
             "Ishgard", "Ishgard", 1, false, true, [], ["ishgardian"], []);
         var actual = new ResolvedLineSpeaker(
             "npc:42", "Krile", 42, evidence, casting,
-            "feminine", "feminine_adult", (nint)0x1234, "feminine_03", "japanese");
+            "feminine", "feminine_adult", new(42, 81, 0x1234, 3), "feminine_03", "japanese");
 
         var promoted = session.PromotePrediction("Krile", "Expected", actual);
 
@@ -45,7 +45,7 @@ public sealed class CutsceneSessionTests
         Assert.Equal(42L, promoted.SpeakerId);
         Assert.Equal("ishgardian", promoted.Casting?.DomainId);
         Assert.Equal("feminine", promoted.VoiceSex);
-        Assert.Equal((nint)0x1234, promoted.ActorAddress);
+        Assert.Equal(actual.Actor, promoted.Actor);
         Assert.Equal(evidence, promoted.CastingEvidence);
         Assert.Equal("japanese", promoted.Language);
         Assert.Null(promoted.VoiceProfileId);

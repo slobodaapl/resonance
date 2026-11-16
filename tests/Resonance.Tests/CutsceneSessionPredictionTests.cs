@@ -54,7 +54,7 @@ public sealed class CutsceneSessionPredictionTests
             new("official:wuk-lamat"),
             new("tural", [], CastingEvidenceSource.Generic, null, null, 1,
                 false, false, [], [], []),
-            "feminine", "neutral_adult", 0, Language: "english");
+            "feminine", "neutral_adult", null, Language: "english");
 
         var actual = session.PromotePrediction(
             "Wuk Lamat", "Ready?", assignment, predictionKey: "cutscene:line");
@@ -85,7 +85,7 @@ public sealed class CutsceneSessionPredictionTests
             null, null, 1, false, false, [], [], []);
         var actual = new ResolvedLineSpeaker(
             "scene:1:npc", "NPC", 0, new("scene:1:npc", Sex: "feminine"),
-            feminineCasting, "feminine", "feminine_adult", 0, "feminine_01", "english");
+            feminineCasting, "feminine", "feminine_adult", null, "feminine_01", "english");
 
         Assert.Null(session.PromotePrediction("NPC", "Ready?", actual, predictionKey: "line"));
         Assert.Equal(DubLineState.Invalidated, predicted.State);
@@ -100,7 +100,7 @@ public sealed class CutsceneSessionPredictionTests
             null, null, 1, false, false, [], [], []);
         var resolution = new ResolvedLineSpeaker(
             "npc:42", "NPC", 42, new("npc:42", Sex: "feminine"),
-            casting, "feminine", "feminine_adult", 123, "feminine_01", "english");
+            casting, "feminine", "feminine_adult", new(42, 81, 123, 3), "feminine_01", "english");
 
         var line = Assert.Single(session.ReconcilePredictions([
             new("line", "npc:42", "NPC", "Next", "english", Resolution: resolution),

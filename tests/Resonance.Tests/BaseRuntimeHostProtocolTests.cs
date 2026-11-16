@@ -548,10 +548,12 @@ public sealed class BaseRuntimeHostProtocolTests
             : BaseHostFrameKind.Benchmark;
         var cancelPayload = BaseHostProtocol.SerializePayload(
             new BaseHostCancelPayload(operationId, targetKind));
+        await using var firstCommand = await InputStreamAsync(
+            CommandWithId(BaseHostFrameKind.Synthesize, operationId, 1, operationPayload));
         await using var source = await InputStreamAsync(
             CommandWithId(BaseHostFrameKind.Synthesize, operationId, 1, operationPayload),
             CommandWithId(BaseHostFrameKind.CancelOperation, cancelId, 2, cancelPayload));
-        await using var input = new GateInputStream(source.ToArray());
+        await using var input = new GateInputStream(source.ToArray(), firstCommand.Length);
         await using var output = new FrameSignalOutputStream(
             frame => frame.RequestId == operationId
                      && (matchingCancellation
@@ -581,6 +583,7 @@ public sealed class BaseRuntimeHostProtocolTests
         var run = server.RunAsync();
         await reservationEntered.Task.WaitAsync(
             TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        input.ReleaseNext();
         await cancellationHandled.Task.WaitAsync(
             TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         if (matchingCancellation)

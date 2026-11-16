@@ -317,11 +317,24 @@ public sealed class QwenCppRuntime : ITtsRuntime
                     },
                     native.DeviceIndex,
                     native.MemoryFree,
-                    native.MemoryTotal));
+                    native.MemoryTotal,
+                    PhysicalDeviceId(index)));
             }
             return result;
         }
         finally { ReleaseProcessLeaseCore(ownsProcessLease); }
+    }
+
+    private static unsafe string? PhysicalDeviceId(int index)
+    {
+        if (ggmlBaseHandle == 0 || ggmlHandle == 0
+            || !NativeLibrary.TryGetExport(ggmlHandle, "ggml_backend_dev_get", out var getDevice)
+            || !NativeLibrary.TryGetExport(ggmlBaseHandle, "ggml_backend_dev_get_props", out var getProperties)) return null;
+        var device = ((delegate* unmanaged[Cdecl]<nuint, nint>)getDevice)((nuint)index);
+        QwenNative.GgmlDeviceProperties properties = default;
+        ((delegate* unmanaged[Cdecl]<nint, QwenNative.GgmlDeviceProperties*, void>)getProperties)(device, &properties);
+        var id = Marshal.PtrToStringUTF8(properties.DeviceId);
+        return string.IsNullOrEmpty(id) ? null : id.ToLowerInvariant();
     }
 
     private static void ConfigureBackendSearchPath(string directory, bool refresh)
@@ -403,6 +416,8 @@ public sealed class QwenCppRuntime : ITtsRuntime
     private unsafe void Synthesize(SynthesisRequest request, StreamingAudioBuffer sink, CancellationToken token, bool completeOnFailure)
     {
         token.ThrowIfCancellationRequested();
+        request = request.WithoutDialogueCues();
+        if (String.IsNullOrWhiteSpace(request.Text)) { sink.Complete(); return; }
         QwenNative.TtsDefaultParams(out var parameters);
         using var text = new Utf8String(request.Text);
         using var language = new Utf8String(request.Language);
@@ -556,6 +571,7 @@ public sealed class QwenCppRuntime : ITtsRuntime
         catch (Exception error)
         {
             Interlocked.Exchange(ref terminalDisposalFailure, 1);
+            pluginLifetimeLease?.Poison(error);
             completion.TrySetException(error);
             throw;
         }

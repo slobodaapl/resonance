@@ -23,13 +23,24 @@
     <Compile Include="..\..\src\Plugin\Configuration.cs" Link="Source\Configuration.cs" />
     <Compile Include="..\..\src\Plugin\ProcessLifetimeLease.cs" Link="Source\ProcessLifetimeLease.cs" />
     <Compile Include="..\..\src\Audio\StreamingAudioBuffer.cs" Link="Source\StreamingAudioBuffer.cs" />
+    <Compile Include="..\..\src\Audio\DialogueSoundEffects.cs" Link="Source\DialogueSoundEffects.cs" />
+    <Compile Include="..\..\src\Tts\DialogueCues.cs" Link="Source\DialogueCues.cs" />
+    <EmbeddedResource Include="..\..\assets\dialogue-cues.json" LogicalName="Resonance.DialogueCues.json" />
+    <Compile Include="..\..\src\Tts\DialogueSpeech.cs" Link="Source\DialogueSpeech.cs" />
     <Compile Include="..\..\src\Audio\BaseCloneCorrectionSampleProvider.cs" Link="Source\BaseCloneCorrectionSampleProvider.cs" />
+    <Compile Include="..\..\src\Audio\AudioProcessingOptions.cs" Link="Source\AudioProcessingOptions.cs" />
     <Compile Include="..\..\src\Audio\DebugWavExporter.cs" Link="Source\DebugWavExporter.cs" />
     <Compile Include="..\..\src\Audio\AudioBackendSelection.cs" Link="Source\AudioBackendSelection.cs" />
     <Compile Include="..\..\src\Audio\ScdFileBuilder.cs" Link="Source\ScdFileBuilder.cs" />
     <Compile Include="..\..\src\Audio\GameMixerAssetStore.cs" Link="Source\GameMixerAssetStore.cs" />
     <Compile Include="..\..\src\Audio\GameMixerAudioBackend.cs" Link="Source\GameMixerAudioBackend.cs" />
+    <Compile Include="..\..\src\Audio\StreamingGameMixerAudioBackend.cs" Link="Source\StreamingGameMixerAudioBackend.cs" />
+    <Compile Include="..\..\src\Audio\AudioEngine.cs" Link="Source\AudioEngine.cs" />
     <Compile Include="..\..\src\Bootstrap\BackendSelector.cs" Link="Source\BackendSelector.cs" />
+    <Compile Include="..\..\src\Bootstrap\DeviceMemorySnapshot.cs" Link="Source\DeviceMemorySnapshot.cs" />
+    <Compile Include="..\..\src\Bootstrap\BootstrapService.cs" Link="Source\BootstrapService.cs" />
+    <Compile Include="..\..\src\Bootstrap\PreparedModelQuality.cs" Link="Source\PreparedModelQuality.cs" />
+    <Compile Include="..\..\src\UI\ModelMemoryProjection.cs" Link="Source\ModelMemoryProjection.cs" />
     <Compile Include="..\..\src\Bootstrap\AssetManager.cs" Link="Source\AssetManager.cs" />
     <Compile Include="..\..\src\Bootstrap\ModelQualitySelection.cs" Link="Source\ModelQualitySelection.cs" />
     <Compile Include="..\..\src\Bootstrap\OfficialProfilePackManager.cs" Link="Source\OfficialProfilePackManager.cs" />
@@ -53,11 +64,22 @@
     <Compile Include="..\..\src\Game\TalkAdvancePolicy.cs" Link="Source\TalkAdvancePolicy.cs" />
     <Compile Include="..\..\src\Game\OfficialVoiceCatalog.cs" Link="Source\OfficialVoiceCatalog.cs" />
     <Compile Include="..\..\src\Game\CutsceneVoiceManifest.cs" Link="Source\CutsceneVoiceManifest.cs" />
+    <Compile Include="..\..\src\Game\CutsceneManifestCache.cs" Link="Source\CutsceneManifestCache.cs" />
+    <Compile Include="..\..\src\Game\CutscenePreDubPlanner.cs" Link="Source\CutscenePreDubPlanner.cs" />
+    <Compile Include="..\..\src\Game\QuestDialogueMatcher.cs" Link="Source\QuestDialogueMatcher.cs" />
+    <Compile Include="..\..\src\Game\DialogueText.cs" Link="Source\DialogueText.cs" />
+    <Compile Include="..\..\src\Game\CutsceneFlow.cs" Link="Source\CutsceneFlow.cs" />
+    <Compile Include="..\..\src\Game\DialogueIdentity.cs" Link="Source\DialogueIdentity.cs" />
+    <Compile Include="..\..\src\Game\NativeCutsceneRow.cs" Link="Source\NativeCutsceneRow.cs" />
+    <Compile Include="..\..\src\Game\LipSyncService.cs" Link="Source\LipSyncService.cs" />
     <Compile Include="..\..\src\Game\CutscenePlanStore.cs" Link="Source\CutscenePlanStore.cs" />
     <Compile Include="..\..\src\Game\MsqCutsceneSelector.cs" Link="Source\MsqCutsceneSelector.cs" />
+    <Compile Include="..\..\src\Game\MsqQuestCatalog.cs" Link="Source\MsqQuestCatalog.cs" />
     <Compile Include="..\..\src\Plugin\LegacyCastingMigration.cs" Link="Source\LegacyCastingMigration.cs" />
     <Compile Include="..\..\src\Scheduling\CutsceneSession.cs" Link="Source\CutsceneSession.cs" />
     <Compile Include="..\..\src\Scheduling\AutoAdvancePolicy.cs" Link="Source\AutoAdvancePolicy.cs" />
+    <Compile Include="..\..\src\Scheduling\CutscenePlaybackControl.cs" Link="Source\CutscenePlaybackControl.cs" />
+    <Compile Include="..\..\src\UI\CutsceneOverlayLayout.cs" Link="Source\CutsceneOverlayLayout.cs" />
     <Compile Include="..\..\src\Scheduling\DubLine.cs" Link="Source\DubLine.cs" />
     <Compile Include="..\..\src\Scheduling\DubScheduler.cs" Link="Source\DubScheduler.cs" />
     <Compile Include="..\..\src\Scheduling\StreamingStartPolicy.cs" Link="Source\StreamingStartPolicy.cs" />
@@ -69,7 +91,9 @@
     <Compile Include="..\..\src\Tts\QwenCppRuntime.cs" Link="Source\QwenCppRuntime.cs" />
     <Compile Include="..\..\src\Tts\VoiceDesigner.cs" Link="Source\VoiceDesigner.cs" />
     <Compile Include="..\..\src\Tts\VoiceRegistry.cs" Link="Source\VoiceRegistry.cs" />
+    <Compile Include="..\..\src\Tts\VoiceEmbedding.cs" Link="Source\VoiceEmbedding.cs" />
     <None Include="..\..\assets\dub-profiles.json" Link="assets\dub-profiles.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\sound-effects\*.wav" Link="assets\sound-effects\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\official-voices.json" Link="assets\official-voices.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

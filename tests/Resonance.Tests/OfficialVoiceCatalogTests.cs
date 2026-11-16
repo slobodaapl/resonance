@@ -4,6 +4,34 @@ namespace Resonance.Tests;
 
 public sealed class OfficialVoiceCatalogTests
 {
+    [Theory]
+    [InlineData(1019564u, "Nero tol Scaeva", "english", "nero")]
+    [InlineData(1012124u, "Count Edmont de Fortemps", "english", "edmont")]
+    [InlineData(null, "エドモン・ド・フォルタン伯爵", "japanese", "edmont")]
+    [InlineData(null, "Graf Edmont Fortemps", "german", "edmont")]
+    [InlineData(null, "comte Edmont de Fortemps", "french", "edmont")]
+    [InlineData(null, "クルル", "japanese", "krile")]
+    [InlineData(null, "ウクラマト", "japanese", "wuk-lamat")]
+    [InlineData(null, "Zenos yae Galvus", "english", "zenos")]
+    [InlineData(null, "Zenos viator Galvus", "english", "zenos")]
+    [InlineData(null, "Vrtra", "english", "vritra")]
+    [InlineData(1012103u, "Archbishop Thordan VII", "english", "thordan")]
+    [InlineData(null, "トールダン7世", "japanese", "thordan")]
+    [InlineData(null, "Papst Thordan VII.", "german", "thordan")]
+    [InlineData(null, "archevêque Thordan VII", "french", "thordan")]
+    [InlineData(1012493u, "irrelevant", "english", "tataru")]
+    [InlineData(1011278u, "irrelevant", "english", "pipin")]
+    [InlineData(null, "PIPPIN", "english", "pipin")]
+    [InlineData(null, "PIPIN", "japanese", "pipin")]
+    [InlineData(null, "Kan-E-Senna", "english", "kanesenna")]
+    public void ShippedCharacterResolvesFromNpcIdentityOrLocalizedName(
+        uint? npcBaseId, string displayName, string language, string groupId)
+    {
+        var catalog = OfficialVoiceCatalog.Load(ProjectPath("assets", "official-voices.json"));
+
+        Assert.Equal(groupId, catalog.Resolve(npcBaseId, displayName, language)?.Id);
+    }
+
     [Fact]
     public void GameAuthoredActorTokenResolvesSpacedOfficialAlias()
     {

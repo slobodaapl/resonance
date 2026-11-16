@@ -14,6 +14,9 @@ public sealed class QwenNativeLayoutTests
         Assert.Equal(24, Marshal.SizeOf<QwenNative.Audio>());
         Assert.Equal(32, Marshal.SizeOf<QwenNative.VoiceRef>());
         Assert.Equal(184, Marshal.SizeOf<QwenNative.TtsParams>());
+        Assert.Equal(56, Marshal.SizeOf<QwenNative.GgmlDeviceProperties>());
+        Assert.Equal(40, Marshal.OffsetOf<QwenNative.GgmlDeviceProperties>(nameof(QwenNative.GgmlDeviceProperties.DeviceId)).ToInt32());
+        Assert.Equal(48, Marshal.OffsetOf<QwenNative.GgmlDeviceProperties>(nameof(QwenNative.GgmlDeviceProperties.Async)).ToInt32());
 
         Assert.Equal(40, Marshal.OffsetOf<QwenNative.InitParams>(nameof(QwenNative.InitParams.BackendName)).ToInt32());
         Assert.Equal(112, Marshal.OffsetOf<QwenNative.TtsParams>(nameof(QwenNative.TtsParams.DumpDirectory)).ToInt32());

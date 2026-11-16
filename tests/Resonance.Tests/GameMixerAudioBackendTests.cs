@@ -1,5 +1,6 @@
 using Resonance.Audio;
 using Resonance.Game;
+using Resonance.Plugin;
 using Resonance.Scheduling;
 
 namespace Resonance.Tests;
@@ -163,6 +164,66 @@ public sealed class GameMixerAudioBackendTests
         Assert.InRange(transient.Max(), 0.944f, 0.945f);
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task ScdClonedVoiceProcessingStagesCanBeBypassedIndependently(bool filter, bool normalization)
+    {
+        var root = Path.Combine(AppContext.BaseDirectory, "audio-processing-" + Guid.NewGuid().ToString("N"));
+        var configuration = new Configuration();
+        var bridge = new TestResourceOverride();
+        try
+        {
+            using var backend = new FfxivGameMixerAudioBackend(root, bridge, new TestSoundPlayer(),
+                processingOptions: configuration.GetAudioProcessingOptions);
+            configuration.EnableVoiceCorrection = filter;
+            configuration.EnableLineNormalization = normalization;
+            using var line = CreateLine();
+            line.ApplyBaseCloneCorrection = true;
+            line.ReplaceAudio(StreamingAudioBuffer.FromSamples(Enumerable.Range(0, 24_000)
+                .Select(index => .03f * MathF.Sin(2 * MathF.PI * 160 * index / 24_000)).ToArray()));
+
+            await backend.PrepareAsync(line, 1, TestContext.Current.CancellationToken);
+            var decoded = ScdAudioDecoder.Extract(await File.ReadAllBytesAsync(bridge.LastLocalPath!,
+                TestContext.Current.CancellationToken), 0, TestContext.Current.CancellationToken);
+            var steady = decoded.AsSpan(6_000, 12_000).ToArray();
+            var rms = Math.Sqrt(steady.Average(value => (double)value * value));
+            var expected = .03 / Math.Sqrt(2) * Math.Pow(10, ((filter ? -.825 : 0) + (normalization ? 6 : 0)) / 20);
+
+            // 2% allows ADPCM quantization and resampling, below the filter's roughly 9% change.
+            Assert.InRange(rms, expected * .98, expected * 1.02);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void BypassingBothStagesPreservesUnprocessedAudioAndVolumeInSampleExports()
+    {
+        var root = Path.Combine(AppContext.BaseDirectory, "audio-processing-" + Guid.NewGuid().ToString("N"));
+        var source = Enumerable.Range(0, 24_000)
+            .Select(index => .03f * MathF.Sin(2 * MathF.PI * 160 * index / 24_000)).ToArray();
+        var raw = GameMixerPcmEncoder.PrepareMono44100(source, false, .5f);
+        var bypassed = GameMixerPcmEncoder.PrepareMono44100(source, true, .5f, new(false, false));
+        Assert.Equal(raw.Samples, bypassed.Samples);
+        Assert.False(bypassed.BaseCloneCorrectionApplied);
+        try
+        {
+            var path = Path.Combine(root, "sample.wav");
+            DebugWavExporter.Export(path, source, .5f, new(false, false));
+            using var reader = new NAudio.Wave.WaveFileReader(path);
+            Assert.Equal(44_100, reader.WaveFormat.SampleRate);
+            var bytes = new byte[reader.Length];
+            Assert.Equal(bytes.Length, reader.Read(bytes, 0, bytes.Length));
+            var samples = new float[bytes.Length / sizeof(float)];
+            Buffer.BlockCopy(bytes, 0, samples, 0, bytes.Length);
+            var rms = Math.Sqrt(samples.AsSpan(11_025, 22_050).ToArray().Average(value => (double)value * value));
+            Assert.InRange(rms, .03 * .5 / Math.Sqrt(2) * .99, .03 * .5 / Math.Sqrt(2) * 1.01);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    }
+
     [Fact]
     public void SceneSelectionAlwaysLocksNativeOutputAndNeverFallsBack()
     {
@@ -243,7 +304,7 @@ public sealed class GameMixerAudioBackendTests
     }
 
     [Fact]
-    public async Task AcceptedNativeDispatchFinishesByEncodedDurationWithoutObservation()
+    public async Task NativePlaybackMustFinishBeforeBackendCompletesEvenAfterEncodedDuration()
     {
         var root = Path.Combine(Path.GetTempPath(), "resonance-game-mixer-" + Guid.NewGuid().ToString("N"));
         var bridge = new TestResourceOverride();
@@ -258,11 +319,77 @@ public sealed class GameMixerAudioBackendTests
             line.Audio.Complete();
             backend.Play(line, 1f, _ => { }, _ => finished.TrySetResult(), (_, error) => throw error);
             await player.Played.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+            await player.Observing.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+            await Task.Delay(250, TestContext.Current.CancellationToken);
+            Assert.False(finished.Task.IsCompleted);
+            Assert.Equal(DubLineState.Active, line.State);
+            player.PlaybackFinished.TrySetResult();
             await finished.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+            await player.Stopped.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
             Assert.Equal(DubLineState.Completed, line.State);
+            Assert.Equal(player.ObservedResourcePath, player.StoppedPath);
         }
         finally
         {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task NativePlaybackFailureCannotPublishSuccessfulCompletion()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "resonance-game-mixer-" + Guid.NewGuid().ToString("N"));
+        var player = new TestSoundPlayer();
+        var failed = new TaskCompletionSource<Exception>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finished = false;
+        try
+        {
+            using var backend = new FfxivGameMixerAudioBackend(
+                root, new TestResourceOverride(), player, TimeSpan.Zero, TimeSpan.Zero);
+            using var line = CreateLine();
+            line.Audio.TryWrite([0.1f, 0.2f]);
+            line.Audio.Complete();
+            backend.Play(line, 1, _ => { }, _ => finished = true, (_, error) => failed.TrySetResult(error));
+            await player.Observing.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+            player.PlaybackFinished.TrySetException(new TimeoutException("Voice never started"));
+
+            Assert.IsType<TimeoutException>(await failed.Task.WaitAsync(
+                TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken));
+            await player.Stopped.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+            Assert.False(finished);
+            Assert.Equal(DubLineState.Failed, line.State);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task NativeReleaseCompletesBeforePublishingFinished()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "resonance-game-mixer-" + Guid.NewGuid().ToString("N"));
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var player = new TestSoundPlayer { StopDelay = release.Task };
+        var finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            using var backend = new FfxivGameMixerAudioBackend(
+                root, new TestResourceOverride(), player, TimeSpan.Zero, TimeSpan.Zero);
+            using var line = CreateLine();
+            line.Audio.TryWrite([0.1f, 0.2f]);
+            line.Audio.Complete();
+            backend.Play(line, 1, _ => { }, _ => finished.TrySetResult(), (_, error) => throw error);
+            await player.Observing.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+            player.PlaybackFinished.TrySetResult();
+            await player.Stopped.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+            Assert.False(finished.Task.IsCompleted);
+            release.TrySetResult();
+            await finished.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            release.TrySetResult();
             if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
         }
     }
@@ -295,6 +422,26 @@ public sealed class GameMixerAudioBackendTests
         {
             if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
         }
+    }
+
+    [Fact]
+    public async Task ConcurrentPreparationKeepsOneProducerReaderAndOneResourceMapping()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "resonance-game-mixer-" + Guid.NewGuid().ToString("N"));
+        var bridge = new TestResourceOverride();
+        try
+        {
+            using var backend = new FfxivGameMixerAudioBackend(root, bridge, new TestSoundPlayer(), TimeSpan.Zero, TimeSpan.Zero);
+            using var line = CreateLine();
+            var first = backend.PrepareAsync(line, 1, TestContext.Current.CancellationToken);
+            var second = backend.PrepareAsync(line, 1, TestContext.Current.CancellationToken);
+            line.Audio.TryWrite(Enumerable.Repeat(0.1f, 2400).ToArray());
+            line.Audio.Complete();
+            await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(3), TestContext.Current.CancellationToken);
+            Assert.Equal(1, bridge.RegisterCount);
+            Assert.True(line.PlaybackAssetReady);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
     }
 
     [Fact]
@@ -416,6 +563,7 @@ public sealed class GameMixerAudioBackendTests
             backend.Stop();
             await player.Stopped.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
             Assert.Equal(new nint(1), player.StoppedHandle);
+            Assert.Equal(player.ObservedResourcePath, player.StoppedPath);
         }
         finally
         {
@@ -444,6 +592,7 @@ public sealed class GameMixerAudioBackendTests
         public int RegisterCount { get; private set; }
         public int UnregisterCount { get; private set; }
         public int DisposeCount { get; private set; }
+        public string? LastLocalPath { get; private set; }
         public bool RegisterSucceeds { get; init; } = true;
         public bool Available { get; set; } = true;
         public bool IsAvailable => Available;
@@ -451,6 +600,7 @@ public sealed class GameMixerAudioBackendTests
         public bool TryRegister(string virtualPath, string localPath, out string? error)
         {
             RegisterCount++;
+            LastLocalPath = localPath;
             error = null;
             if (RegisterSucceeds) return true;
             error = "test resource override failure";
@@ -465,21 +615,39 @@ public sealed class GameMixerAudioBackendTests
         public int PlayCount;
         public bool Reject { get; init; }
         public nint StoppedHandle { get; private set; }
+        public string? PlayedPath { get; private set; }
+        public string? ObservedResourcePath { get; private set; }
+        public string? StoppedPath { get; private set; }
         public TaskCompletionSource Played { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Stopped { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Observing { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource PlaybackFinished { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Task StopDelay { get; init; } = Task.CompletedTask;
 
         public Task<nint> PlayAsync(string virtualPath, CancellationToken token)
         {
             Interlocked.Increment(ref PlayCount);
+            PlayedPath = virtualPath;
             Played.TrySetResult();
             return Task.FromResult(Reject ? nint.Zero : new nint(1));
         }
 
-        public Task StopAsync(nint playback)
+        public Task WaitForCompletionAsync(nint playback, string resourcePath, CancellationToken token)
+        {
+            Assert.Equal(new nint(1), playback);
+            Assert.True(File.Exists(resourcePath));
+            Assert.NotEqual(PlayedPath, resourcePath);
+            ObservedResourcePath = resourcePath;
+            Observing.TrySetResult();
+            return PlaybackFinished.Task.WaitAsync(token);
+        }
+
+        public Task StopAsync(nint playback, string resourcePath)
         {
             StoppedHandle = playback;
+            StoppedPath = resourcePath;
             Stopped.TrySetResult();
-            return Task.CompletedTask;
+            return StopDelay;
         }
     }
 }

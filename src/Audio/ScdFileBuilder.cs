@@ -47,7 +47,8 @@ public static class GameMixerPcmEncoder
     public static PreparedGameMixerAudio PrepareMono44100(
         ReadOnlySpan<float> samples,
         bool applyBaseCloneCorrection,
-        float volume = 1f)
+        float volume = 1f,
+        AudioProcessingOptions? processingOptions = null)
     {
         if (!float.IsFinite(volume) || volume < 0f || volume > 2f)
             throw new ArgumentOutOfRangeException(nameof(volume));
@@ -61,14 +62,13 @@ public static class GameMixerPcmEncoder
                 throw new InvalidDataException("GameMixer source audio contains a non-finite sample");
         }
 
-        ISampleProvider provider = new ArraySampleProvider(source, SourceSampleRate);
-        if (applyBaseCloneCorrection)
-        {
-            provider = new BaseCloneCorrectionSampleProvider(provider);
-            source = Drain(provider);
+        var processing = processingOptions ?? AudioProcessingOptions.Default;
+        var filterApplied = applyBaseCloneCorrection && processing.CorrectionFilter;
+        if (filterApplied)
+            source = Drain(new BaseCloneCorrectionSampleProvider(new ArraySampleProvider(source, SourceSampleRate)));
+        if (applyBaseCloneCorrection && processing.LineNormalization)
             NormalizeBaseCloneInPlace(source);
-            provider = new ArraySampleProvider(source, SourceSampleRate);
-        }
+        ISampleProvider provider = new ArraySampleProvider(source, SourceSampleRate);
         if (volume != 1f)
             provider = new VolumeSampleProvider(provider) { Volume = volume };
         var resampled = new WdlResamplingSampleProvider(provider, OutputSampleRate);
@@ -85,12 +85,21 @@ public static class GameMixerPcmEncoder
                 throw new InvalidDataException("GameMixer resampled audio exceeds the bounded duration limit");
         }
 
-        return new PreparedGameMixerAudio(result.ToArray(), OutputSampleRate, applyBaseCloneCorrection);
+        return new PreparedGameMixerAudio(result.ToArray(), OutputSampleRate, filterApplied);
     }
 
     internal static double NormalizeBaseCloneInPlace(Span<float> samples)
     {
-        if (samples.IsEmpty) return 0;
+        var gainDb = MeasureBaseCloneGain(samples) ?? 0;
+        var gain = DbToLinear(gainDb);
+        for (var index = 0; index < samples.Length; index++)
+            samples[index] = (float)Math.Clamp(samples[index] * gain, -1d, 1d);
+        return gainDb;
+    }
+
+    internal static double? MeasureBaseCloneGain(ReadOnlySpan<float> samples)
+    {
+        if (samples.IsEmpty) return null;
         var peak = 0d;
         foreach (var sample in samples)
         {
@@ -98,7 +107,7 @@ public static class GameMixerPcmEncoder
                 throw new InvalidDataException("GameMixer source audio contains a non-finite sample");
             peak = Math.Max(peak, Math.Abs(sample));
         }
-        if (peak <= 0) return 0;
+        if (peak <= 0) return null;
 
         const int frameSamples = SourceSampleRate / 50;
         var threshold = Math.Max(DbToLinear(-50), peak * DbToLinear(-35));
@@ -113,7 +122,7 @@ public static class GameMixerPcmEncoder
             activeSquareSum += squareSum;
             activeSampleCount += frame.Length;
         }
-        if (activeSampleCount == 0 || activeSquareSum <= 0) return 0;
+        if (activeSampleCount == 0 || activeSquareSum <= 0) return null;
 
         var activeRmsDb = LinearToDb(Math.Sqrt(activeSquareSum / activeSampleCount));
         var desiredGainDb = Math.Clamp(
@@ -121,11 +130,7 @@ public static class GameMixerPcmEncoder
             -MaximumNormalizationGainDb,
             MaximumNormalizationGainDb);
         var peakLimitedGainDb = PeakCeilingDbfs - LinearToDb(peak);
-        var gainDb = Math.Min(desiredGainDb, peakLimitedGainDb);
-        var gain = DbToLinear(gainDb);
-        for (var index = 0; index < samples.Length; index++)
-            samples[index] = (float)Math.Clamp(samples[index] * gain, -1d, 1d);
-        return gainDb;
+        return Math.Min(desiredGainDb, peakLimitedGainDb);
     }
 
     private static float[] Drain(ISampleProvider provider)

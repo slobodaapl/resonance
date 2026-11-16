@@ -10,6 +10,8 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="../../src/Game/CutsceneVoiceManifest.cs" Link="CutsceneVoiceManifest.cs" />
+    <Compile Include="../../src/Game/DialogueText.cs" Link="DialogueText.cs" />
+    <Compile Include="../../src/Game/CutsceneFlow.cs" Link="CutsceneFlow.cs" />
     <Reference Include="Lumina">
       <HintPath>$(DalamudLibPath)/Lumina.dll</HintPath>
     </Reference>

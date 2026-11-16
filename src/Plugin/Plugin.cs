@@ -27,6 +27,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
     [PluginService] internal static IFramework Framework { get; private set; } = null!;
     [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
+    [PluginService] internal static IGameConfig GameConfig { get; private set; } = null!;
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
     [PluginService] internal static INotificationManager Notifications { get; private set; } = null!;
     [PluginService] internal static ICommandManager CommandManager { get; private set; } = null!;
@@ -42,6 +43,7 @@ public sealed class Plugin : IDalamudPlugin
     private BootstrapService? bootstrap;
     private OfficialProfilePackManager? officialProfilePacks;
     private Task? officialProfilePackTask;
+    private RuntimeManager? notifiedRuntime;
     private SessionCoordinator? coordinator;
     private IpcService? ipc;
     private LipSyncService? startupLipSync;
@@ -75,6 +77,7 @@ public sealed class Plugin : IDalamudPlugin
             message => Log.Information("Casting configuration: {Message}", message));
         PluginInterface.SavePluginConfig(Configuration);
         PluginInterface.UiBuilder.Draw += windows.Draw;
+        PluginInterface.UiBuilder.DisableCutsceneUiHide = true;
         PluginInterface.UiBuilder.OpenConfigUi += OpenConfigUi;
         PluginInterface.UiBuilder.OpenMainUi += OpenMainUi;
         CommandManager.AddHandler("/resonance", new CommandInfo(OnCommand)
@@ -160,13 +163,16 @@ public sealed class Plugin : IDalamudPlugin
             if (Volatile.Read(ref disposed) != 0) return;
             var createdDatabase = database = new Database(Path.Combine(dataDirectory, "resonance.sqlite3"));
             var createdVoices = new VoiceRegistry(createdDatabase);
-            officialProfilePacks = new OfficialProfilePackManager(
+            var createdOfficialProfilePacks = officialProfilePacks = new OfficialProfilePackManager(
                 dataDirectory, createdDatabase, createdVoices, officialVoiceCatalog, catalog);
             var createdCutscenes = cutscenes = new CutsceneDetector(Condition);
             SessionCoordinator? createdCoordinator = null;
             var createdTalk = talk = new TalkObserver(
                 AddonLifecycle,
                 GameGui,
+                GameInterop,
+                SigScanner,
+                Log,
                 () => Configuration.AutoAdvanceDiagnostics,
                 () => Configuration.Enabled
                       && Configuration.AutoAdvanceDubbedCutsceneDialogue
@@ -183,15 +189,21 @@ public sealed class Plugin : IDalamudPlugin
             IGameMixerAudioBackend? createdGameMixer = null;
             try
             {
-                createdGameMixer = new FfxivGameMixerAudioBackend(
-                    dataDirectory,
-                    new ResonanceScdResourceOverride(SigScanner, GameInterop, Log),
-                    new FfxivClientSoundPlayer(Framework),
-                    loadNativeScdTemplate: nativeScdTemplateLoader.LoadAsync);
+                createdGameMixer = new StreamingGameMixerAudioBackend(
+                    new FfxivPcmSink(SigScanner, GameInterop), Configuration.GetAudioProcessingOptions);
             }
             catch (Exception error)
             {
-                Log.Warning(error, "FFXIV native voice output unavailable");
+                Log.Warning(error, "Incremental game mixer unavailable; using native SCD playback");
+                try
+                {
+                    createdGameMixer = new FfxivGameMixerAudioBackend(
+                        dataDirectory, new ResonanceScdResourceOverride(SigScanner, GameInterop, Log),
+                        new FfxivClientSoundPlayer(Framework, Log),
+                        loadNativeScdTemplate: nativeScdTemplateLoader.LoadAsync,
+                        processingOptions: Configuration.GetAudioProcessingOptions);
+                }
+                catch (Exception fallbackError) { Log.Warning(fallbackError, "FFXIV native voice output unavailable"); }
             }
             try
             {
@@ -202,13 +214,18 @@ public sealed class Plugin : IDalamudPlugin
                     new QuestDialoguePrefetcher(DataManager, ClientState),
                     new MsqProgressReader(DataManager, ClientState),
                     new CutsceneVoiceManifestProvider(
-                        DataManager, ClientState, Log, new CutscenePlanStore(dataDirectory)),
+                        DataManager, ClientState, Log, new CutscenePlanStore(dataDirectory),
+                        () => GameConfig.System.TryGet("CutsceneMovieVoice", out uint voice) && voice <= 3
+                            ? (int)voice : (int)ClientState.ClientLanguage),
                     createdLipSync,
                     createdDatabase, createdVoices, createdBootstrap,
                     Path.Combine(dataDirectory, "line-cache"),
                     Path.Combine(dataDirectory, "debug-audio"),
                     catalog, officialVoiceCatalog, EnglishTerritoryName,
-                    Configuration, Log, createdGameMixer);
+                    Configuration, Log, createdGameMixer,
+                    new DialogueSpeech(new DialogueSoundEffects(Path.Combine(
+                        PluginInterface.AssemblyLocation.Directory!.FullName, "assets", "sound-effects"),
+                        (id, error) => Log.Warning(error, "Dialogue sound effect {Effect} unavailable; skipping", id))));
             }
             finally
             {
@@ -242,11 +259,23 @@ public sealed class Plugin : IDalamudPlugin
                 createdCoordinator.RunBaseDebugAsync,
                 createdCoordinator.CancelDebugInference,
                 createdCoordinator.NotifyPreDubConfigurationChanged,
-                SaveConfiguration, ReportError,
+                SaveConfiguration, ReportError, createdCoordinator.GetPlaybackActivity,
+                createdCoordinator.RefreshDeviceMemoryAsync,
+                (quality, token) => createdCoordinator.SetQualityAsync(quality, async (modelHash, profileToken) =>
+                {
+                    var result = await createdOfficialProfilePacks.SynchronizeAsync(modelHash, profileToken,
+                        !Configuration.DisableVoicePackAutoUpdate).ConfigureAwait(false);
+                    Log.Information("Quality voice profiles prepared Imported={Imported} Reconciled={Reconciled}",
+                        result.ImportedProfiles, result.ReconciledAssignments);
+                }, token), PluginInterface.UiBuilder,
                 createdCoordinator.GetAudioBackendStatus,
                 createdCoordinator.SetBackendAsync,
-                createdCoordinator.RebuildBackendBenchmarkAsync);
+                createdCoordinator.RebuildBackendBenchmarkAsync,
+                createdCoordinator.ApplyAutomaticBackendAsync,
+                createdCoordinator.NotifyDialogueSoundEffectsChanged);
             windows.AddWindow(createdWindow);
+            windows.AddWindow(new CutsceneControlOverlay(GameGui,
+                createdCoordinator.GetCutsceneControlSnapshot, createdCoordinator.SetCutscenePaused));
             if (Interlocked.Exchange(ref openSettingsRequested, 0) != 0)
                 createdWindow.IsOpen = true;
 
@@ -274,9 +303,15 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnRuntimeReady(RuntimeManager manager)
     {
-        manager.SelectionChanged += OnBackendSelection;
+        lock (disposeGate)
+        {
+            if (Volatile.Read(ref disposed) != 0) return;
+            if (notifiedRuntime is { } previous) previous.SelectionChanged -= OnBackendSelection;
+            notifiedRuntime = manager;
+            manager.SelectionChanged += OnBackendSelection;
+        }
         if (manager.Selection is not null) OnBackendSelection(manager.Selection);
-        StartOfficialProfilePackSync(manager.ModelHash);
+        if (bootstrap?.IsChangingQuality != true) StartOfficialProfilePackSync(manager.ModelHash);
     }
 
     private void StartOfficialProfilePackSync(string modelHash)
@@ -294,9 +329,9 @@ public sealed class Plugin : IDalamudPlugin
                             !Configuration.DisableVoicePackAutoUpdate)
                         .ConfigureAwait(false);
                     Log.Information(
-                        "Official profile pack synchronized Version={Version} Downloaded={Downloaded} Imported={Imported}",
-                        result.PackVersion, result.Downloaded, result.ImportedProfiles);
-                    if (result.ImportedProfiles > 0)
+                        "Official profile pack synchronized Version={Version} Downloaded={Downloaded} Imported={Imported} Reconciled={Reconciled}",
+                        result.PackVersion, result.Downloaded, result.ImportedProfiles, result.ReconciledAssignments);
+                    if (result.ImportedProfiles > 0 || result.ReconciledAssignments > 0)
                         coordinator?.NotifyOfficialProfilePackImported();
                 }
                 catch (OperationCanceledException) when (startupShutdown.IsCancellationRequested) { }
@@ -534,6 +569,8 @@ public sealed class Plugin : IDalamudPlugin
         IProcessLifetimeLease? ownedLease;
         lock (disposeGate)
         {
+            if (notifiedRuntime is { } previous) previous.SelectionChanged -= OnBackendSelection;
+            notifiedRuntime = null;
             window = configWindow;
             configWindow = null;
             ownedIpc = ipc;
@@ -560,6 +597,8 @@ public sealed class Plugin : IDalamudPlugin
 
         try { ownedIpc?.Dispose(); }
         catch (Exception error) { Record("IPC", error); }
+        try { ownedBootstrap?.CancelPendingOperations(); }
+        catch (Exception error) { Record("Model work cancellation", error); }
         if (window is not null)
         {
             try { await window.DisposeAsync().ConfigureAwait(false); }

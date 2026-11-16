@@ -15,7 +15,8 @@ public sealed record BackendInfo(
     BackendType Type,
     int DeviceIndex,
     ulong MemoryFree,
-    ulong MemoryTotal);
+    ulong MemoryTotal,
+    string? PhysicalDeviceId = null);
 
 public enum BackendType { Unknown, Cpu, Cuda, Vulkan, Gpu, Accelerator }
 
@@ -27,7 +28,15 @@ public sealed record SynthesisRequest(
     VoiceReference? Reference,
     string? Instruction,
     long Seed,
-    int MaxNewTokens = 2048);
+    int MaxNewTokens = 2048)
+{
+    public SynthesisRequest WithoutDialogueCues() => this with
+    {
+        Text = DialogueCues.SpeechText(Text),
+        Reference = Reference is { } reference && DialogueCues.Contains(reference.Transcript)
+            ? reference with { Transcript = DialogueCues.SpeechText(reference.Transcript) } : Reference,
+    };
+}
 
 public interface ITtsRuntime : IAsyncDisposable
 {

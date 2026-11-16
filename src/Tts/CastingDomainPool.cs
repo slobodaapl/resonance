@@ -366,6 +366,9 @@ public sealed class CastingDomainPool : IAsyncDisposable
                     targetMap[key] = sex == "masculine"
                         ? Math.Max(0, configuredTargets.Masculine)
                         : Math.Max(0, configuredTargets.Feminine);
+                    if (catalog.GetDomain(domain).SharedVoice
+                        && String.IsNullOrWhiteSpace(promptOverride?.Invoke(domain, currentLanguage, sex)))
+                        targetMap[key] = 0;
                     readyMap[key] = await registry.CountReadyDomainPoolAsync(
                         domain, currentLanguage, sex, job.Token).ConfigureAwait(false);
                 }
@@ -429,6 +432,7 @@ public sealed class CastingDomainPool : IAsyncDisposable
         var slot = slots[(int)(sequence % slots.Count)];
         var resolution = BuildDomainResolution(work, placeName);
         var instruction = promptOverride?.Invoke(work.DomainId, work.Language, work.Sex);
+        var hasOverride = !String.IsNullOrWhiteSpace(instruction);
         if (String.IsNullOrWhiteSpace(instruction))
             instruction = catalog.BuildPrompt(resolution, work.Language, work.Sex, slot.Id);
         var seed = StableSeed($"{work.DomainId}\0{work.Language}\0{work.Sex}\0{sequence}");
@@ -437,6 +441,24 @@ public sealed class CastingDomainPool : IAsyncDisposable
             ? await designReference(instruction, seed, work.Language, token).ConfigureAwait(false)
             : await (currentDesigner ?? throw new InvalidOperationException("VoiceDesign is unavailable"))
                 .DesignReferenceAsync(instruction, seed, work.Language, token).ConfigureAwait(false);
+        int? conditioningCatalogVersion = null;
+        if (!hasOverride)
+        {
+            var variant = catalog.FallbackVariantId(resolution,
+                new SpeakerCastingEvidence("pool", Sex: work.Sex, Age: slot.Age));
+            var prepared = await registry.GetFallbackVoiceAsync(
+                work.DomainId, variant, work.Language, modelHash, token)
+                .ConfigureAwait(false);
+            if (prepared is not null)
+            {
+                conditioningCatalogVersion = prepared.CatalogVersion;
+                reference = prepared.Reference with
+                {
+                    SpeakerEmbedding = VoiceEmbedding.LinearBlend(
+                        prepared.Reference.SpeakerEmbedding, reference.SpeakerEmbedding, 0.05),
+                };
+            }
+        }
         if (!CastingPoolScheduler.ShouldPersistGeneratedVoice(job.IsCancellationRequested,
                 await CanWorkAsync(token).ConfigureAwait(false)))
         {
@@ -459,9 +481,11 @@ public sealed class CastingDomainPool : IAsyncDisposable
                 sex = work.Sex,
                 slot = slot.Id,
                 modifiers = resolution.ModifierIds,
+                promptOverride = hasOverride,
+                conditioningCatalogVersion,
             }),
             domainId: work.DomainId,
-            catalogVersion: catalog.Version,
+            catalogVersion: hasOverride ? catalog.Version : conditioningCatalogVersion ?? 0,
             traitsJson: traitsJson);
         token.ThrowIfCancellationRequested();
         await registry.SaveDomainPoolVoiceAsync(

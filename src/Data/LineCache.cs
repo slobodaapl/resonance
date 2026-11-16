@@ -39,7 +39,7 @@ public sealed class LineCache
         await EnsureStartupCleanupAsync(token).ConfigureAwait(false);
         using var readLease = TryAcquireCleanupLease();
         if (readLease is null) return false;
-        var key = CacheKey(profileHash, modelHash, language, line.Text, seed);
+        var key = CacheKey(profileHash, modelHash, language, line.Text, seed, line.AudioCacheVariant);
         string? path = null;
         string? observedVersion = null;
         await database.WriteAsync(async connection =>
@@ -106,7 +106,7 @@ public sealed class LineCache
         FileStream? writerLease = null;
         try
         {
-            var key = CacheKey(profileHash, modelHash, language, line.Text, seed);
+            var key = CacheKey(profileHash, modelHash, language, line.Text, seed, line.AudioCacheVariant);
             var operationNonce = Guid.NewGuid().ToString("N");
             path = Path.Combine(directory, key + ".f32");
             ownerPath = Path.Combine(directory, $".{operationNonce}.owner.json");
@@ -494,8 +494,9 @@ public sealed class LineCache
         catch (UnauthorizedAccessException) { return null; }
     }
 
-    private static string CacheKey(string profileHash, string modelHash, string language, string text, long seed) =>
-        HexHash($"v1\n{modelHash}\n{profileHash}\n{language}\n{Normalize(text)}\nseed={seed}\nmax=2048");
+    private static string CacheKey(string profileHash, string modelHash, string language, string text, long seed,
+        string variant) => HexHash($"v1\n{modelHash}\n{profileHash}\n{language}\n{Normalize(text)}\nseed={seed}\nmax=2048"
+            + (variant.Length == 0 ? string.Empty : "\nvariant=" + variant));
 
     private sealed record CacheOwner(int ProcessId, long ProcessStartUtcTicks, string InstanceNonce);
 

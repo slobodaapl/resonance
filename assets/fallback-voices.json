@@ -1,0 +1,699 @@
+{
+  "version": 1,
+  "referenceText": "Wait! Are you hurt? Sit down. Tell me what happened.",
+  "flavorSuffix": "Preserve the described voice age and male or female register while adding this flavor.",
+  "foundations": [
+    {
+      "id": "masculine_young",
+      "sex": "masculine",
+      "age": "young",
+      "nativeActor": "alphinaud",
+      "prompt": "A young man about twenty speaking English. A clear youthful male tenor, firm buzzy vocal core, compact chest resonance and quick, spontaneous reactions. His vowels have body and his consonants bite. He addresses one companion, changing from concern to surprise, practical reassurance and a pointed question as the words change. Act each thought with changes of stress, pace and pitch.",
+      "seed": 4101,
+      "nativeWeight": 0.65
+    },
+    {
+      "id": "masculine_adult",
+      "sex": "masculine",
+      "age": "adult",
+      "nativeActor": "graha-tia",
+      "prompt": "A man in his forties speaking English. A warm male baritone with broad chest resonance, firm compact vowels, a little dry grain and confident breath support. He speaks directly to a companion and reacts to what he sees: concern, a startled warning, relief, then an insistent question. Uneven conversational timing, strong contrasts of stress, and audible changes of intent.",
+      "seed": 4102,
+      "nativeWeight": 0.65
+    },
+    {
+      "id": "masculine_elder",
+      "sex": "masculine",
+      "age": "elder",
+      "nativeActor": "thordan",
+      "prompt": "An elderly man in his eighties speaking English, a frail old grandfather. His male voice has become thin and reedy: dry hoarse rasp, breath leaking around the tone, a slight shaky flutter on held vowels, worn creaky edges and small involuntary voice breaks. Short breath groups, audible little inhalations, hesitant onsets and trailing breath at phrase endings. Age is unmistakable in the texture and rhythm. He reacts with concern, a sudden effortful warning, tired affection and a probing question.",
+      "seed": 4203,
+      "nativeWeight": 0.5
+    },
+    {
+      "id": "feminine_young",
+      "sex": "feminine",
+      "age": "young",
+      "nativeActor": "alisaie",
+      "prompt": "A young woman about twenty speaking English. A bright female mezzo voice with a full clear middle, springy consonants, forward resonance and quick, candid reactions. She speaks to a companion, changing from worried curiosity to a startled warning, warm reassurance and a teasingly firm question. Let the intent change her stress, pace and pitch at each turn.",
+      "seed": 4201,
+      "nativeWeight": 0.65
+    },
+    {
+      "id": "feminine_adult",
+      "sex": "feminine",
+      "age": "adult",
+      "nativeActor": "yshtola",
+      "prompt": "A woman in her forties speaking English. A warm female alto with a rich middle register, firm vocal core, rounded vowels, crisp consonants and grounded authority. She talks to one companion, reacting with concern, a sharp warning, practical tenderness and an insistent question. Give the dialogue changes of intention, varied emphasis and pauses made by thought.",
+      "seed": 4202,
+      "nativeWeight": 0.65
+    },
+    {
+      "id": "feminine_elder",
+      "sex": "feminine",
+      "age": "elder",
+      "nativeActor": "matoya",
+      "prompt": "An elderly woman in her eighties speaking English, a frail old grandmother. A thin, weak, quavery female voice with dry scratchy rasp, airy breath leakage and fragile reedy resonance. Sustained vowels wobble gently; words have little creaky breaks and shaky beginnings. Short breath groups with small audible inhalations between thoughts, slower starts and breath fading at phrase endings. She sounds distinctly elderly while reacting with worried curiosity, an effortful warning, tender relief and a pointed question.",
+      "seed": 4303,
+      "nativeWeight": 0.5
+    }
+  ],
+  "domains": [
+    {
+      "id": "generic_world",
+      "flavor": "Use clear character dialogue with a lived voice: audible breath support, firm word attacks, changes of intention and unforced conversational timing.",
+      "anchors": {},
+      "weight": 0,
+      "sources": [
+        "https://www.gamesradar.com/how-the-localization-of-final-fantasy-14-rose-from-the-ashes/"
+      ]
+    },
+    {
+      "id": "lominsan",
+      "flavor": "Give the English a mild southwestern British coastal cadence: open vowels, a little burr, rough-edged consonants and expansive, candid phrasing. Let warmth turn quickly into a sharp warning.",
+      "anchors": {
+        "masculine": "sicard",
+        "feminine": "merlwyb"
+      },
+      "weight": 0.2,
+      "sources": [
+        "https://www.gamesradar.com/how-the-localization-of-final-fantasy-14-rose-from-the-ashes/",
+        "https://ffxiv.consolegameswiki.com/wiki/Sicard",
+        "https://ffxiv.consolegameswiki.com/wiki/Merlwyb"
+      ]
+    },
+    {
+      "id": "mixed_eorzean",
+      "flavor": "Keep the speaker's individual register and conversational habits. Clear ordinary English, vivid changes of thought and natural contractions; preserve the age and voice identity without imposing a shared local accent.",
+      "anchors": {},
+      "weight": 0.2,
+      "sources": [
+        "https://www.gamesradar.com/how-the-localization-of-final-fantasy-14-rose-from-the-ashes/"
+      ]
+    },
+    {
+      "id": "gridanian",
+      "flavor": "Use rounded southern British vowels, clean liquid consonants and neatly shaped phrases. The tone has an open, organic ring and attentive warmth. Reactions can be quick and forceful; formality does not flatten emotion.",
+      "anchors": {
+        "masculine": "aruhnsenna",
+        "feminine": "kanesenna"
+      },
+      "weight": 0.2,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/A-Ruhn-Senna",
+        "https://ffxiv.consolegameswiki.com/wiki/Kan-E-Senna"
+      ]
+    },
+    {
+      "id": "uldahn",
+      "flavor": "Use focused frontal resonance, crisp word endings and quick contrasts of stress. Phrases have purpose and social confidence, with room for affection, impatience and doubt. Keep it personal and candid.",
+      "anchors": {
+        "masculine": "lolorito",
+        "feminine": "nanamo"
+      },
+      "weight": 0.2,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/Lolorito",
+        "https://ffxiv.consolegameswiki.com/wiki/Nanamo"
+      ]
+    },
+    {
+      "id": "manderville_entertainment",
+      "flavor": "Give the voice a performer's command of breath and timing: ringing vowels, clean consonants, elastic pauses and sudden emphatic turns. Intimate lines become candid conversation; excitement can expand into theatrical delight.",
+      "anchors": {},
+      "weight": 0.2,
+      "sources": [
+        "https://www.gamesradar.com/how-the-localization-of-final-fantasy-14-rose-from-the-ashes/"
+      ]
+    },
+    {
+      "id": "ishgardian",
+      "flavor": "Use clear British English with held vowels, firm t and d consonants, a little weathered grain and deliberate phrase endings. Give the voice social poise while allowing fear, anger and tenderness to interrupt its composure.",
+      "anchors": {
+        "masculine": "aymeric",
+        "feminine": "iceheart"
+      },
+      "weight": 0.2,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/Aymeric",
+        "https://ffxiv.consolegameswiki.com/wiki/Ysayle"
+      ]
+    },
+    {
+      "id": "dravanian_frontier",
+      "flavor": "Use broad, open rural English vowels, practical short phrases, dry humor and a worked-in vocal texture. The speaker has physical confidence and reacts promptly rather than reciting a prepared account.",
+      "anchors": {},
+      "weight": 0.2,
+      "sources": [
+        "https://www.gamesradar.com/how-the-localization-of-final-fantasy-14-rose-from-the-ashes/"
+      ]
+    },
+    {
+      "id": "mixed_sharlayan_frontier",
+      "flavor": "Keep individual origins audible. Practical conversational English, clear thought groups and lively responses. This settlement's history alone does not impose a scholarly accent on every resident.",
+      "anchors": {},
+      "weight": 0.2,
+      "sources": [
+        "https://www.gamesradar.com/how-the-localization-of-final-fantasy-14-rose-from-the-ashes/"
+      ]
+    },
+    {
+      "id": "mixed_adventurer",
+      "flavor": "Speak as an experienced traveler addressing a companion: direct word attacks, easy contractions, quick changes between caution and enthusiasm. Keep the foundation's individual voice rather than assigning a settlement-wide accent.",
+      "anchors": {},
+      "weight": 0.2,
+      "sources": [
+        "https://www.gamesradar.com/how-the-localization-of-final-fantasy-14-rose-from-the-ashes/"
+      ]
+    },
+    {
+      "id": "ala_mhigan",
+      "flavor": "Give the English a light Yorkshire and northern English coloring: broad open vowels, compact diphthongs, firm consonants and direct, unsentimental warmth. Anger has bite; reassurance has body and conviction.",
+      "anchors": {
+        "masculine": "ilberd",
+        "feminine": "fordola"
+      },
+      "weight": 0.2,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/Ilberd",
+        "https://ffxiv.consolegameswiki.com/wiki/Fordola"
+      ]
+    },
+    {
+      "id": "sharlayan",
+      "flavor": "Use educated southern British English with precise vowels, clean consonants and carefully stressed clauses. The speaker thinks while talking: urgency can accelerate the reasoning, and personal feeling can break the orderly phrasing.",
+      "anchors": {
+        "masculine": "fourchenault",
+        "feminine": "ameliance"
+      },
+      "weight": 0.2,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/Fourchenault",
+        "https://ffxiv.consolegameswiki.com/wiki/Ameliance"
+      ]
+    },
+    {
+      "id": "hingan",
+      "flavor": "Use compact, clearly articulated English syllables, deliberate starts and neatly controlled pauses. Formal address has careful breath and exact consonants; surprise and affection bring a quicker, more open conversational tone.",
+      "anchors": {},
+      "weight": 0.2,
+      "sources": [
+        "https://www.gamesradar.com/how-the-localization-of-final-fantasy-14-rose-from-the-ashes/"
+      ]
+    },
+    {
+      "id": "doman",
+      "flavor": "Use clear English with open, well-supported vowels, clean syllable onsets and measured phrase grouping. The voice has dignified directness and can move from reflective warmth to a forceful short command.",
+      "anchors": {
+        "masculine": "hien",
+        "feminine": "yugiri"
+      },
+      "weight": 0.2,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/Hien",
+        "https://ffxiv.consolegameswiki.com/wiki/Yugiri"
+      ]
+    },
+    {
+      "id": "far_east_coastal",
+      "flavor": "Use open, practical conversational phrasing and clear syllable boundaries. A little roughness may color emphatic words, but preserve the individual voice and origin in this mixed coastal population.",
+      "anchors": {},
+      "weight": 0.2,
+      "sources": [
+        "https://www.gamesradar.com/how-the-localization-of-final-fantasy-14-rose-from-the-ashes/"
+      ]
+    },
+    {
+      "id": "xaela_steppe",
+      "flavor": "Give the voice open resonant vowels, blunt confident word attacks and a proud, energetic cadence. Questions have genuine curiosity or challenge, and declarations carry personal conviction. Keep the English pronunciation grounded in the actual exemplars.",
+      "anchors": {
+        "masculine": "magnai",
+        "feminine": "sadu"
+      },
+      "weight": 0.2,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/Magnai",
+        "https://ffxiv.consolegameswiki.com/wiki/Sadu"
+      ]
+    },
+    {
+      "id": "norvrandt_common",
+      "flavor": "Use plain, clear English with a full conversational voice, easy contractions and changes of intention. Preserve the speaker's age and personal vocal identity; a cosmopolitan region does not have one mandatory accent.",
+      "anchors": {},
+      "weight": 0.2,
+      "sources": [
+        "https://www.gamesradar.com/how-the-localization-of-final-fantasy-14-rose-from-the-ashes/"
+      ]
+    },
+    {
+      "id": "kholusian",
+      "flavor": "Use grounded working-person English: broad vowels, practical stress, dry humor and a slightly roughened edge. Let strong emotion change the rhythm and volume of individual words while keeping the dialogue intelligible.",
+      "anchors": {},
+      "weight": 0.2,
+      "sources": [
+        "https://www.gamesradar.com/how-the-localization-of-final-fantasy-14-rose-from-the-ashes/"
+      ]
+    },
+    {
+      "id": "norvrandt_rural",
+      "flavor": "Use open rural English vowels, short practical thought groups and an earthy, candid tone. The delivery can be wry, alarmed, delighted or gentle; pauses come from what the speaker is thinking.",
+      "anchors": {},
+      "weight": 0.2,
+      "sources": [
+        "https://www.gamesradar.com/how-the-localization-of-final-fantasy-14-rose-from-the-ashes/"
+      ]
+    },
+    {
+      "id": "il_mheg_pixie",
+      "flavor": "Give this small fae voice a bright fluting core, quick ringing upper overtones and buoyant, springing pitch contours. Sweetness can snap into a sharp little threat. For English, a light Scottish musical lilt can color the vowels.",
+      "anchors": {
+        "masculine": "feoul",
+        "feminine": "feoul"
+      },
+      "weight": 0.3,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/Feo_Ul"
+      ]
+    },
+    {
+      "id": "il_mheg_nu_mou",
+      "flavor": "A Nu Mou voice with rounded, compressed resonance and a little exertive catch at the beginning of an emphasized phrase. Warm breath support, effortful but sustained vowels, careful old-fashioned diction and a thoughtful pace. Concern and delight remain audible through the physical effort.",
+      "anchors": {
+        "masculine": "beqlugg",
+        "feminine": "beqlugg"
+      },
+      "weight": 0.3,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/Beq_Lugg"
+      ]
+    },
+    {
+      "id": "rak_tika_viis",
+      "flavor": "Use clear English with light Icelandic-family vowel coloring, precise consonants and cool, rounded resonance. The phrasing has a firm, deliberate pulse, but reactions remain emotionally present and can become urgent or tender.",
+      "anchors": {
+        "masculine": "lyna",
+        "feminine": "lyna"
+      },
+      "weight": 0.2,
+      "sources": [
+        "https://www.square-enix-games.com/en_US/news/final-fantasy-xiv-shadowbringers-viera",
+        "https://ffxiv.consolegameswiki.com/wiki/Lyna"
+      ]
+    },
+    {
+      "id": "rak_tika_night_blessed",
+      "flavor": "Give the voice quiet conviction through supported, rounded vowels and sturdy phrase endings. Speak warmly and directly to a companion. Belief can lend weight to a statement without making ordinary conversation sound like a ceremony.",
+      "anchors": {
+        "masculine": "runar"
+      },
+      "weight": 0.2,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/Runar"
+      ]
+    },
+    {
+      "id": "ondo",
+      "flavor": "Use a distinctly aquatic mouth and throat resonance: damp airy friction, a hollow rounded core, softly rippling vowel endings and clear elongated sibilant edges. Thoughtful phrasing with sudden, precise emphases; keep the supplied words intact.",
+      "anchors": {
+        "masculine": "readerofondo",
+        "feminine": "readerofondo"
+      },
+      "weight": 0.3,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/Ondo"
+      ]
+    },
+    {
+      "id": "ancient",
+      "flavor": "Give the voice a clear ringing core and spacious, carefully shaped phrases. There is confidence in the breath and precision in the consonants, but personal feelings cut through the polished rhetoric and can change the pace abruptly.",
+      "anchors": {
+        "masculine": "themis",
+        "feminine": "athena"
+      },
+      "weight": 0.2,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/Themis",
+        "https://ffxiv.consolegameswiki.com/wiki/Athena"
+      ]
+    },
+    {
+      "id": "thavnairian",
+      "flavor": "Use lightly rounded, open vowels, precise dental consonants and a flowing syllabic pulse. Let English phrases have warm melodic turns and clear emphatic beats while preserving the foundation's vocal identity and emotional reactions.",
+      "anchors": {
+        "masculine": "matsya"
+      },
+      "weight": 0.2,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/Matsya",
+        "https://ffxiv.consolegameswiki.com/wiki/Ahewann"
+      ]
+    },
+    {
+      "id": "garlean",
+      "flavor": "Use compact vowels, exact consonants and clean, controlled phrase endings. The voice has a firm forward core and direct, economical stress. Private worry, affection and anger can break through the practiced composure.",
+      "anchors": {
+        "masculine": "jullus",
+        "feminine": "lucia"
+      },
+      "weight": 0.2,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/Jullus",
+        "https://ffxiv.consolegameswiki.com/wiki/Lucia"
+      ]
+    },
+    {
+      "id": "loporrit",
+      "flavor": "Give this small rabbit-like speaker a compact round nasal core, bright upper resonance, neatly clipped consonants and brisk, eager changes of pitch. The voice is earnest and capable, with sharp alarm and warm reassurance when the words call for them.",
+      "anchors": {
+        "masculine": "livingway",
+        "feminine": "livingway"
+      },
+      "weight": 0.3,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/Singingway"
+      ]
+    },
+    {
+      "id": "southern_turali",
+      "flavor": "Use warm open English vowels, a clear rhythmic pulse, emphatic thought endings and candid, socially engaged phrasing. The voice reacts freely and speaks to a person, with room for regional and individual differences.",
+      "anchors": {},
+      "weight": 0.2,
+      "sources": [
+        "https://na.finalfantasyxiv.com/dawntrail/world/"
+      ]
+    },
+    {
+      "id": "pelupelu",
+      "flavor": "Use a small, forward, resonant voice with bright twang, neatly flicked consonants and quick turns of thought. Vowels stay rounded and supported, and the rhythm has nimble bursts followed by short, purposeful pauses.",
+      "anchors": {
+        "masculine": "pelupelumaleauda",
+        "feminine": "mablu"
+      },
+      "weight": 0.2,
+      "sources": [
+        "https://na.finalfantasyxiv.com/dawntrail/world/",
+        "https://ffxiv.consolegameswiki.com/wiki/Mablu"
+      ]
+    },
+    {
+      "id": "yok_huy",
+      "flavor": "Give the speaker a giant's immense oral resonance and broad supported vowels. Word attacks have physical weight; phrases can expand into slow, resonant declarations, then contract into urgent commands or intimate, grounded reassurance.",
+      "anchors": {
+        "masculine": "zurmurwur",
+        "feminine": "zurmurwur"
+      },
+      "weight": 0.3,
+      "sources": [
+        "https://na.finalfantasyxiv.com/dawntrail/world/",
+        "https://ffxiv.consolegameswiki.com/wiki/Zurmurwur",
+        "https://ffxiv.consolegameswiki.com/wiki/Yok_Huy"
+      ]
+    },
+    {
+      "id": "hanuhanu",
+      "flavor": "Use a large bird-like speaker's throaty, forward beak resonance: bright pecked consonant onsets opening into broad, flowing vowels. Phrases have a rolling communal warmth and can become sharply emphatic or joyfully expansive.",
+      "anchors": {
+        "masculine": "linuhanu",
+        "feminine": "linuhanu"
+      },
+      "weight": 0.3,
+      "sources": [
+        "https://na.finalfantasyxiv.com/dawntrail/world/",
+        "https://ffxiv.consolegameswiki.com/wiki/Linuhanu"
+      ]
+    },
+    {
+      "id": "moblin",
+      "flavor": "A small nonhuman speaker with a rounded snout and close breathing mask. Use a burry nasal hum, husky scratch at vowel edges, clattery little consonants and bursts of practical enthusiasm. Sound like a compact, odd-bodied artisan talking to a companion.",
+      "anchors": {},
+      "weight": 0.35,
+      "sources": [
+        "https://na.finalfantasyxiv.com/dawntrail/world/",
+        "https://ffxiv.consolegameswiki.com/wiki/Goblins"
+      ]
+    },
+    {
+      "id": "xbraal",
+      "flavor": "Give the voice a large feline speaker's broad mouth resonance, a warm throaty core and a little purring grain under firm consonants. English vowels open fully and emphatic phrases have a strong pulse. Keep emotional changes and the specified gender and age clear.",
+      "anchors": {
+        "masculine": "wukevu",
+        "feminine": "wuk-lamat"
+      },
+      "weight": 0.2,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/Wuk_Evu",
+        "https://ffxiv.consolegameswiki.com/wiki/Wuk_Lamat"
+      ]
+    },
+    {
+      "id": "mamool_ja_tural",
+      "flavor": "Use a large reptilian speaker's deep oral cavity and dry, coarse throat resonance. Broad vowels carry a little rasp, and strong consonant onsets lend weight to direct statements. Warmth and fear remain personal; the physical texture does not erase the speaker's specified age or gender.",
+      "anchors": {
+        "masculine": "zereelja",
+        "feminine": "miilalja"
+      },
+      "weight": 0.3,
+      "sources": [
+        "https://na.finalfantasyxiv.com/dawntrail/world/",
+        "https://ffxiv.consolegameswiki.com/wiki/Miilal_Ja"
+      ]
+    },
+    {
+      "id": "shaaloani_frontier",
+      "flavor": "Use clear General American English with a light southwestern frontier rhythm: open vowels, relaxed r sounds, easy contractions and a little drawl on chosen stressed words. Keep quick reactions and changes of emotional intent.",
+      "anchors": {
+        "masculine": "wihuwte"
+      },
+      "weight": 0.2,
+      "sources": [
+        "https://na.finalfantasyxiv.com/dawntrail/world/",
+        "https://ffxiv.consolegameswiki.com/wiki/Wihuwte"
+      ]
+    },
+    {
+      "id": "alexandrian",
+      "flavor": "Use clean modern English with quick conversational handoffs, crisp syllables and immediate personal reactions. A polished public manner can turn candid, angry or uncertain as the meaning changes.",
+      "anchors": {
+        "masculine": "otis",
+        "feminine": "sphene"
+      },
+      "weight": 0.2,
+      "sources": [
+        "https://na.finalfantasyxiv.com/dawntrail/world/"
+      ]
+    },
+    {
+      "id": "bozjan",
+      "flavor": "Use a sturdy, lived-in voice with solid consonant attacks, a dry vocal edge and compact, practical English phrases. Warmth sits beneath the directness, and emotion changes the stress and timing rather than a fixed national accent.",
+      "anchors": {},
+      "weight": 0.2,
+      "sources": [
+        "https://www.gamesradar.com/how-the-localization-of-final-fantasy-14-rose-from-the-ashes/"
+      ]
+    },
+    {
+      "id": "ananta",
+      "flavor": "Give the voice a serpentine, smooth resonant core with clear sibilant edges and flexible, lightly gliding vowels. Ceremonial phrasing has proud breath support, while ordinary concern or urgency can become direct and sharp.",
+      "anchors": {
+        "masculine": "virasoldier",
+        "feminine": "virasoldier"
+      },
+      "weight": 0.3,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/Ananta"
+      ]
+    },
+    {
+      "id": "sylph",
+      "flavor": "A tiny plant-like speaker with a light fluting core, airy leaf-like friction and quick, lilting vowel turns. Give consonants a delicate papery snap and let excitement or alarm produce sudden bright little emphases.",
+      "anchors": {},
+      "weight": 0.35,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/Sylph"
+      ]
+    },
+    {
+      "id": "ixal",
+      "flavor": "Use a harsh avian mouth resonance: a dry beak-like clack on consonants, a narrow nasal buzz and rough, squawking vowel edges. Phrasing is clipped and purposeful, with strong changes of pitch and force when reacting.",
+      "anchors": {
+        "masculine": "ixalichieftain",
+        "feminine": "ixalichieftain"
+      },
+      "weight": 0.3,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/Ixal"
+      ]
+    },
+    {
+      "id": "amaljaa",
+      "flavor": "Use a heavy reptilian speaker's broad dry resonance, low throat grain and forceful consonants. Supported vowels give declarations weight, but questions, grief and reassurance keep a person's changing intentions audible.",
+      "anchors": {
+        "masculine": "amaljaawarrior",
+        "feminine": "amaljaawarrior"
+      },
+      "weight": 0.3,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/Amalj%27aa"
+      ]
+    },
+    {
+      "id": "kobold",
+      "flavor": "A compact burrowing creature's voice: pinched nasal resonance, a rough little chest rumble, breathy snorts at emphatic onsets and short, emphatic puffs of phrasing. Keep every supplied word clear and the emotional turns lively.",
+      "anchors": {
+        "masculine": "gabu",
+        "feminine": "gabu"
+      },
+      "weight": 0.3,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/Kobold"
+      ]
+    },
+    {
+      "id": "sahagin",
+      "flavor": "Give the voice a hollow aquatic throat resonance, damp airy friction and lightly rippling vowel endings. Sibilants have a thin wet whistle, and measured phrases can snap into a sudden warning or forceful demand.",
+      "anchors": {
+        "masculine": "sahaginpriest",
+        "feminine": "sahaginpriest"
+      },
+      "weight": 0.3,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/Sahagin"
+      ]
+    },
+    {
+      "id": "vath",
+      "flavor": "",
+      "anchors": {},
+      "weight": 0,
+      "sources": [
+        "ElevenLabs Insectoid reference supplied by user"
+      ],
+      "recording": {
+        "audioFile": "external/insectoid.wav",
+        "transcript": "Humans! Yeees.. Vath like fleshy things. Do you bring tasty food?.. Feed the colony?"
+      }
+    },
+    {
+      "id": "gnath",
+      "flavor": "",
+      "anchors": {},
+      "weight": 0,
+      "sources": [
+        "ElevenLabs Insectoid reference supplied by user"
+      ],
+      "recording": {
+        "audioFile": "external/insectoid.wav",
+        "transcript": "Humans! Yeees.. Vath like fleshy things. Do you bring tasty food?.. Feed the colony?"
+      }
+    },
+    {
+      "id": "dragon",
+      "flavor": "A huge draconic speaker with a cavernous oral core, low rumbling overtones and a dry rasp behind clearly shaped English words. Long supported vowels carry physical scale; short commands can strike hard, and intimate lines keep intelligence and feeling.",
+      "anchors": {
+        "masculine": "midgardsormr",
+        "feminine": "vidofnir"
+      },
+      "weight": 0.3,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/Vidofnir"
+      ]
+    },
+    {
+      "id": "vanu_vanu",
+      "flavor": "Give this large bird-like speaker a rounded booming nasal core, broad open vowels and rolling rhythmic phrase groups. Consonants have a little beak-like pop; delight, grief and alarm reshape the musical cadence.",
+      "anchors": {
+        "masculine": "honu",
+        "feminine": "honu"
+      },
+      "weight": 0.3,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/A_Series_of_Unfortunate_Events",
+        "https://ffxiv.consolegameswiki.com/wiki/Vanu_Vanu",
+        "https://ff14.tabibun.net/npc///1483/"
+      ]
+    },
+    {
+      "id": "moogle",
+      "flavor": "A small, round-bodied speaker with buoyant nasal resonance, soft fluting overtones and quick earnest reactions. Vowels bounce and stressed consonants pop; urgency can be surprisingly sharp. Keep the words exactly as supplied.",
+      "anchors": {},
+      "weight": 0.35,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/Moogle"
+      ]
+    },
+    {
+      "id": "goblin",
+      "flavor": "",
+      "anchors": {},
+      "weight": 0,
+      "sources": [
+        "https://www.youtube.com/watch?v=B0O_BrMIhww&t=0s"
+      ],
+      "recording": {
+        "audioFile": "external/popper-0-8.wav",
+        "transcript": "Clown man is dead. Oh well. Want a treato?"
+      }
+    },
+    {
+      "id": "fuath",
+      "flavor": "Give this small uncanny aquatic fae a thin fluting core, a wet nasal wobble and scratchy little catches. Phrases can coax sweetly, skip into irregular pauses and then snap into precise sharp emphasis. Keep the intelligence and changing intent audible.",
+      "anchors": {
+        "masculine": "bossoffuath",
+        "feminine": "bossoffuath"
+      },
+      "weight": 0.3,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/Fuath"
+      ]
+    },
+    {
+      "id": "qitari",
+      "flavor": "Use a small rodent-like speaker's bright reed resonance, delicate nasal whistle and crisp little consonant clicks. The phrasing is patient and thoughtful, with quick excited rises and careful, warm reassurance.",
+      "anchors": {},
+      "weight": 0.35,
+      "sources": [
+        "https://ffxiv.consolegameswiki.com/wiki/Qitari"
+      ]
+    },
+    {
+      "id": "kojin",
+      "flavor": "",
+      "anchors": {},
+      "weight": 0,
+      "sources": [
+        "cut/ex2/sound/voicem/voiceman_04002/vo_voiceman_04002_002050_m_en.scd",
+        "https://ffxiv.consolegameswiki.com/wiki/Soroban"
+      ],
+      "nativeBlend": {
+        "kojinsoldier": 0.5,
+        "soroban": 0.3
+      }
+    },
+    {
+      "id": "mechanoid",
+      "flavor": "",
+      "anchors": {},
+      "weight": 0,
+      "sources": [
+        "ElevenLabs Mechanoid Entity reference supplied by user"
+      ],
+      "recording": {
+        "audioFile": "external/mechanoid-entity.wav",
+        "transcript": "Analyzing combat results, please wait... Results ready. Alert! Enemies approaching!"
+      }
+    },
+    {
+      "id": "omicron",
+      "flavor": "",
+      "anchors": {},
+      "weight": 0,
+      "sources": [
+        "ElevenLabs Omicron reference supplied by user"
+      ],
+      "recording": {
+        "audioFile": "external/omicron.wav",
+        "transcript": "Analyzing combat results, please wait... Results ready. Alert! Enemies approaching!"
+      }
+    }
+  ]
+}

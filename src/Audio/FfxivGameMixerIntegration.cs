@@ -368,9 +368,13 @@ public sealed unsafe class ResonanceScdResourceOverride : IGameResourceOverride
 public sealed class FfxivClientSoundPlayer : IGameMixerSoundPlayer
 {
     private readonly IFramework framework;
+    private readonly IPluginLog log;
 
-    public FfxivClientSoundPlayer(IFramework framework)
-        => this.framework = framework ?? throw new ArgumentNullException(nameof(framework));
+    public FfxivClientSoundPlayer(IFramework framework, IPluginLog log)
+    {
+        this.framework = framework ?? throw new ArgumentNullException(nameof(framework));
+        this.log = log ?? throw new ArgumentNullException(nameof(log));
+    }
 
     public System.Threading.Tasks.Task<nint> PlayAsync(string virtualPath, CancellationToken token)
     {
@@ -382,14 +386,65 @@ public sealed class FfxivClientSoundPlayer : IGameMixerSoundPlayer
         });
     }
 
-    public System.Threading.Tasks.Task StopAsync(nint playback)
+    public System.Threading.Tasks.Task StopAsync(nint playback, string resourcePath)
     {
         if (playback == 0) return System.Threading.Tasks.Task.CompletedTask;
         if (framework.IsFrameworkUnloading) return System.Threading.Tasks.Task.CompletedTask;
-        return framework.RunOnFrameworkThread(() => StopOnFramework(playback));
+        return framework.RunOnFrameworkThread(() => StopOnFramework(playback, resourcePath));
     }
 
-    private static unsafe void StopOnFramework(nint playback)
+    public async System.Threading.Tasks.Task WaitForCompletionAsync(
+        nint playback, string resourcePath, CancellationToken token)
+    {
+        var started = false;
+        var waiting = System.Diagnostics.Stopwatch.StartNew();
+        while (true)
+        {
+            token.ThrowIfCancellationRequested();
+            var state = await framework.RunOnFrameworkThread(() =>
+            {
+                token.ThrowIfCancellationRequested();
+                return ReadPlaybackOnFramework(playback, resourcePath);
+            }).WaitAsync(token).ConfigureAwait(false);
+            started |= state.Playing || state.Elapsed > 0;
+            if (!state.Present || started && !state.Loading && !state.Playing)
+            {
+                log.Debug("Native voice playback ended Handle={Handle} ObservedPlaying={ObservedPlaying} ElapsedSeconds={ElapsedSeconds}",
+                    playback, started, state.Elapsed);
+                return;
+            }
+            if (!started && waiting.Elapsed > TimeSpan.FromSeconds(10))
+                throw new TimeoutException("FFXIV accepted the voice but playback did not start within 10 seconds");
+            await System.Threading.Tasks.Task.Delay(25, token).ConfigureAwait(false);
+        }
+    }
+
+    private static unsafe (bool Present, bool Loading, bool Playing, float Elapsed) ReadPlaybackOnFramework(
+        nint playback, string resourcePath)
+    {
+        var nativeFramework = Framework.Instance();
+        var sound = nativeFramework == null ? null : nativeFramework->SoundManager;
+        if (sound == null) throw new InvalidOperationException("FFXIV SoundManager is unavailable");
+        var current = sound->ActiveSoundDataListHead;
+        for (var index = 0; current != null && index < 256; index++)
+        {
+            if ((nint)current == playback)
+            {
+                if (current->ISoundData.GetIsLoadingSoundResource()) return (true, true, false, 0);
+                var path = current->ISoundData.GetFileName().ToString();
+                if (!SameResourcePath(path, resourcePath)) return default;
+                return (true, false,
+                    current->ISoundData.IsPlaying(), current->ISoundData.GetElapsedTime());
+            }
+            current = (SoundData*)current->ISoundData.Next;
+        }
+        return default;
+    }
+
+    private static bool SameResourcePath(string actual, string expected) =>
+        String.Equals(actual.Replace('\\', '/'), expected.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase);
+
+    private static unsafe void StopOnFramework(nint playback, string resourcePath)
     {
         var framework = Framework.Instance();
         var sound = framework == null ? null : framework->SoundManager;
@@ -400,7 +455,8 @@ public sealed class FfxivClientSoundPlayer : IGameMixerSoundPlayer
             var next = (SoundData*)current->ISoundData.Next;
             // Validate pointer identity against the live list before touching
             // it; SoundData is game-owned and may already have been freed.
-            if ((nint)current == playback)
+            if ((nint)current == playback
+                && SameResourcePath(current->ISoundData.GetFileName().ToString(), resourcePath))
             {
                 current->ISoundData.Stop(0);
                 return;

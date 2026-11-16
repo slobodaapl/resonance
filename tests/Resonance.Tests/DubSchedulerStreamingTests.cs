@@ -22,6 +22,8 @@ public sealed class DubSchedulerStreamingTests
             await using var scheduler = new DubScheduler(runtime, (_, _) =>
                 ValueTask.FromResult(VoiceResolution.Ready(new([], [], 0, 0, ""))), cache, "model", "english");
             var buffered = new TaskCompletionSource<DubLine>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var available = new TaskCompletionSource<DubLine>(TaskCreationOptions.RunContinuationsAsynchronously);
+            scheduler.AudioAvailable += line => available.TrySetResult(line);
             scheduler.LineBuffered += line => buffered.TrySetResult(line);
             using var line = new DubLine
             {
@@ -34,6 +36,8 @@ public sealed class DubSchedulerStreamingTests
             };
 
             scheduler.Enqueue(line);
+            Assert.Same(line, await available.Task.WaitAsync(TimeSpan.FromSeconds(3), TestContext.Current.CancellationToken));
+            Assert.False(runtime.Completed.Task.IsCompleted);
             Assert.True(line.PredictedAudioDurationSeconds > 0);
             Assert.True(line.EstimatedGenerationSeconds > line.PredictedAudioDurationSeconds * 0.5);
             Assert.True(line.PlaybackDeadline > DateTimeOffset.UtcNow - TimeSpan.FromSeconds(1));

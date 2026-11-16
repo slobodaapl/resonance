@@ -5,13 +5,42 @@ internal sealed record MsqQuestNode(
     IReadOnlyList<uint> PreviousQuestIds,
     IReadOnlyList<uint> CutsceneIds);
 
+internal sealed record MsqQuestFrontier(uint QuestId, bool Completed, bool IsReplay);
+
 internal static class MsqCutsceneSelector
 {
+    public static MsqQuestFrontier? ResolveFrontier(
+        IReadOnlyList<MsqQuestNode> quests,
+        IReadOnlySet<uint> acceptedQuestIds,
+        uint trackedQuestId,
+        uint lastCompletedQuestId,
+        Func<uint, bool> isQuestComplete)
+    {
+        var accepted = quests.Where(quest => acceptedQuestIds.Contains(quest.QuestId)).ToArray();
+        var replayed = accepted.Where(quest => isQuestComplete(quest.QuestId)).ToArray();
+        if (replayed.Length != 0) accepted = replayed;
+        var current = accepted.SingleOrDefault(quest => quest.QuestId == trackedQuestId)
+            ?? (accepted.Length == 1 ? accepted[0] : null);
+        if (current is not null) return new(current.QuestId, false, replayed.Length != 0);
+        return accepted.Length == 0 && lastCompletedQuestId != 0
+            ? new(lastCompletedQuestId, true, false)
+            : null;
+    }
+
     public static bool IsCutsceneParameter(string instruction) =>
         instruction.StartsWith("CUT", StringComparison.OrdinalIgnoreCase)
         || instruction.StartsWith("NCUT", StringComparison.OrdinalIgnoreCase)
         || instruction.StartsWith("LOC_CUT", StringComparison.OrdinalIgnoreCase)
         || instruction.StartsWith("LOC_NCUT", StringComparison.OrdinalIgnoreCase);
+
+    public static IReadOnlyList<uint> SelectUpcoming(
+        IReadOnlyList<MsqQuestNode> quests,
+        MsqQuestFrontier frontier,
+        Func<uint, bool> hasSeenCutscene,
+        int limit,
+        IReadOnlySet<uint>? playedCutscenes = null) => SelectUpcoming(quests, frontier.QuestId, frontier.Completed,
+            cutsceneId => playedCutscenes?.Contains(cutsceneId) == true
+                || !frontier.IsReplay && hasSeenCutscene(cutsceneId), limit);
 
     public static IReadOnlyList<uint> SelectUpcoming(
         IReadOnlyList<MsqQuestNode> quests,

@@ -11,7 +11,7 @@ using Resonance.Tts;
 
 namespace Resonance.Tests;
 
-public sealed class OfficialProfilePackManagerTests
+public sealed partial class OfficialProfilePackManagerTests
 {
     [Fact]
     public void CommittedPackContainsNoGameResourceCoordinates()
@@ -57,6 +57,50 @@ public sealed class OfficialProfilePackManagerTests
     }
 
     [Fact]
+    public async Task CommittedPackImportsAdditionalActorsForEveryBaseModel()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "resonance-real-pack-" + Guid.NewGuid().ToString("N"));
+        var local = Path.Combine(root, "data", "official-profile-pack");
+        Directory.CreateDirectory(local);
+        try
+        {
+            var path = Path.Combine(local, "official-profiles.sqlite3");
+            File.Copy(ProjectPath("release-assets", "official-profiles", "official-profiles.sqlite3"), path);
+            using (var source = new SqliteConnection($"Data Source={path};Mode=ReadOnly"))
+            {
+                source.Open();
+                using var command = source.CreateCommand();
+                command.CommandText = "SELECT schema_version,pack_version,catalog_version FROM pack_metadata";
+                using var reader = command.ExecuteReader();
+                Assert.True(reader.Read());
+                await File.WriteAllTextAsync(Path.Combine(local, "official-profile-pack.json"), JsonSerializer.Serialize(new
+                {
+                    SchemaVersion = reader.GetInt32(0), PackVersion = reader.GetInt32(1), CatalogVersion = reader.GetInt32(2),
+                    Url = "https://example.invalid/pack.zip", Length = 1, Sha256 = new string('a', 64),
+                    DatabaseSha256 = await HashAsync(path),
+                }), TestContext.Current.CancellationToken);
+            }
+            using var database = new Database(Path.Combine(root, "user.sqlite3"));
+            var voices = new VoiceRegistry(database);
+            using var manager = new OfficialProfilePackManager(Path.Combine(root, "data"), database, voices,
+                OfficialVoiceCatalog.Load(ProjectPath("assets", "official-voices.json")), CastingCatalog());
+            foreach (var model in BaseModelDimensions().Keys)
+            {
+                Assert.True((await manager.SynchronizeAsync(model, TestContext.Current.CancellationToken,
+                    allowRemoteUpdate: false)).ImportedProfiles > 0);
+                foreach (var group in new[] { "cefca", "fandaniel", "oldtitania", "peddlerofnorvrandt", "rasho", "thordan" })
+                {
+                    var profile = await voices.GetBestVoiceByStableKeyAsync($"official:{group}", "english", model,
+                        TestContext.Current.CancellationToken);
+                    Assert.NotNull(profile);
+                    Assert.Equal(VoiceProfileKind.Official, profile.Kind);
+                }
+            }
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public void CommittedPackExactlyCoversCatalogFallbackMatrix()
     {
         var path = ProjectPath("release-assets", "official-profiles", "official-profiles.sqlite3");
@@ -96,7 +140,7 @@ public sealed class OfficialProfilePackManagerTests
             var codebooks = reader.GetInt32(9);
             Assert.Equal(modelDimensions[row.Item6] * sizeof(float), embeddingBytes.Length);
             Assert.Equal(rvqLength * codebooks * sizeof(int), codeBytes.Length);
-            Assert.InRange(rvqLength, 1, 192);
+            Assert.InRange(rvqLength, 1, 250);
             Assert.Equal(16, codebooks);
             var embedding = new float[embeddingBytes.Length / sizeof(float)];
             var codes = new int[codeBytes.Length / sizeof(int)];
@@ -112,18 +156,102 @@ public sealed class OfficialProfilePackManagerTests
         Assert.Equal(expected, actual);
     }
 
+    [Fact]
+    public void RegionalReferencesKeepTheirDeclaredNativePerformanceIntact()
+    {
+        using var recipe = System.Text.Json.JsonDocument.Parse(File.ReadAllText(ProjectPath("assets","fallback-voices.json")));
+        var actors = recipe.RootElement.GetProperty("foundations").EnumerateArray()
+            .ToDictionary(f => f.GetProperty("id").GetString()!,f => f.GetProperty("nativeActor").GetString()!);
+        var recordings = recipe.RootElement.GetProperty("domains").EnumerateArray()
+            .Where(domain => domain.TryGetProperty("recording",out _))
+            .Select(domain => domain.GetProperty("id").GetString()!).ToHashSet();
+        var nativeBlends = recipe.RootElement.GetProperty("domains").EnumerateArray()
+            .Where(domain => domain.TryGetProperty("nativeBlend", out _))
+            .ToDictionary(domain => domain.GetProperty("id").GetString()!, domain => domain.GetProperty("nativeBlend")
+                .EnumerateObject().MaxBy(anchor => anchor.Value.GetDouble()).Name);
+        using var connection = new SqliteConnection($"Data Source={ProjectPath("release-assets","official-profiles","official-profiles.sqlite3")};Mode=ReadOnly");
+        connection.Open();
+        var native = new Dictionary<(string,string,string),(string,byte[],int,int)>();
+        using (var query = connection.CreateCommand())
+        {
+            query.CommandText = "SELECT group_id,language,model_hash,ref_text,rvq_codes,rvq_length,codebooks FROM official_profile";
+            using var reader = query.ExecuteReader();
+            while (reader.Read())
+                native[(reader.GetString(0),reader.GetString(1),reader.GetString(2))] =
+                    (reader.GetString(3),(byte[])reader[4],reader.GetInt32(5),reader.GetInt32(6));
+        }
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT variant_id,language,model_hash,ref_text,rvq_codes,rvq_length,codebooks,domain_id FROM fallback_profile";
+        using var profiles = command.ExecuteReader();
+        var count = 0;
+        while (profiles.Read())
+        {
+            if (recordings.Contains(profiles.GetString(7))) continue;
+            var actor = nativeBlends.GetValueOrDefault(profiles.GetString(7)) ?? actors[profiles.GetString(0)];
+            var expected = native[(actor,profiles.GetString(1),profiles.GetString(2))];
+            Assert.Equal(expected.Item1,profiles.GetString(3));
+            Assert.Equal(expected.Item2,(byte[])profiles[4]);
+            Assert.Equal(expected.Item3,profiles.GetInt32(5));
+            Assert.Equal(expected.Item4,profiles.GetInt32(6));
+            count++;
+        }
+        var catalog = CastingProfileCatalog.Load(ProjectPath("assets","dub-profiles.json"));
+        Assert.Equal(catalog.Domains.Where(domain => !recordings.Contains(domain.Id))
+            .Sum(domain => FallbackVariants(domain).Count()) * 4 * 4,count);
+    }
+
+    [Fact]
+    public void RecordedSharedFallbackKeepsOneCompleteReferenceAcrossLanguages()
+    {
+        using var recipe = JsonDocument.Parse(File.ReadAllText(ProjectPath("assets","fallback-voices.json")));
+        var recordings = recipe.RootElement.GetProperty("domains").EnumerateArray()
+            .Where(domain => domain.TryGetProperty("recording",out _)).ToArray();
+        var catalog = CastingProfileCatalog.Load(ProjectPath("assets","dub-profiles.json"));
+        using var connection = new SqliteConnection($"Data Source={ProjectPath("release-assets","official-profiles","official-profiles.sqlite3")};Mode=ReadOnly");
+        connection.Open();
+        foreach (var recording in recordings)
+        {
+            var domain = recording.GetProperty("id").GetString()!;
+            Assert.True(catalog.GetDomain(domain).SharedVoice);
+            foreach (var (model,dimension) in BaseModelDimensions())
+            {
+                using var command = connection.CreateCommand();
+                command.CommandText = "SELECT variant_id,ref_text,speaker_embedding,rvq_codes,rvq_length,codebooks FROM fallback_profile WHERE domain_id=$domain AND model_hash=$model ORDER BY language";
+                command.Parameters.AddWithValue("$domain",domain); command.Parameters.AddWithValue("$model",model);
+                using var reader = command.ExecuteReader();
+                byte[]? embedding = null, codes = null; var count = 0;
+                while (reader.Read())
+                {
+                    Assert.Equal("default",reader.GetString(0));
+                    Assert.Equal(recording.GetProperty("recording").GetProperty("transcript").GetString(),reader.GetString(1));
+                    var currentEmbedding = (byte[])reader[2]; var currentCodes = (byte[])reader[3];
+                    Assert.Equal(dimension*sizeof(float),currentEmbedding.Length);
+                    Assert.InRange(reader.GetInt32(4),1,250);
+                    Assert.Equal(reader.GetInt32(4)*reader.GetInt32(5)*sizeof(int),currentCodes.Length);
+                    if (embedding is not null) Assert.Equal(embedding,currentEmbedding);
+                    if (codes is not null) Assert.Equal(codes,currentCodes);
+                    embedding = currentEmbedding; codes = currentCodes; count++;
+                }
+                Assert.Equal(4,count);
+            }
+        }
+    }
+
     private static IEnumerable<(string Id, string? Sex, string? Age)> FallbackVariants(CastingDomain domain) =>
         domain.FallbackDimensions switch
         {
             "none" => [("default", null, null)],
-            "feminine_only" => [("feminine", "feminine", null)],
+            "feminine_only" => [("feminine_young", "feminine", "young"),
+                ("feminine_adult", "feminine", "adult"), ("feminine_elder", "feminine", "elder")],
             "sex" => [("masculine", "masculine", null), ("feminine", "feminine", null)],
             "sex_age" =>
             [
                 ("masculine_young", "masculine", "young"),
                 ("masculine_adult", "masculine", "adult"),
+                ("masculine_elder", "masculine", "elder"),
                 ("feminine_young", "feminine", "young"),
                 ("feminine_adult", "feminine", "adult"),
+                ("feminine_elder", "feminine", "elder"),
             ],
             _ => throw new InvalidDataException($"Unknown fallback dimensions '{domain.FallbackDimensions}'"),
         };
@@ -275,6 +403,58 @@ public sealed class OfficialProfilePackManagerTests
             Assert.Equal(1, handler.ManifestRequests);
             Assert.Equal(0, handler.PackRequests);
             Assert.Equal(localHash, await HashAsync(localDatabase));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CyclicSceneImportRequiresAStartButDoesNotRequireAnInventedEnd(bool hasStart)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "resonance-cyclic-pack-" + Guid.NewGuid().ToString("N"));
+        var local = Path.Combine(root, "data", "official-profile-pack");
+        Directory.CreateDirectory(local);
+        try
+        {
+            var path = Path.Combine(local, "official-profiles.sqlite3");
+            CreatePackDatabase(path, 1024, "model-q4");
+            using (var connection = new SqliteConnection($"Data Source={path}"))
+            {
+                connection.Open();
+                using var command = connection.CreateCommand();
+                command.CommandText = """
+                    UPDATE pack_metadata SET schema_version=2;
+                    CREATE TABLE scene_node(cutscene_id INTEGER,language TEXT,node_id TEXT,
+                      sheet_key_hash TEXT,occurrence INTEGER,actor_npc_base_id INTEGER,
+                      official_group_id TEXT,actor_token_hash TEXT,node_kind TEXT);
+                    CREATE TABLE scene_edge(cutscene_id INTEGER,language TEXT,current_node_id TEXT,next_node_id TEXT);
+                    INSERT INTO scene_node VALUES(1,'english','loop','key',0,NULL,'actor',NULL,'synthetic');
+                    INSERT INTO scene_edge VALUES(1,'english','loop','loop');
+                    """;
+                command.ExecuteNonQuery();
+                if (hasStart)
+                {
+                    command.CommandText = "INSERT INTO scene_edge VALUES(1,'english',NULL,'loop')";
+                    command.ExecuteNonQuery();
+                }
+            }
+            await File.WriteAllTextAsync(Path.Combine(local, "official-profile-pack.json"), JsonSerializer.Serialize(new
+            {
+                SchemaVersion = 2, PackVersion = 7, Url = "https://example.invalid/pack.zip", Length = 1,
+                Sha256 = new string('a', 64), DatabaseSha256 = await HashAsync(path),
+            }), TestContext.Current.CancellationToken);
+            using var database = new Database(Path.Combine(root, "user.sqlite3"));
+            var voices = new VoiceRegistry(database);
+            var catalog = OfficialVoiceCatalog.Parse("""
+                {"schemaVersion":1,"catalogVersion":1,"groups":[{"id":"actor","label":"Actor",
+                "npcBaseIds":[],"aliases":{},"sources":{},"actorTokens":["ACTOR"]}]}
+                """);
+            using var manager = new OfficialProfilePackManager(Path.Combine(root, "data"), database, voices,
+                catalog, CastingCatalog());
+            var import = manager.SynchronizeAsync("model-q4", TestContext.Current.CancellationToken, allowRemoteUpdate: false);
+            if (hasStart) Assert.True((await import).ImportedProfiles > 0);
+            else await Assert.ThrowsAsync<InvalidDataException>(() => import);
         }
         finally { Directory.Delete(root, true); }
     }

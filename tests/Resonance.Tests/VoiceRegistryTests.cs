@@ -116,6 +116,34 @@ public sealed class VoiceRegistryTests
     }
 
     [Fact]
+    public async Task VoiceBrowserFiltersModelBeforeSelectingLatestProfilePerCharacter()
+    {
+        var root = CreateRoot();
+        try
+        {
+            var token = TestContext.Current.CancellationToken;
+            using var database = new Database(Path.Combine(root, "voices.sqlite3"));
+            var registry = new VoiceRegistry(database);
+            var first = await registry.ResolveSpeakerAsync("npc:first", 1, "First", 1, "english", token);
+            var second = await registry.ResolveSpeakerAsync("npc:second", 2, "Second", 1, "english", token);
+            var compatible = Profile(VoiceProfileKind.Official, "compatible");
+            var newerWrongModel = VoiceRegistry.CreateProfile(VoiceProfileKind.Official, "english",
+                "other-model", 1, "different", 42, new VoiceReference([.25f], [1, 2], 1, 2, "different"));
+            await registry.SaveAndAssignAsync(first.Id, compatible, token);
+            await registry.SaveAndAssignAsync(first.Id, newerWrongModel, token);
+            await registry.SaveAndAssignAsync(second.Id, newerWrongModel, token);
+
+            var available = Assert.Single(await registry.GetOfficialVoiceProfilesAsync("english", "model", token));
+            Assert.Equal("First", available.DisplayName);
+            Assert.Equal(compatible.Id, available.Profile.Id);
+            Assert.Empty(await registry.GetOfficialVoiceProfilesAsync("english", "absent-model", token));
+            Assert.Empty(await registry.GetOfficialVoiceProfilesAsync("japanese", "model", token));
+            Assert.Equal(2, (await registry.GetOfficialVoiceProfilesAsync("english", "other-model", token)).Count);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public async Task ExistingDesignedAssignmentIsReusedWithoutClaimingOrCreatingPoolVoice()
     {
         var root = CreateRoot();

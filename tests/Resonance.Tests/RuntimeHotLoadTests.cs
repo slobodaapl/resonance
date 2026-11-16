@@ -8,6 +8,36 @@ namespace Resonance.Tests;
 public sealed class RuntimeHotLoadTests
 {
     [Fact]
+    public async Task HotLoadRequestReturnsBeforeSynchronousHostStartupFinishes()
+    {
+        var root = CreateRoot();
+        using var release = new ManualResetEventSlim();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var returned = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            var seam = new HotLoadSeam { BeforeEnsure = () => { entered.SetResult(); release.Wait(); } };
+            await using var manager = CreateManager(root, new Configuration { KeepBaseModelLoaded = true }, seam);
+            var operation = Task.Run(async () =>
+            {
+                var restore = manager.EnsureBaseHotLoadedWhenSafeAsync(TestContext.Current.CancellationToken);
+                returned.SetResult();
+                await restore;
+            }, TestContext.Current.CancellationToken);
+            try
+            {
+                await entered.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+                await returned.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+                Assert.False(seam.BaseRuntimeReady);
+            }
+            finally { release.Set(); }
+            await operation.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            Assert.True(seam.BaseRuntimeReady);
+        }
+        finally { release.Set(); TestDirectory.Delete(root); }
+    }
+
+    [Fact]
     public async Task EnabledHotLoadRestoresAndRetainsBaseUntilShutdown()
     {
         var root = CreateRoot();
@@ -46,17 +76,18 @@ public sealed class RuntimeHotLoadTests
             await disabled.DisposeAsync();
 
             var enabledSeam = new HotLoadSeam { BaseRuntimeReady = true };
-            var enabled = CreateManager(root, new Configuration { KeepBaseModelLoaded = true }, enabledSeam);
+            await using var enabled = CreateManager(root, new Configuration { KeepBaseModelLoaded = true }, enabledSeam);
             var backend = new BackendInfo("cpu", "CPU", BackendType.Cpu, 0, 1, 1);
             enabled.SetTestBackendState(new BackendSelection(backend, backend, false, null));
             await enabled.ExtractReferenceAsync(
                 Enumerable.Repeat(0.1f, ReferenceExtractionProtocol.SampleRate).ToArray(),
                 "A stable reference sentence.", TestContext.Current.CancellationToken);
+            await enabledSeam.EnsureCompleted.Task.WaitAsync(
+                TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
             Assert.Equal(1, enabledSeam.ReleaseCount);
             Assert.Equal(1, enabledSeam.EnsureCount);
             Assert.True(enabledSeam.BaseRuntimeReady);
-            await enabled.DisposeAsync();
         }
         finally { TestDirectory.Delete(root); }
     }
@@ -76,6 +107,7 @@ public sealed class RuntimeHotLoadTests
                 Enumerable.Repeat(0.1f, ReferenceExtractionProtocol.SampleRate).ToArray(),
                 "A stable reference sentence.", TestContext.Current.CancellationToken);
 
+            await seam.EnsureStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
             Assert.Equal(1, seam.EnsureCount);
             seam.EnsureRelease.TrySetResult();
             await manager.DisposeAsync();
@@ -163,7 +195,10 @@ public sealed class RuntimeHotLoadTests
         public int ReleaseCount { get; private set; }
         public bool Disposed { get; private set; }
         public bool BlockEnsure { get; init; }
+        public Action? BeforeEnsure { get; init; }
         public TaskCompletionSource EnsureStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource EnsureCompleted { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource EnsureRelease { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -176,11 +211,13 @@ public sealed class RuntimeHotLoadTests
         public async Task EnsureBaseRuntimeAsync(Func<CancellationToken, Task> _, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
+            BeforeEnsure?.Invoke();
             EnsureCount++;
             EnsureStarted.TrySetResult();
             if (BlockEnsure)
                 await EnsureRelease.Task.WaitAsync(token);
             BaseRuntimeReady = true;
+            EnsureCompleted.TrySetResult();
         }
 
         public void BaseRuntimeReleased()

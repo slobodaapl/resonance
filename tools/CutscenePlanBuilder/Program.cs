@@ -53,6 +53,13 @@ foreach (var row in game.GetExcelSheet<Cutscene>())
             name => sheets.TryGetValue(name, out var sheet) ? sheet : null,
             language.Code);
         if (manifest.Lines.Count == 0) continue;
+        var reachable = new HashSet<string>(StringComparer.Ordinal);
+        var pending = new Queue<CutsceneVoiceLine>(manifest.StartNodes);
+        while (pending.TryDequeue(out var current))
+        {
+            if (!reachable.Add(current.NodeId)) continue;
+            foreach (var next in manifest.Successors([current])) pending.Enqueue(next);
+        }
 
         var sheetByKey = sheets
             .SelectMany(sheet => sheet.Value.Keys.Select(key => (Key: key, Sheet: sheet.Key)))
@@ -61,7 +68,8 @@ foreach (var row in game.GetExcelSheet<Cutscene>())
                 StringComparer.OrdinalIgnoreCase);
         foreach (var line in manifest.Lines)
         {
-            if (!line.IsVoiced && !line.IsPlayerChoice && IsIdentifiableActor(line.ActorToken))
+            if (line.SourceOffset is not null && reachable.Contains(line.NodeId) && !line.IsVoiced && !line.IsPlayerChoice
+                && IsIdentifiableActor(line.ActorToken))
                 undubbedActorTokens.Add(line.ActorToken);
             if (line.IsVoiced && line.ScdPath is not null && !String.IsNullOrWhiteSpace(line.Text))
             {
@@ -69,11 +77,12 @@ foreach (var row in game.GetExcelSheet<Cutscene>())
                     actors[line.ActorToken] = byLanguage = new(StringComparer.Ordinal);
                 if (!byLanguage.TryGetValue(language.Name, out var sources))
                     byLanguage[language.Name] = sources = [];
-                sources.Add(new(row.RowId, line.Key, line.ScdPath, line.Text));
+                sources.Add(new(row.RowId, line.SourceKey, line.ScdPath, line.Text));
             }
-            if (!sheetByKey.TryGetValue(line.Key, out var sheetName))
+            if (line.SourceOffset is null) continue;
+            if (!sheetByKey.TryGetValue(line.SourceKey, out var sheetName))
                 throw new InvalidDataException(
-                    $"Cutscene {row.RowId}/{language.Name} line '{line.Key}' has no owning sheet");
+                    $"Cutscene {row.RowId}/{language.Name} line '{line.SourceKey}' has no owning sheet");
             var normalizedActor = NormalizeActor(line.ActorToken);
             officialGroups.TryGetValue(normalizedActor, out var officialGroup);
             var identifiableActor = IsIdentifiableActor(line.ActorToken) ? normalizedActor : null;
@@ -81,7 +90,7 @@ foreach (var row in game.GetExcelSheet<Cutscene>())
                 row.RowId,
                 language.Name,
                 line.NodeId,
-                HashSheetKey(sheetName, line.Key),
+                HashSheetKey(sheetName, line.SourceKey),
                 line.Order,
                 null,
                 officialGroup,
@@ -89,16 +98,9 @@ foreach (var row in game.GetExcelSheet<Cutscene>())
                 line.IsVoiced ? "native" : line.IsPlayerChoice ? "choice" : "synthetic"));
         }
 
-        var groups = manifest.Lines.GroupBy(line => line.Ordinal).OrderBy(group => group.Key)
-            .Select(group => group.ToArray()).ToArray();
-        foreach (var start in groups[0])
-            edges.Add(new(row.RowId, language.Name, null, start.NodeId));
-        for (var index = 0; index + 1 < groups.Length; index++)
-        foreach (var current in groups[index])
-        foreach (var next in groups[index + 1])
-            edges.Add(new(row.RowId, language.Name, current.NodeId, next.NodeId));
-        foreach (var end in groups[^1])
-            edges.Add(new(row.RowId, language.Name, end.NodeId, null));
+        foreach (var edge in manifest.Edges ?? [])
+            if (edge.CurrentNodeId is not null || edge.NextNodeId is not null)
+                edges.Add(new(row.RowId, language.Name, edge.CurrentNodeId, edge.NextNodeId));
     }
 }
 
