@@ -17,7 +17,7 @@ public sealed class BootstrapService : IAsyncDisposable
     private readonly Action saveConfiguration;
     private readonly RuntimePackManager runtimePacks;
     private readonly string runtimeManifestPath;
-    private readonly string runtimeDirectory;
+    private string runtimeDirectory;
     private readonly string referenceExtractorPath;
     private readonly string referenceExtractionDirectory;
     private readonly object disposeGate = new();
@@ -149,8 +149,15 @@ public sealed class BootstrapService : IAsyncDisposable
             if (baseModel.Abi != QwenNative.AbiVersion || tokenizer.Abi != QwenNative.AbiVersion)
                 throw new InvalidDataException("Selected model assets do not match the native runtime ABI");
             SetState(BootstrapState.DownloadingRuntime);
-            var coreDeclared = await runtimePacks.TryEnsureCoreAsync(runtimeManifestPath, token).ConfigureAwait(false);
-            if (!coreDeclared && !File.Exists(Path.Combine(runtimeDirectory, "qwen.dll")))
+            var runtimeManifest = await RuntimePackManager.LoadManifestAsync(runtimeManifestPath, token).ConfigureAwait(false);
+            var installedRuntime = await runtimePacks.TryEnsureCoreAsync(runtimeManifest, token).ConfigureAwait(false);
+            if (installedRuntime is not null)
+            {
+                // The Windows loader can resolve DLL imports against a previously loaded pack.
+                WindowsNativeLibrary.RequireUnloaded(["qwen.dll", "ggml.dll", "ggml-base.dll"]);
+                runtimeDirectory = installedRuntime;
+            }
+            else if (!File.Exists(Path.Combine(runtimeDirectory, "qwen.dll")))
             {
                 throw new InvalidDataException("No core runtime pack is declared and no development runtime is installed");
             }
@@ -165,7 +172,7 @@ public sealed class BootstrapService : IAsyncDisposable
             RuntimeManager = manager;
             SetState(BootstrapState.Ready);
             Ready?.Invoke(manager);
-            optionalRuntimeTask = EnsureOptionalRuntimesAsync(manager, token);
+            optionalRuntimeTask = EnsureOptionalRuntimesAsync(manager, runtimeManifest, token);
             try
             {
                 if (optionalRuntimeTask is not null) await optionalRuntimeTask.ConfigureAwait(false);
@@ -349,7 +356,8 @@ public sealed class BootstrapService : IAsyncDisposable
         }
     }
 
-    private async Task EnsureOptionalRuntimesAsync(RuntimeManager manager, CancellationToken token)
+    private async Task EnsureOptionalRuntimesAsync(RuntimeManager manager, RuntimePackManifest runtimeManifest,
+        CancellationToken token)
     {
         try
         {
@@ -358,7 +366,7 @@ public sealed class BootstrapService : IAsyncDisposable
                 IsWineRuntime, Environment.GetEnvironmentVariable);
             CudaDriverAvailable = CudaDriverProbe.IsAvailable();
             CudaDriverProbeCompleted?.Invoke();
-            await runtimePacks.EnsureMatchingAsync(runtimeManifestPath, manager.DetectedBackends, token,
+            await runtimePacks.EnsureMatchingAsync(runtimeManifest, manager.DetectedBackends, token,
                 CudaDriverAvailable.Value).ConfigureAwait(false);
             await manager.RefreshBackendsAsync(token).ConfigureAwait(false);
         }

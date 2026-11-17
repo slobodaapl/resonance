@@ -22,6 +22,7 @@ public sealed class CutscenePlanStore(string dataDirectory)
             DataSource = databasePath,
             Mode = SqliteOpenMode.ReadOnly,
             Cache = SqliteCacheMode.Private,
+            Pooling = false, // Release the installed pack for replacement after each read.
         }.ToString());
         connection.Open();
         if (!TableExists(connection, "scene_node") || !TableExists(connection, "scene_edge")) return null;

@@ -16,58 +16,68 @@ public sealed class RuntimePackManager : IDisposable
 {
     private readonly HttpClient http;
     private readonly bool ownsClient;
-    private readonly string installDirectory;
+    private readonly string installRoot;
     private readonly string downloadDirectory;
     public event Action<AssetProgress>? Progress;
 
-    public RuntimePackManager(string installDirectory, string downloadDirectory, HttpClient? httpClient = null)
+    public RuntimePackManager(string installRoot, string downloadDirectory, HttpClient? httpClient = null)
     {
-        this.installDirectory = installDirectory;
+        this.installRoot = Path.GetFullPath(installRoot);
         this.downloadDirectory = downloadDirectory;
-        Directory.CreateDirectory(installDirectory);
+        Directory.CreateDirectory(this.installRoot);
         Directory.CreateDirectory(downloadDirectory);
         ownsClient = httpClient is null;
         http = httpClient ?? new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
     }
 
-    public async Task EnsureMatchingAsync(string manifestPath, IReadOnlyList<BackendInfo> detected,
+    public async Task EnsureMatchingAsync(RuntimePackManifest manifest, IReadOnlyList<BackendInfo> detected,
         CancellationToken token, bool cudaDriverAvailable = true)
     {
-        var manifest = await LoadManifestAsync(manifestPath, token).ConfigureAwait(false);
+        var installDirectory = GetInstallDirectory(manifest);
         foreach (var artifact in manifest.Artifacts)
         {
             var isCuda = artifact.Id.Equals("cuda", StringComparison.OrdinalIgnoreCase);
-            if (artifact.Id.Equals("core", StringComparison.OrdinalIgnoreCase)) continue;
+            if (IsCore(artifact)) continue;
             if (isCuda && !cudaDriverAvailable) continue;
             if (!isCuda && !detected.Any(backend => artifact.MatchDescriptionContains.Any(value =>
                     backend.Description.Contains(value, StringComparison.OrdinalIgnoreCase)))) continue;
-            await EnsureAsync(artifact, token).ConfigureAwait(false);
+            await EnsureAsync(installDirectory, artifact, token).ConfigureAwait(false);
         }
     }
 
-    public async Task EnsureCoreAsync(string manifestPath, CancellationToken token)
-    {
-        if (!await TryEnsureCoreAsync(manifestPath, token).ConfigureAwait(false))
-            throw new InvalidDataException("Runtime manifest has no required core pack");
-    }
+    public async Task<string> EnsureCoreAsync(RuntimePackManifest manifest, CancellationToken token) =>
+        await TryEnsureCoreAsync(manifest, token).ConfigureAwait(false)
+        ?? throw new InvalidDataException("Runtime manifest has no required core pack");
 
-    public async Task<bool> TryEnsureCoreAsync(string manifestPath, CancellationToken token)
+    public async Task<string?> TryEnsureCoreAsync(RuntimePackManifest manifest, CancellationToken token)
     {
-        var manifest = await LoadManifestAsync(manifestPath, token).ConfigureAwait(false);
-        var core = manifest.Artifacts.SingleOrDefault(artifact =>
-            artifact.Id.Equals("core", StringComparison.OrdinalIgnoreCase));
-        if (core is null) return false;
+        var core = manifest.Artifacts.SingleOrDefault(IsCore);
+        if (core is null) return null;
         if (!core.Files.Contains("qwen.dll", StringComparer.OrdinalIgnoreCase)
             || !core.Files.Contains("ggml.dll", StringComparer.OrdinalIgnoreCase)
             || !core.Files.Contains("ggml-base.dll", StringComparer.OrdinalIgnoreCase)
             || !core.Files.Any(file => file.StartsWith("ggml-cpu", StringComparison.OrdinalIgnoreCase))
             || !core.Files.Any(file => file.StartsWith("ggml-vulkan", StringComparison.OrdinalIgnoreCase)))
             throw new InvalidDataException("Core runtime pack is missing qwen, CPU, or Vulkan components");
-        await EnsureAsync(core, token).ConfigureAwait(false);
-        return true;
+        var installDirectory = GetInstallDirectory(manifest);
+        await EnsureAsync(installDirectory, core, token).ConfigureAwait(false);
+        return installDirectory;
     }
 
-    private static async Task<RuntimePackManifest> LoadManifestAsync(string manifestPath, CancellationToken token)
+    private string GetInstallDirectory(RuntimePackManifest manifest)
+    {
+        if (!manifest.Artifacts.Any(IsCore)) return installRoot;
+        // Backends and core DLLs must come from the same runtime pack set.
+        var packs = manifest.Artifacts.OrderBy(artifact => artifact.Id, StringComparer.Ordinal)
+            .Select(artifact => new { artifact.Id, artifact.Sha256 });
+        var identity = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(packs)));
+        return Path.Combine(installRoot, identity);
+    }
+
+    private static bool IsCore(RuntimePackArtifact artifact) =>
+        artifact.Id.Equals("core", StringComparison.OrdinalIgnoreCase);
+
+    internal static async Task<RuntimePackManifest> LoadManifestAsync(string manifestPath, CancellationToken token)
     {
         await using var manifestStream = File.OpenRead(manifestPath);
         var manifest = await JsonSerializer.DeserializeAsync<RuntimePackManifest>(manifestStream,
@@ -78,14 +88,14 @@ public sealed class RuntimePackManager : IDisposable
         return manifest;
     }
 
-    private async Task EnsureAsync(RuntimePackArtifact artifact, CancellationToken token)
+    private async Task EnsureAsync(string installDirectory, RuntimePackArtifact artifact, CancellationToken token)
     {
         ValidateArtifact(artifact);
         var marker = Path.Combine(installDirectory, $".runtime-{artifact.Id}-{artifact.Sha256}.installed");
         var archive = Path.Combine(downloadDirectory, artifact.Id + ".zip");
         if (File.Exists(marker)
             && await HasExpectedHashAsync(archive, artifact, token).ConfigureAwait(false)
-            && await InstalledFilesMatchArchiveAsync(archive, artifact, token).ConfigureAwait(false)) return;
+            && await InstalledFilesMatchArchiveAsync(installDirectory, archive, artifact, token).ConfigureAwait(false)) return;
         if (!await HasExpectedHashAsync(archive, artifact, token).ConfigureAwait(false))
             await DownloadAsync(artifact, archive, token).ConfigureAwait(false);
 
@@ -94,6 +104,8 @@ public sealed class RuntimePackManager : IDisposable
         if (entries.Length != artifact.Files.Count
             || entries.Any(entry => entry.FullName != entry.Name || !artifact.Files.Contains(entry.Name, StringComparer.OrdinalIgnoreCase)))
             throw new InvalidDataException($"Runtime pack '{artifact.Id}' contains unexpected files");
+        WindowsNativeLibrary.RequireUnloaded(artifact.Files.Select(file => Path.Combine(installDirectory, file)));
+        Directory.CreateDirectory(installDirectory);
         foreach (var file in artifact.Files)
         {
             var entry = entries.Single(value => value.Name.Equals(file, StringComparison.OrdinalIgnoreCase));
@@ -108,7 +120,7 @@ public sealed class RuntimePackManager : IDisposable
         await File.WriteAllTextAsync(marker, artifact.Sha256, token).ConfigureAwait(false);
     }
 
-    private async Task<bool> InstalledFilesMatchArchiveAsync(string archive, RuntimePackArtifact artifact,
+    private static async Task<bool> InstalledFilesMatchArchiveAsync(string installDirectory, string archive, RuntimePackArtifact artifact,
         CancellationToken token)
     {
         using var zip = ZipFile.OpenRead(archive);

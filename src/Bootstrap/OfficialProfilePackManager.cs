@@ -442,6 +442,7 @@ public sealed class OfficialProfilePackManager : IDisposable
             DataSource = Path.GetFullPath(path),
             Mode = SqliteOpenMode.ReadOnly,
             Cache = SqliteCacheMode.Private,
+            Pooling = false, // Validation and import must release files the installer can rename.
         }.ToString());
         connection.Open();
         return connection;

@@ -309,6 +309,21 @@ public sealed partial class OfficialProfilePackManagerTests
                 "https://example.invalid/manifest.json");
 
             var first = await manager.SynchronizeAsync("model-q4", TestContext.Current.CancellationToken);
+
+            var installed = Path.Combine(root, "data", "official-profile-pack", "official-profiles.sqlite3");
+            Assert.True(File.Exists(installed));
+            if (OperatingSystem.IsWindows())
+            {
+                using var handle = File.OpenHandle(installed, share: FileShare.None);
+            }
+            else if (OperatingSystem.IsLinux())
+            {
+                // Linux permits renaming open files, so check the handles directly.
+                Assert.DoesNotContain(Directory.EnumerateFiles("/proc/self/fd")
+                    .Select(fd => new FileInfo(fd).LinkTarget),
+                    path => path == installed || path == installed + ".partial (deleted)");
+            }
+
             var second = await manager.SynchronizeAsync("model-q4", TestContext.Current.CancellationToken);
 
             Assert.True(first.Downloaded);
@@ -455,7 +470,7 @@ public sealed partial class OfficialProfilePackManagerTests
 
     private static void CreatePackDatabase(string path, int embeddingLength, params string[] modelHashes)
     {
-        using var connection = new SqliteConnection($"Data Source={path}");
+        using var connection = new SqliteConnection($"Data Source={path};Pooling=False");
         connection.Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
