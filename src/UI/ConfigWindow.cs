@@ -43,6 +43,7 @@ public sealed partial class ConfigWindow : Window, IAsyncDisposable
     private readonly Func<PlaybackActivity> playbackActivity;
     private readonly Func<CancellationToken, Task> refreshDeviceMemory;
     private readonly Func<QualityPreset, CancellationToken, Task> setQuality;
+    private readonly Func<CancellationToken, Task<string?>> hashInstalledVoicePack;
     private readonly IFontHandle headingFont;
     private PlaybackActivity frameActivity;
     private string? operationError;
@@ -76,6 +77,7 @@ public sealed partial class ConfigWindow : Window, IAsyncDisposable
         Func<PlaybackActivity> playbackActivity,
         Func<CancellationToken, Task> refreshDeviceMemory,
         Func<QualityPreset, CancellationToken, Task> setQuality,
+        Func<CancellationToken, Task<string?>> hashInstalledVoicePack,
         IUiBuilder uiBuilder,
         Func<AudioBackendStatus>? audioBackendStatus = null,
         Func<BackendInfo, CancellationToken, Task>? setBackend = null,
@@ -107,6 +109,7 @@ public sealed partial class ConfigWindow : Window, IAsyncDisposable
         this.playbackActivity = playbackActivity;
         this.refreshDeviceMemory = refreshDeviceMemory;
         this.setQuality = setQuality;
+        this.hashInstalledVoicePack = hashInstalledVoicePack;
         headingFont = uiBuilder.FontAtlas
             .NewGameFontHandle(new GameFontStyle(GameFontFamily.Axis, 18) { Weight = 1f });
         this.cancelDebug = cancelDebug;

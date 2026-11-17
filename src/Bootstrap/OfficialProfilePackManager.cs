@@ -78,6 +78,19 @@ public sealed class OfficialProfilePackManager : IDisposable
         finally { gate.Release(); }
     }
 
+    public async Task<string?> HashInstalledDatabaseAsync(CancellationToken token)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+        await gate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            return File.Exists(DatabasePath)
+                ? await Sha256Async(DatabasePath, token).ConfigureAwait(false)
+                : null;
+        }
+        finally { gate.Release(); }
+    }
+
     private async Task<OfficialProfilePackSyncResult> SynchronizeCoreAsync(
         string modelHash, CancellationToken token, bool allowRemoteUpdate)
     {
@@ -222,11 +235,14 @@ public sealed class OfficialProfilePackManager : IDisposable
         await using (var source = OpenReadOnly(packPath))
         {
             await using var command = source.CreateCommand();
-            command.CommandText = """
+            var previousProfile = TableExists(source, "official_profile_replacement")
+                ? "(SELECT previous_profile_hash FROM official_profile_replacement WHERE profile_hash=p.profile_hash)"
+                : "NULL";
+            command.CommandText = $"""
                 SELECT group_id,label,actor_token,language,model_hash,ref_text,
                        speaker_embedding,rvq_codes,rvq_length,codebooks,
-                       source_metadata,profile_hash
-                FROM official_profile WHERE model_hash=$model ORDER BY group_id,language
+                       source_metadata,profile_hash,{previousProfile}
+                FROM official_profile p WHERE model_hash=$model ORDER BY group_id,language
                 """;
             command.Parameters.AddWithValue("$model", modelHash);
             await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
@@ -253,11 +269,22 @@ public sealed class OfficialProfilePackManager : IDisposable
                 reference, row.SourceMetadata);
             if (!String.Equals(profile.ProfileHash, row.ProfileHash, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException($"Pack profile hash failed for '{row.GroupId}/{row.Language}'");
-            if (existing is { Kind: VoiceProfileKind.Official }) continue;
-            var speaker = await voices.ResolveSpeakerAsync(
-                canonicalKey, null, group.Label, 0, row.Language, token).ConfigureAwait(false);
-            await voices.SaveAndAssignAsync(speaker.Id, profile, token).ConfigureAwait(false);
-            imported++;
+            var changed = false;
+            if (row.PreviousProfileHash is { } previous)
+            {
+                if (!IsSha256(previous) || String.Equals(previous, row.ProfileHash, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException($"Invalid previous profile hash for '{row.GroupId}/{row.Language}'");
+                changed = await voices.ReplaceOfficialProfileAsync(previous.ToLowerInvariant(), profile, token)
+                    .ConfigureAwait(false);
+            }
+            if (existing is not { Kind: VoiceProfileKind.Official })
+            {
+                var speaker = await voices.ResolveSpeakerAsync(
+                    canonicalKey, null, group.Label, 0, row.Language, token).ConfigureAwait(false);
+                await voices.SaveAndAssignAsync(speaker.Id, profile, token).ConfigureAwait(false);
+                changed = true;
+            }
+            if (changed) imported++;
         }
         await using (var source = OpenReadOnly(packPath))
         {
@@ -378,7 +405,7 @@ public sealed class OfficialProfilePackManager : IDisposable
             throw new InvalidDataException("Official profile pack contains invalid reference metadata");
         return new(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
             reader.GetString(4), reader.GetString(5), embedding, codes, rvqLength, codebooks,
-            reader.GetString(10), reader.GetString(11));
+            reader.GetString(10), reader.GetString(11), reader.IsDBNull(12) ? null : reader.GetString(12));
     }
 
     private static void ValidateDatabase(
@@ -529,5 +556,5 @@ public sealed class OfficialProfilePackManager : IDisposable
         int? ProfileCount = null);
     private sealed record PackProfile(string GroupId, string Label, string ActorToken,
         string Language, string ModelHash, string Transcript, float[] Embedding, int[] Codes,
-        int RvqLength, int Codebooks, string SourceMetadata, string ProfileHash);
+        int RvqLength, int Codebooks, string SourceMetadata, string ProfileHash, string? PreviousProfileHash);
 }

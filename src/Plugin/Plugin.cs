@@ -266,7 +266,7 @@ public sealed class Plugin : IDalamudPlugin
                         !Configuration.DisableVoicePackAutoUpdate).ConfigureAwait(false);
                     Log.Information("Quality voice profiles prepared Imported={Imported} Reconciled={Reconciled}",
                         result.ImportedProfiles, result.ReconciledAssignments);
-                }, token), PluginInterface.UiBuilder,
+                }, token), createdOfficialProfilePacks.HashInstalledDatabaseAsync, PluginInterface.UiBuilder,
                 createdCoordinator.GetAudioBackendStatus,
                 createdCoordinator.SetBackendAsync,
                 createdCoordinator.RebuildBackendBenchmarkAsync,

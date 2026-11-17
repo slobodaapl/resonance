@@ -8,6 +8,8 @@ namespace Resonance.UI;
 
 public sealed partial class ConfigWindow
 {
+    private Task<string?>? voicePackHash;
+
     private void DrawAdvanced()
     {
         Wrapped("Runtime status, measurements, and maintenance.", Muted);
@@ -61,6 +63,20 @@ public sealed partial class ConfigWindow
             {
                 Wrapped($"Temporary CPU fallback; still waiting for: {manager.Selection.Desired.Description}", Warning);
             }
+        }
+        var hashing = voicePackHash is { IsCompleted: false };
+        ImGui.BeginDisabled(hashing);
+        if (ImGui.Button(hashing ? "Hashing voice pack..." : "Hash installed voice pack"))
+            Run(() => voicePackHash = Task.Run(() => hashInstalledVoicePack(shutdown.Token), shutdown.Token));
+        ImGui.EndDisabled();
+        if (voicePackHash is { IsCompletedSuccessfully: true })
+        {
+            if (voicePackHash.Result is { } hash)
+            {
+                Wrapped($"Voice pack SHA-256: {hash}");
+                if (ImGui.SmallButton("Copy SHA-256")) ImGui.SetClipboardText(hash);
+            }
+            else Wrapped("No voice pack installed.", Muted);
         }
         if (ImGui.CollapsingHeader("Performance measurements and maintenance"))
         {

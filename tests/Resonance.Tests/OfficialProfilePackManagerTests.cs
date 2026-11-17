@@ -84,10 +84,29 @@ public sealed partial class OfficialProfilePackManagerTests
             var voices = new VoiceRegistry(database);
             using var manager = new OfficialProfilePackManager(Path.Combine(root, "data"), database, voices,
                 OfficialVoiceCatalog.Load(ProjectPath("assets", "official-voices.json")), CastingCatalog());
+            var token = TestContext.Current.CancellationToken;
+            var moogle = await voices.ResolveSpeakerAsync("npc:moogle", null, "Moogle", 0, "english", token);
+            var oldFallback = await voices.ResolveSpeakerAsync(
+                VoiceRegistry.DomainFallbackSpeakerKey("moogle", "feminine_adult"),
+                null, "Old moogle fallback", 0, "english", token);
             foreach (var model in BaseModelDimensions().Keys)
             {
-                Assert.True((await manager.SynchronizeAsync(model, TestContext.Current.CancellationToken,
-                    allowRemoteUpdate: false)).ImportedProfiles > 0);
+                var previous = VoiceRegistry.CreateProfile(
+                    VoiceProfileKind.Designed, "english", model, null, null, null,
+                    new VoiceReference([1f], [1], 1, 1, "Previous moogle voice"),
+                    "{}", "moogle", 5, "{}");
+                previous = await voices.SaveAndAssignAsync(oldFallback.Id, previous, token);
+                await voices.SaveAndAssignAsync(moogle.Id, previous, token);
+                var sync = await manager.SynchronizeAsync(model, token, allowRemoteUpdate: false);
+                Assert.True(sync.ImportedProfiles > 0);
+                Assert.Equal(1, sync.ReconciledAssignments);
+
+                var assigned = Assert.IsType<StoredVoiceProfile>(
+                    await voices.GetBestVoiceAsync(moogle.Id, "english", model, token));
+                var fallback = Assert.IsType<StoredVoiceProfile>(
+                    await voices.GetFallbackVoiceAsync("moogle", "feminine_adult", "english", model, token));
+                Assert.Equal(fallback.ProfileHash, assigned.ProfileHash);
+                Assert.NotEqual(previous.ProfileHash, assigned.ProfileHash);
                 foreach (var group in new[] { "cefca", "fandaniel", "oldtitania", "peddlerofnorvrandt", "rasho", "thordan" })
                 {
                     var profile = await voices.GetBestVoiceByStableKeyAsync($"official:{group}", "english", model,
@@ -98,6 +117,25 @@ public sealed partial class OfficialProfilePackManagerTests
             }
         }
         finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void AllMoogleVariantsUseTheGenericBoyReference()
+    {
+        var path = ProjectPath("release-assets", "official-profiles", "official-profiles.sqlite3");
+        using var connection = new SqliteConnection($"Data Source={path};Mode=ReadOnly");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM fallback_profile moogle
+            JOIN fallback_profile boy ON boy.domain_id='generic_world' AND boy.variant_id='masculine_young'
+              AND boy.language=moogle.language AND boy.model_hash=moogle.model_hash
+            WHERE moogle.domain_id='moogle' AND moogle.ref_text=boy.ref_text
+              AND moogle.speaker_embedding=boy.speaker_embedding AND moogle.rvq_codes=boy.rvq_codes
+              AND moogle.rvq_length=boy.rvq_length AND moogle.codebooks=boy.codebooks
+            """;
+        Assert.Equal(96L, command.ExecuteScalar());
     }
 
     [Fact]
@@ -263,6 +301,68 @@ public sealed partial class OfficialProfilePackManagerTests
     }
 
     [Fact]
+    public async Task PackCorrectionReplacesKnownOfficialAssignmentsAndKeepsOtherVoices()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "resonance-profile-correction-" + Guid.NewGuid().ToString("N"));
+        var data = Path.Combine(root, "data");
+        var directory = Path.Combine(data, "official-profile-pack");
+        Directory.CreateDirectory(directory);
+        var token = TestContext.Current.CancellationToken;
+        const string model = "model-q4";
+        try
+        {
+            var pack = Path.Combine(directory, "official-profiles.sqlite3");
+            CreatePackDatabase(pack, 1024, model);
+            var previous = VoiceRegistry.CreateProfile(VoiceProfileKind.Official, "english", model,
+                null, null, null, new VoiceReference([0.2f], [2], 1, 1, "Superseded reference"));
+            using (var connection = new SqliteConnection($"Data Source={pack};Pooling=False"))
+            {
+                connection.Open();
+                using var command = connection.CreateCommand();
+                command.CommandText = """
+                    CREATE TABLE official_profile_replacement(profile_hash TEXT PRIMARY KEY,previous_profile_hash TEXT NOT NULL);
+                    INSERT INTO official_profile_replacement SELECT profile_hash,$previous FROM official_profile;
+                    """;
+                command.Parameters.AddWithValue("$previous", previous.ProfileHash);
+                command.ExecuteNonQuery();
+            }
+            await File.WriteAllTextAsync(Path.Combine(directory, "official-profile-pack.json"),
+                JsonSerializer.Serialize(new
+                {
+                    SchemaVersion = 1, PackVersion = 7, Url = "https://example.invalid/pack.zip", Length = 1,
+                    Sha256 = new string('a', 64), DatabaseSha256 = await HashAsync(pack),
+                }), token);
+
+            using var database = new Database(Path.Combine(root, "user.sqlite3"));
+            var voices = new VoiceRegistry(database);
+            var canonical = await voices.ResolveSpeakerAsync("official:actor", null, "Actor", 0, "english", token);
+            var alias = await voices.ResolveSpeakerAsync("npc:42", 42, "Actor", 0, "english", token);
+            var overrideSpeaker = await voices.ResolveSpeakerAsync("npc:43", 43, "Actor", 0, "english", token);
+            foreach (var speaker in new[] { canonical, alias, overrideSpeaker })
+                await voices.SaveAndAssignAsync(speaker.Id, previous, token);
+            var custom = VoiceRegistry.CreateProfile(VoiceProfileKind.Official, "english", model,
+                null, null, null, new VoiceReference([0.3f], [3], 1, 1, "Local reference"));
+            await voices.SaveAndAssignAsync(overrideSpeaker.Id, custom, token);
+            var catalog = OfficialVoiceCatalog.Parse("""
+                {"schemaVersion":1,"catalogVersion":1,"groups":[{"id":"actor","label":"Actor",
+                "npcBaseIds":[42,43],"aliases":{},"sources":{},"actorTokens":["ACTOR"]}]}
+                """);
+            using var manager = new OfficialProfilePackManager(data, database, voices, catalog, CastingCatalog());
+
+            await manager.SynchronizeAsync(model, token, allowRemoteUpdate: false);
+
+            var corrected = await voices.GetBestVoiceAsync(canonical.Id, "english", model, token);
+            Assert.Equal("Reference", corrected?.Reference.Transcript);
+            Assert.Equal(corrected!.ProfileHash,
+                (await voices.GetBestVoiceAsync(alias.Id, "english", model, token))?.ProfileHash);
+            Assert.Equal(custom.ProfileHash,
+                (await voices.GetBestVoiceAsync(overrideSpeaker.Id, "english", model, token))?.ProfileHash);
+            Assert.Equal(0, (await manager.SynchronizeAsync(model, token, allowRemoteUpdate: false)).ImportedProfiles);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public async Task DownloadsOnceAndImportsOnlyExactModelWithoutReplacingExistingOfficial()
     {
         var root = Path.Combine(Path.GetTempPath(), "resonance-profile-pack-" + Guid.NewGuid().ToString("N"));
@@ -308,10 +408,12 @@ public sealed partial class OfficialProfilePackManagerTests
                 Path.Combine(root, "data"), userDatabase, voices, catalog, CastingCatalog(), http,
                 "https://example.invalid/manifest.json");
 
+            Assert.Null(await manager.HashInstalledDatabaseAsync(TestContext.Current.CancellationToken));
             var first = await manager.SynchronizeAsync("model-q4", TestContext.Current.CancellationToken);
 
             var installed = Path.Combine(root, "data", "official-profile-pack", "official-profiles.sqlite3");
             Assert.True(File.Exists(installed));
+            Assert.Equal(databaseHash, await manager.HashInstalledDatabaseAsync(TestContext.Current.CancellationToken));
             if (OperatingSystem.IsWindows())
             {
                 using var handle = File.OpenHandle(installed, share: FileShare.None);
@@ -353,6 +455,17 @@ public sealed partial class OfficialProfilePackManagerTests
             Assert.Equal(2, offline.ImportedProfiles);
             Assert.Equal(VoiceProfileKind.Official, (await offlineVoices.GetBestVoiceByStableKeyAsync(
                 "official:actor", "english", "model-q4", TestContext.Current.CancellationToken))?.Kind);
+
+            using (var connection = new SqliteConnection($"Data Source={installed};Pooling=False"))
+            {
+                connection.Open();
+                using var command = connection.CreateCommand();
+                command.CommandText = "PRAGMA user_version=1";
+                command.ExecuteNonQuery();
+            }
+            var changedHash = await manager.HashInstalledDatabaseAsync(TestContext.Current.CancellationToken);
+            Assert.NotEqual(databaseHash, changedHash);
+            Assert.Equal(await HashAsync(installed), changedHash);
         }
         finally { Directory.Delete(root, true); }
     }

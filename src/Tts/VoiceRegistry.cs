@@ -352,6 +352,54 @@ public sealed class VoiceRegistry(Database database)
             return profileId == profile.Id ? profile : profile with { Id = profileId };
         }, token);
 
+    internal Task<bool> ReplaceOfficialProfileAsync(
+        string previousHash, StoredVoiceProfile profile, CancellationToken token) => database.ReadAsync(async connection =>
+    {
+        await using var transaction = connection.BeginTransaction();
+        var assignments = new List<(long Speaker, int Priority)>();
+        await using (var remove = connection.CreateCommand())
+        {
+            remove.Transaction = transaction;
+            remove.CommandText = """
+                DELETE FROM speaker_voice AS old
+                WHERE profile_id=(SELECT id FROM voice_profile WHERE profile_hash=$previous AND kind=2
+                    AND language=$language AND model_hash=$model)
+                  AND profile_id=(SELECT p.id FROM speaker_voice sv JOIN voice_profile p ON p.id=sv.profile_id
+                    WHERE sv.speaker_id=old.speaker_id AND p.language=$language AND p.model_hash=$model
+                    ORDER BY sv.priority DESC,p.created_utc DESC,p.id LIMIT 1)
+                RETURNING speaker_id,priority
+                """;
+            remove.Parameters.AddWithValue("$previous", previousHash);
+            remove.Parameters.AddWithValue("$language", profile.Language);
+            remove.Parameters.AddWithValue("$model", profile.ModelHash);
+            await using var reader = await remove.ExecuteReaderAsync(token).ConfigureAwait(false);
+            while (await reader.ReadAsync(token).ConfigureAwait(false))
+                assignments.Add((reader.GetInt64(0), reader.GetInt32(1)));
+        }
+        if (assignments.Count == 0) return false;
+
+        var profileId = await InsertProfile(connection, transaction, profile, token).ConfigureAwait(false);
+        await using var assign = connection.CreateCommand();
+        assign.Transaction = transaction;
+        assign.CommandText = """
+            INSERT INTO speaker_voice(speaker_id,profile_id,priority,assigned_utc)
+            VALUES($speaker,$profile,$priority,$utc)
+            ON CONFLICT(speaker_id,profile_id) DO UPDATE SET priority=MAX(priority,excluded.priority)
+            """;
+        assign.Parameters.AddWithValue("$profile", profileId);
+        assign.Parameters.AddWithValue("$utc", DateTimeOffset.UtcNow.ToString("O"));
+        var speaker = assign.Parameters.Add("$speaker", SqliteType.Integer);
+        var priority = assign.Parameters.Add("$priority", SqliteType.Integer);
+        foreach (var assignment in assignments)
+        {
+            speaker.Value = assignment.Speaker;
+            priority.Value = assignment.Priority;
+            await assign.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+        }
+        await transaction.CommitAsync(token).ConfigureAwait(false);
+        return true;
+    }, token);
+
     public Task<int> ReconcileOfficialAssignmentsAsync(
         OfficialVoiceCatalog catalog, string modelHash, CancellationToken token) => database.ReadAsync(async connection =>
     {

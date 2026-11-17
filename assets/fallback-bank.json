@@ -376,12 +376,12 @@
       "feminine_elder": "mix_vanu_vanu_emphatic_feminine_elder"
     },
     "moogle": {
-      "masculine_young": "mix_moogle_emphatic_masculine_child",
-      "masculine_adult": "mix_moogle_emphatic_masculine_adult",
-      "masculine_elder": "mix_moogle_emphatic_masculine_elder",
-      "feminine_young": "mix_moogle_emphatic_feminine_child",
-      "feminine_adult": "mix_moogle_emphatic_feminine_adult",
-      "feminine_elder": "mix_moogle_emphatic_feminine_elder"
+      "masculine_young": "foundation_masculine_child_1",
+      "masculine_adult": "foundation_masculine_child_1",
+      "masculine_elder": "foundation_masculine_child_1",
+      "feminine_young": "foundation_masculine_child_1",
+      "feminine_adult": "foundation_masculine_child_1",
+      "feminine_elder": "foundation_masculine_child_1"
     },
     "fuath": {
       "masculine_young": "mix_fuath_emphatic_masculine_child",
