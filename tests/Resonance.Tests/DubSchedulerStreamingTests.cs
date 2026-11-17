@@ -439,7 +439,7 @@ public sealed class DubSchedulerStreamingTests
     {
         public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Completed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public RuntimeCapabilities Capabilities { get; } = new(true, true, false, true, []);
+        public RuntimeCapabilities Capabilities { get; } = new(true, true, true, []);
         public ValueTask<VoiceReference> ExtractReferenceAsync(ReadOnlyMemory<float> monoPcm24Khz, string transcript,
             CancellationToken token) => ValueTask.FromResult(new VoiceReference([], [], 0, 0, transcript));
         public async Task SynthesizeAsync(SynthesisRequest request, StreamingAudioBuffer sink, CancellationToken token)
@@ -457,7 +457,7 @@ public sealed class DubSchedulerStreamingTests
     {
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Cancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public RuntimeCapabilities Capabilities { get; } = new(true, true, false, true, []);
+        public RuntimeCapabilities Capabilities { get; } = new(true, true, true, []);
         public ValueTask<VoiceReference> ExtractReferenceAsync(ReadOnlyMemory<float> monoPcm24Khz, string transcript,
             CancellationToken token) => ValueTask.FromResult(new VoiceReference([], [], 0, 0, transcript));
         public async Task SynthesizeAsync(SynthesisRequest request, StreamingAudioBuffer sink, CancellationToken token)
@@ -472,7 +472,7 @@ public sealed class DubSchedulerStreamingTests
     private sealed class LanguageRecordingRuntime : ITtsRuntime
     {
         public ConcurrentQueue<(string Text, string Language)> Requests { get; } = new();
-        public RuntimeCapabilities Capabilities { get; } = new(true, true, false, true, []);
+        public RuntimeCapabilities Capabilities { get; } = new(true, true, true, []);
         public ValueTask<VoiceReference> ExtractReferenceAsync(ReadOnlyMemory<float> monoPcm24Khz, string transcript,
             CancellationToken token) => ValueTask.FromResult(new VoiceReference([], [], 0, 0, transcript));
         public Task SynthesizeAsync(SynthesisRequest request, StreamingAudioBuffer sink, CancellationToken token)

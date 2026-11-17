@@ -5,7 +5,6 @@ namespace Resonance.Tts;
 public sealed record RuntimeCapabilities(
     bool Streaming,
     bool Cancellation,
-    bool VoiceDesign,
     bool VoiceReferenceExtraction,
     IReadOnlyList<BackendInfo> Backends);
 

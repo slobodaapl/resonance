@@ -23,7 +23,7 @@ public sealed class ReferenceExtractionTests
             await File.WriteAllTextAsync(helperPath, "test-helper", TestContext.Current.CancellationToken);
             var runner = new WritingRunner();
             await using var manager = new RuntimeManager(new Configuration(), () => { }, talkerPath, codecPath,
-                "base", "design", "runtime", runtimePath, helperPath,
+                "base", "runtime", runtimePath, helperPath,
                 Path.Combine(root, "work"), runner);
             SetSelection(manager, new BackendInfo("cpu", "CPU", BackendType.Cpu, 0, 1, 1));
 
@@ -54,7 +54,7 @@ public sealed class ReferenceExtractionTests
             await File.WriteAllTextAsync(helperPath, "test-helper", TestContext.Current.CancellationToken);
             var runner = new BlockingRunner();
             await using var manager = new RuntimeManager(new Configuration(), () => { }, talkerPath, codecPath,
-                "base", "design", "runtime", runtimePath, helperPath,
+                "base", "runtime", runtimePath, helperPath,
                 Path.Combine(root, "work"), runner);
             SetSelection(manager, new BackendInfo("cpu", "CPU", BackendType.Cpu, 0, 1, 1));
             using var cancellation = new CancellationTokenSource();
@@ -85,7 +85,7 @@ public sealed class ReferenceExtractionTests
             await File.WriteAllTextAsync(codecPath, "codec", TestContext.Current.CancellationToken);
             await File.WriteAllTextAsync(helperPath, "test-helper", TestContext.Current.CancellationToken);
             await using var manager = new RuntimeManager(new Configuration(), () => { }, talkerPath, codecPath,
-                "base", "design", "runtime", runtimePath, helperPath,
+                "base", "runtime", runtimePath, helperPath,
                 Path.Combine(root, "work"), new AbandonedRunner());
             SetSelection(manager, new BackendInfo("cpu", "CPU", BackendType.Cpu, 0, 1, 1));
 

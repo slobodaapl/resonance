@@ -16,13 +16,12 @@ public sealed class RuntimeBenchmarkIsolationTests
         {
             var configuration = new Configuration { Compute = ComputePreference.Manual };
             var backend = new BackendInfo("CUDA0", "GPU", BackendType.Accelerator, 0, 8, 24);
-            var designPath = Path.Combine(root, "design.gguf");
             var host = new BenchmarkHost(backend);
             var saves = 0;
             string? helperModelPath = null;
             await using var manager = new RuntimeManager(configuration, () => saves++,
                 Path.Combine(root, "talker.gguf"), Path.Combine(root, "codec.gguf"),
-                "base", "design", "runtime", Path.Combine(root, "runtime"),
+                "base", "runtime", Path.Combine(root, "runtime"),
                 Path.Combine(root, "ReferenceExtractor.exe"), Path.Combine(root, "work"));
             manager.SetTestBackendState(new BackendSelection(backend, backend, false, null));
             manager.SetBaseHostFactory((_, modelPath, _, _, _, _) =>
@@ -31,9 +30,9 @@ public sealed class RuntimeBenchmarkIsolationTests
                 return host;
             });
 
-            await manager.BenchmarkAndApplyAsync(designPath, TestContext.Current.CancellationToken);
+            await manager.BenchmarkAndApplyAsync(TestContext.Current.CancellationToken);
 
-            Assert.Equal(Path.GetFullPath(designPath), Path.GetFullPath(helperModelPath!));
+            Assert.Equal(Path.GetFullPath(Path.Combine(root, "talker.gguf")), Path.GetFullPath(helperModelPath!));
             Assert.Equal(backend.Name, host.StartedBackend);
             Assert.Equal([backend], host.BenchmarkedBackends);
             Assert.Equal(1, host.DisposeCount);
@@ -58,13 +57,12 @@ public sealed class RuntimeBenchmarkIsolationTests
             var hosts = new Queue<IBaseRuntimeHost>([failed, passed]);
             await using var manager = new RuntimeManager(configuration, () => { },
                 Path.Combine(root, "talker.gguf"), Path.Combine(root, "codec.gguf"),
-                "base", "design", "runtime", Path.Combine(root, "runtime"),
+                "base", "runtime", Path.Combine(root, "runtime"),
                 Path.Combine(root, "ReferenceExtractor.exe"), Path.Combine(root, "work"));
             manager.SetTestBackendState(new BackendSelection(cuda, cuda, false, null), [cuda, cpu]);
             manager.SetBaseHostFactory((_, _, _, _, _, _) => hosts.Dequeue());
 
-            await manager.BenchmarkAndApplyAsync(
-                Path.Combine(root, "design.gguf"), TestContext.Current.CancellationToken);
+            await manager.BenchmarkAndApplyAsync(TestContext.Current.CancellationToken);
 
             Assert.Equal(1, failed.DisposeCount);
             Assert.Equal(1, passed.DisposeCount);

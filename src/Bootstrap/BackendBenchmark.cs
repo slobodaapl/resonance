@@ -26,20 +26,19 @@ public sealed class BackendBenchmarkCleanupException : InvalidOperationException
 public static class BackendBenchmark
 {
     private const string Text = "A quiet lantern glows beside the harbor.";
-    private const string Instruction = "A calm, clear adult narrator voice with natural conversational pacing.";
     private static readonly object FailedRuntimeGate = new();
     private static readonly List<QwenCppRuntime> TerminalFailedRuntimes = [];
 
-    public static string Identity(string runtimeVersion, string baseHash, string designHash, ComputePreference preference,
+    public static string Identity(string runtimeVersion, string baseHash, ComputePreference preference,
         IReadOnlyList<BackendInfo> backends)
     {
         var devices = string.Join('\n', backends.OrderBy(value => value.Name).Select(value =>
             $"{value.Name}|{value.Type}|{value.DeviceIndex}|{value.Description}|{value.MemoryTotal}"));
-        var input = $"v2\n{runtimeVersion}\n{baseHash}\n{designHash}\n{preference}\n{RuntimeEnvironmentIdentity.Get()}\n{devices}";
+        var input = $"v3\n{runtimeVersion}\n{baseHash}\n{preference}\n{RuntimeEnvironmentIdentity.Get()}\n{devices}";
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(input)));
     }
 
-    internal static async Task<BackendBenchmarkCache> RunAsync(string identity, string designPath, string codecPath,
+    internal static async Task<BackendBenchmarkCache> RunAsync(string identity, string basePath, string codecPath,
         IReadOnlyList<BackendInfo> backends, ComputePreference preference, CancellationToken token,
         IProcessLifetimeLease pluginLifetimeLease)
     {
@@ -49,6 +48,9 @@ public static class BackendBenchmark
                 "The plugin process lifetime lease is poisoned; restart is required",
                 new InvalidOperationException("Native benchmark construction is unavailable"));
         var measurements = new List<BackendBenchmarkMeasurement>();
+        var prepared = BenchmarkVoice.Load(basePath);
+        var reference = new VoiceReference(prepared.SpeakerEmbedding, prepared.RvqCodes,
+            prepared.RvqLength, prepared.Codebooks, prepared.Transcript);
         foreach (var backend in backends)
         {
             token.ThrowIfCancellationRequested();
@@ -62,13 +64,13 @@ public static class BackendBenchmark
             Exception? inferenceFailure = null;
             try
             {
-                runtime = new QwenCppRuntime(designPath, codecPath, backend.Name,
+                runtime = new QwenCppRuntime(basePath, codecPath, backend.Name,
                     ownsProcessLease: false, pluginLifetimeLease: pluginLifetimeLease);
                 initialization.Stop();
                 using var audio = new StreamingAudioBuffer();
                 var generation = Stopwatch.StartNew();
                 synthesis = runtime.SynthesizeAsync(
-                    new(Text, "english", null, Instruction, 0x5245534f4e414e43, 192), audio, token);
+                    new(Text, "english", reference, null, 0x5245534f4e414e43, 192), audio, token);
                 double? firstAudio = null;
                 var sampleCount = 0;
                 await foreach (var chunk in audio.Reader.ReadAllAsync(token).ConfigureAwait(false))

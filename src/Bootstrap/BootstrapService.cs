@@ -6,7 +6,7 @@ using Resonance.Tts;
 
 namespace Resonance.Bootstrap;
 
-public enum BootstrapState { Starting, DownloadingRuntime, DownloadingBase, InitializingRuntime, Ready, DownloadingVoiceDesign, BenchmarkingBackends, Failed, Stopped }
+public enum BootstrapState { Starting, DownloadingRuntime, DownloadingBase, InitializingRuntime, Ready, BenchmarkingBackends, Failed, Stopped }
 
 public sealed class BootstrapService : IAsyncDisposable
 {
@@ -32,13 +32,12 @@ public sealed class BootstrapService : IAsyncDisposable
     public BootstrapState State { get; private set; } = BootstrapState.Starting;
     public RuntimeManager? RuntimeManager { get; private set; }
     public bool IsReady => !IsChangingQuality && RuntimeManager is { IsReady: true, HasNativeOwnershipFailure: false }
-                           && State is BootstrapState.Ready or BootstrapState.DownloadingVoiceDesign;
+                           && State is BootstrapState.Ready;
     public bool IsChangingQuality => Volatile.Read(ref changingQuality) != 0;
     internal bool IsStopping => Volatile.Read(ref disposed) != 0 || shutdown.IsCancellationRequested;
     internal bool CanRestoreQuality => !IsStopping && !lifetimeLease.IsPoisoned
         && RuntimeManager?.HasNativeOwnershipFailure != true;
     internal PreparedModelQuality? ActiveModels { get; private set; }
-    public string? VoiceDesignPath { get; private set; }
     public Exception? Failure { get; private set; }
     public bool? CudaDriverAvailable { get; private set; }
     public bool IsWineRuntime { get; private set; }
@@ -48,7 +47,6 @@ public sealed class BootstrapService : IAsyncDisposable
     public event Action<BootstrapState>? StateChanged;
     public event Action<AssetProgress>? Progress;
     public event Action<RuntimeManager>? Ready;
-    public event Action<string, string>? VoiceDesignReady;
     public event Action<Exception>? OptionalRuntimeFailed;
     public event Action<Exception>? OptionalPreparationFailed;
     public event Action? CudaDriverProbeCompleted;
@@ -148,9 +146,7 @@ public sealed class BootstrapService : IAsyncDisposable
             var selectedAssets = ModelQualitySelection.Resolve(quality);
             var baseModel = manifest.Artifacts.Single(value => value.Id == selectedAssets.Base);
             var tokenizer = manifest.Artifacts.Single(value => value.Id == selectedAssets.Tokenizer);
-            var design = manifest.Artifacts.Single(value => value.Id == selectedAssets.VoiceDesign);
-            if (baseModel.Abi != QwenNative.AbiVersion || tokenizer.Abi != QwenNative.AbiVersion
-                || design.Abi != QwenNative.AbiVersion)
+            if (baseModel.Abi != QwenNative.AbiVersion || tokenizer.Abi != QwenNative.AbiVersion)
                 throw new InvalidDataException("Selected model assets do not match the native runtime ABI");
             SetState(BootstrapState.DownloadingRuntime);
             var coreDeclared = await runtimePacks.TryEnsureCoreAsync(runtimeManifestPath, token).ConfigureAwait(false);
@@ -164,7 +160,7 @@ public sealed class BootstrapService : IAsyncDisposable
             var codecPath = await assets.EnsureAsync(tokenizer, token).ConfigureAwait(false);
 
             SetState(BootstrapState.InitializingRuntime);
-            ActiveModels = new(quality, basePath, codecPath, null, baseModel.Sha256, design.Sha256);
+            ActiveModels = new(quality, basePath, codecPath, baseModel.Sha256);
             var manager = await runtimeFactory(ActiveModels, token).ConfigureAwait(false);
             RuntimeManager = manager;
             SetState(BootstrapState.Ready);
@@ -172,11 +168,7 @@ public sealed class BootstrapService : IAsyncDisposable
             optionalRuntimeTask = EnsureOptionalRuntimesAsync(manager, token);
             try
             {
-                SetState(BootstrapState.DownloadingVoiceDesign);
-                VoiceDesignPath = await assets.EnsureAsync(design, token).ConfigureAwait(false);
-                ActiveModels = ActiveModels with { DesignPath = VoiceDesignPath };
                 if (optionalRuntimeTask is not null) await optionalRuntimeTask.ConfigureAwait(false);
-                VoiceDesignReady?.Invoke(VoiceDesignPath, codecPath);
                 SetState(BootstrapState.Ready);
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
@@ -240,8 +232,7 @@ public sealed class BootstrapService : IAsyncDisposable
         var ids = ModelQualitySelection.Resolve(quality);
         var model = ModelAssets.Single(value => value.Id == ids.Base);
         var codec = ModelAssets.Single(value => value.Id == ids.Tokenizer);
-        var design = ModelAssets.Single(value => value.Id == ids.VoiceDesign);
-        if (new[] { model, codec, design }.Any(value => value.Abi != QwenNative.AbiVersion))
+        if (new[] { model, codec }.Any(value => value.Abi != QwenNative.AbiVersion))
             throw new InvalidDataException("Selected model assets do not match the native runtime ABI");
         var previousState = State;
         try
@@ -249,9 +240,7 @@ public sealed class BootstrapService : IAsyncDisposable
             SetState(BootstrapState.DownloadingBase);
             var basePath = await assets.EnsureAsync(model, linked.Token).ConfigureAwait(false);
             var codecPath = await assets.EnsureAsync(codec, linked.Token).ConfigureAwait(false);
-            SetState(BootstrapState.DownloadingVoiceDesign);
-            var designPath = await assets.EnsureAsync(design, linked.Token).ConfigureAwait(false);
-            return new(quality, basePath, codecPath, designPath, model.Sha256, design.Sha256);
+            return new(quality, basePath, codecPath, model.Sha256);
         }
         finally { SetState(IsStopping ? BootstrapState.Stopped : previousState); }
     }
@@ -324,18 +313,16 @@ public sealed class BootstrapService : IAsyncDisposable
     {
         RuntimeManager = manager;
         ActiveModels = models;
-        VoiceDesignPath = models.DesignPath;
         Failure = null;
         SetState(BootstrapState.Ready);
         Ready?.Invoke(manager);
-        if (models.DesignPath is { } design) VoiceDesignReady?.Invoke(design, models.CodecPath);
     }
 
     private async Task<RuntimeManager> CreateRuntimeAsync(PreparedModelQuality models, CancellationToken token)
     {
         var version = typeof(BootstrapService).Assembly.GetName().Version?.ToString() ?? "0";
         var manager = new RuntimeManager(configuration, saveConfiguration, models.BasePath, models.CodecPath,
-            models.ModelHash, models.DesignHash, version, runtimeDirectory, referenceExtractorPath,
+            models.ModelHash, version, runtimeDirectory, referenceExtractorPath,
             referenceExtractionDirectory, nativeFailureReporter: lifetimeLease.Poison);
         manager.SetPluginLifetimeLease(lifetimeLease);
         RuntimeManager = manager;

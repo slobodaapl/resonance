@@ -974,7 +974,7 @@ public sealed class BaseRuntimeHostProtocolTests
         File.WriteAllText(codec, "codec");
         File.WriteAllText(helper, "host");
         var manager = new RuntimeManager(configuration, () => { }, talker, codec,
-            "base", "design", "runtime", runtime, helper, work);
+            "base", "runtime", runtime, helper, work);
         manager.SetBaseHostFactory((_, _, _, _, _, _) => host);
         var backend = new BackendInfo("cpu", "CPU", BackendType.Cpu, 0, 1, 1);
         manager.SetTestBackendState(new BackendSelection(backend, backend, false, null));

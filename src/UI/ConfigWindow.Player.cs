@@ -504,8 +504,7 @@ public sealed partial class ConfigWindow
         var boot = bootstrap();
         var output = audioBackendStatus();
         var failed = boot.Failure is not null || boot.State == BootstrapState.Failed;
-        var downloading = boot.State is BootstrapState.DownloadingRuntime or BootstrapState.DownloadingBase
-            or BootstrapState.DownloadingVoiceDesign;
+        var downloading = boot.State is BootstrapState.DownloadingRuntime or BootstrapState.DownloadingBase;
         var outputFailure = boot.IsReady && (!output.Available || !output.Healthy);
         var needsSetup = !boot.IsReady || failed || outputFailure || downloading;
         if (needsSetup)
@@ -795,7 +794,6 @@ public sealed partial class ConfigWindow
     {
         BootstrapState.DownloadingRuntime => "Downloading the speech engine. Setup continues in the background.",
         BootstrapState.DownloadingBase => "Downloading character voice models. Setup continues in the background.",
-        BootstrapState.DownloadingVoiceDesign => "Downloading additional voices. Character voices can already be available.",
         BootstrapState.BenchmarkingBackends => "Measuring your devices to choose where speech runs best.",
         BootstrapState.Stopped => "The speech engine has stopped. Reload Resonance to start it again.",
         _ => "Loading the speech engine and voice models.",

@@ -255,7 +255,6 @@ public sealed class Plugin : IDalamudPlugin
                 createdCoordinator.RegenerateDomainVoicesAsync,
                 createdCoordinator.GetDebugInferenceSnapshot,
                 createdCoordinator.RefreshDebugBaseVoicesAsync,
-                createdCoordinator.RunVoiceDesignDebugAsync,
                 createdCoordinator.RunBaseDebugAsync,
                 createdCoordinator.CancelDebugInference,
                 createdCoordinator.NotifyPreDubConfigurationChanged,
@@ -409,11 +408,11 @@ public sealed class Plugin : IDalamudPlugin
     {
         QueueFrameworkUi(() =>
         {
-            Log.Warning(error, "Optional VoiceDesign/backend preparation failed");
+            Log.Warning(error, "Optional backend preparation failed");
             Notifications.AddNotification(new Notification
             {
                 Title = "Resonance background voice casting unavailable",
-                Content = $"Base dubbing remains ready. VoiceDesign or backend benchmarking failed: {error.Message}",
+                Content = $"Dubbing remains ready. Backend preparation failed: {error.Message}",
                 Type = NotificationType.Warning,
                 InitialDuration = TimeSpan.FromSeconds(15),
                 Minimized = true,

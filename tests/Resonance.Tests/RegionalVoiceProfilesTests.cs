@@ -83,11 +83,9 @@ public sealed class RegionalVoiceProfilesTests
     }
 
     [Theory]
-    [InlineData(false,4)]
-    [InlineData(false,5)]
-    [InlineData(true,4)]
-    [InlineData(true,5)]
-    public async Task BackgroundPoolUsesPreparedAgePerformanceUnlessPromptIsOverridden(bool customPrompt,int referenceCatalogVersion)
+    [InlineData(4)]
+    [InlineData(5)]
+    public async Task BackgroundPoolCopiesPreparedAgeReferenceWithoutFreshDesign(int referenceCatalogVersion)
     {
         var token = TestContext.Current.CancellationToken;
         var root = NewRoot();
@@ -104,31 +102,20 @@ public sealed class RegionalVoiceProfilesTests
                     VoiceProfileKind.Designed,"english","model",null,null,null,
                     new VoiceReference([8,0],[age.Length],1,1,"prepared "+age),"{}","kojin",referenceCatalogVersion,"{}"),token);
             }
-            var designed = new VoiceReference([0,8],[99],1,1,"designed performance");
             await using var pool = CastingDomainPool.CreateForTests(voices,catalog,
-                (_,_,_,_)=>Task.FromResult(designed),()=>true,()=>"Kojin",()=>"english",()=> (1,0),"model",
-                promptOverride: (_,_,_)=>customPrompt ? "my explicit prompt" : null,backgroundEnabled:()=>false);
+                (_,_,_,_)=>throw new InvalidOperationException("Prepared voice must avoid generation"),()=>true,()=>"Kojin",()=>"english",()=> (1,0),"model",
+                backgroundEnabled:()=>false);
             await pool.RegenerateDomainAsync("kojin",token);
             Assert.True(await pool.ExecuteOneWorkAsync(token));
             var npc = await voices.ResolveSpeakerAsync("npc:pool-test",null,"pool",1,"english",token);
             var assigned = await voices.TryAssignDomainPoolVoiceAsync(npc.Id,"kojin","english","masculine",null,"model",token);
             Assert.NotNull(assigned);
-            Assert.Equal(customPrompt ? catalog.Version : referenceCatalogVersion,assigned.CatalogVersion);
-            if (customPrompt)
-            {
-                Assert.Equal(designed.Transcript,assigned.Reference.Transcript);
-                Assert.Equal(designed.RvqCodes,assigned.Reference.RvqCodes);
-                Assert.Equal(designed.SpeakerEmbedding,assigned.Reference.SpeakerEmbedding);
-            }
-            else
-            {
-                using var traits = JsonDocument.Parse(assigned.TraitsJson!);
-                var expected = prepared[traits.RootElement.GetProperty("Age").GetString()!].Reference;
-                Assert.Equal(expected.Transcript,assigned.Reference.Transcript);
-                Assert.Equal(expected.RvqCodes,assigned.Reference.RvqCodes);
-                Assert.Equal(7.6f,assigned.Reference.SpeakerEmbedding[0],5);
-                Assert.Equal(0.4f,assigned.Reference.SpeakerEmbedding[1],5);
-            }
+            Assert.Equal(referenceCatalogVersion,assigned.CatalogVersion);
+            using var traits = JsonDocument.Parse(assigned.TraitsJson!);
+            var expected = prepared[traits.RootElement.GetProperty("Age").GetString()!].Reference;
+            Assert.Equal(expected.Transcript,assigned.Reference.Transcript);
+            Assert.Equal(expected.RvqCodes,assigned.Reference.RvqCodes);
+            Assert.Equal(expected.SpeakerEmbedding,assigned.Reference.SpeakerEmbedding);
         }
         finally { Directory.Delete(root,true); }
     }
@@ -189,10 +176,8 @@ public sealed class RegionalVoiceProfilesTests
         finally { Directory.Delete(root,true); }
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task SharedVoiceCreatesNoPoolVariationsUnlessUserOverridesPrompt(bool customPrompt)
+    [Fact]
+    public async Task SharedVoiceCreatesNoPoolVariations()
     {
         var root = NewRoot(); var token = TestContext.Current.CancellationToken;
         try
@@ -201,13 +186,12 @@ public sealed class RegionalVoiceProfilesTests
             var voices = new VoiceRegistry(database); var catalog = Catalog();
             await using var pool = CastingDomainPool.CreateForTests(voices,catalog,
                 (_,_,_,_)=>Task.FromResult(Reference("explicit design")),()=>true,()=>"unknown",()=>"english",()=> (1,0),"model",
-                promptOverride:(domain,_,_)=>domain=="goblin" && customPrompt ? "my explicit prompt" : null,
                 backgroundEnabled:()=>false);
             await pool.RegenerateDomainAsync("goblin",token);
             var operations = 0;
             while (await pool.ExecuteOneWorkAsync(token)) Assert.True(++operations<=3);
-            Assert.Equal(customPrompt ? 1 : 0,await voices.CountReadyDomainPoolAsync("goblin","english","masculine",token));
-            Assert.Equal(customPrompt ? 1 : 0,pool.Snapshot.TargetCounts["goblin:english:masculine"]);
+            Assert.Equal(0,await voices.CountReadyDomainPoolAsync("goblin","english","masculine",token));
+            Assert.Equal(0,pool.Snapshot.TargetCounts["goblin:english:masculine"]);
         }
         finally { Directory.Delete(root,true); }
     }

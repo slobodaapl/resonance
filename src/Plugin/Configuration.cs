@@ -39,9 +39,7 @@ public sealed class Configuration : IPluginConfiguration
     // Legacy v2 JSON field. Ignored: playback always follows FFXIV's mixer.
     public int AudioOutputDeviceNumber { get; set; } = -1;
     /// <summary>
-    /// Keeps the Base voice-clone model resident between uses.  This does not
-    /// affect the separate VoiceDesign model and defaults off for existing
-    /// configuration files.
+    /// Keeps the Base voice-clone model resident between uses; defaults off.
     /// </summary>
     public bool KeepBaseModelLoaded { get; set; }
     public bool BackgroundCasting { get; set; } = true;
@@ -55,7 +53,7 @@ public sealed class Configuration : IPluginConfiguration
     public long CacheLimitBytes { get; set; } = 2L * 1024 * 1024 * 1024;
     public BackendBenchmarkCache? BackendBenchmark { get; set; }
 
-    /// <summary>Domain/language/sex prompt overrides used by catalog resolution.</summary>
+    /// <summary>Legacy voice descriptions retained for configuration compatibility.</summary>
     public Dictionary<string, string> PromptOverrides { get; set; } = [];
 
     /// <summary>

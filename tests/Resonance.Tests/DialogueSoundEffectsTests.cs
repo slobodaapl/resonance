@@ -365,7 +365,7 @@ public sealed class DialogueSoundEffectsTests
     private sealed class RecordingRuntime : ITtsRuntime
     {
         public List<SynthesisRequest> Requests { get; } = [];
-        public RuntimeCapabilities Capabilities { get; } = new(true, true, false, true, []);
+        public RuntimeCapabilities Capabilities { get; } = new(true, true, true, []);
         public ValueTask<VoiceReference> ExtractReferenceAsync(ReadOnlyMemory<float> samples, string text,
             CancellationToken token) => throw new NotSupportedException();
         public Task SynthesizeAsync(SynthesisRequest request, StreamingAudioBuffer sink, CancellationToken token)

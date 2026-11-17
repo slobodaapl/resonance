@@ -252,7 +252,7 @@ public sealed class QwenCppRuntime : ITtsRuntime
         try
         {
             ValidateAbi();
-            Capabilities = new(true, true, false, false,
+            Capabilities = new(true, true, false,
                 EnumerateBackends(ownsProcessLease: ownsProcessLease,
                     pluginLifetimeLease: pluginLifetimeLease));
 

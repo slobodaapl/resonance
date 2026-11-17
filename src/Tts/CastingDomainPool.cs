@@ -20,7 +20,6 @@ public sealed class CastingDomainPool : IAsyncDisposable
 {
     private readonly VoiceRegistry registry;
     private readonly CastingProfileCatalog catalog;
-    private readonly Func<VoiceDesigner?> designer;
     private readonly Func<bool> canWork;
     private readonly Func<CancellationToken, Task<bool>>? canWorkAsync;
     private readonly Func<string?> territoryPlaceName;
@@ -28,9 +27,8 @@ public sealed class CastingDomainPool : IAsyncDisposable
     private readonly Func<string> language;
     private readonly Func<CancellationToken, Task<string>>? languageAsync;
     private readonly Func<(int Masculine, int Feminine)> targets;
-    private readonly Func<string, string, string, string?>? promptOverride;
     private readonly Func<bool> backgroundEnabled;
-    private readonly Func<string, long, string, CancellationToken, Task<VoiceReference>>? designReference;
+    private readonly Func<string, long, string, CancellationToken, Task<VoiceReference>>? referenceForTests;
     private readonly Func<TimeSpan, CancellationToken, Task> waitForCadence;
     private readonly Action? signalCadence;
     private readonly string modelHash;
@@ -69,46 +67,40 @@ public sealed class CastingDomainPool : IAsyncDisposable
     public CastingDomainPool(
         VoiceRegistry registry,
         CastingProfileCatalog catalog,
-        Func<VoiceDesigner?> designer,
         Func<bool> canWork,
         Func<string?> territoryPlaceName,
         Func<string> language,
         Func<(int Masculine, int Feminine)> targets,
         string modelHash,
-        Func<string, string, string, string?>? promptOverride = null,
         Func<bool>? backgroundEnabled = null,
         Func<CancellationToken, Task<bool>>? canWorkAsync = null,
         Func<CancellationToken, Task<string?>>? territoryPlaceNameAsync = null,
-        Func<CancellationToken, Task<string>>? languageAsync = null,
-        Func<string, long, string, CancellationToken, Task<VoiceReference>>? designReference = null)
-        : this(registry, catalog, designer, canWork, territoryPlaceName, language, targets, modelHash,
-            promptOverride, backgroundEnabled, canWorkAsync, territoryPlaceNameAsync,
-            languageAsync, designReference, true, null, null)
+        Func<CancellationToken, Task<string>>? languageAsync = null)
+        : this(registry, catalog, canWork, territoryPlaceName, language, targets, modelHash,
+            backgroundEnabled, canWorkAsync, territoryPlaceNameAsync,
+            languageAsync, null, true, null, null)
     {
     }
 
     private CastingDomainPool(
         VoiceRegistry registry,
         CastingProfileCatalog catalog,
-        Func<VoiceDesigner?> designer,
         Func<bool> canWork,
         Func<string?> territoryPlaceName,
         Func<string> language,
         Func<(int Masculine, int Feminine)> targets,
         string modelHash,
-        Func<string, string, string, string?>? promptOverride,
         Func<bool>? backgroundEnabled,
         Func<CancellationToken, Task<bool>>? canWorkAsync,
         Func<CancellationToken, Task<string?>>? territoryPlaceNameAsync,
         Func<CancellationToken, Task<string>>? languageAsync,
-        Func<string, long, string, CancellationToken, Task<VoiceReference>>? designReference,
+        Func<string, long, string, CancellationToken, Task<VoiceReference>>? referenceForTests,
         bool startWorker,
         Func<TimeSpan, CancellationToken, Task>? waitForCadence,
         Action? signalCadence)
     {
         this.registry = registry;
         this.catalog = catalog;
-        this.designer = designer;
         this.canWork = canWork;
         this.canWorkAsync = canWorkAsync;
         this.territoryPlaceName = territoryPlaceName;
@@ -117,9 +109,8 @@ public sealed class CastingDomainPool : IAsyncDisposable
         this.languageAsync = languageAsync;
         this.targets = targets;
         this.modelHash = modelHash;
-        this.promptOverride = promptOverride;
         this.backgroundEnabled = backgroundEnabled ?? (() => true);
-        this.designReference = designReference;
+        this.referenceForTests = referenceForTests;
         this.waitForCadence = waitForCadence ?? (async (delay, token) =>
         {
             await wake.WaitAsync(delay, token).ConfigureAwait(false);
@@ -131,19 +122,18 @@ public sealed class CastingDomainPool : IAsyncDisposable
     internal static CastingDomainPool CreateForTests(
         VoiceRegistry registry,
         CastingProfileCatalog catalog,
-        Func<string, long, string, CancellationToken, Task<VoiceReference>> designReference,
+        Func<string, long, string, CancellationToken, Task<VoiceReference>> referenceForTests,
         Func<bool> canWork,
         Func<string?> territoryPlaceName,
         Func<string> language,
         Func<(int Masculine, int Feminine)> targets,
         string modelHash,
-        Func<string, string, string, string?>? promptOverride = null,
         Func<bool>? backgroundEnabled = null,
         Func<TimeSpan, CancellationToken, Task>? waitForCadence = null,
         Action? signalCadence = null,
         bool startWorker = false) =>
-        new(registry, catalog, () => null, canWork, territoryPlaceName, language, targets, modelHash,
-            promptOverride, backgroundEnabled, null, null, null, designReference, startWorker,
+        new(registry, catalog, canWork, territoryPlaceName, language, targets, modelHash,
+            backgroundEnabled, null, null, null, referenceForTests, startWorker,
             waitForCadence, signalCadence);
 
     public CastingPoolSnapshot Snapshot
@@ -328,7 +318,6 @@ public sealed class CastingDomainPool : IAsyncDisposable
     internal async Task<bool> ExecuteOneWorkAsync(CancellationToken token)
     {
         if (Volatile.Read(ref disposed) != 0) return false;
-        var currentDesigner = designer();
         var manualRequest = HasManualRequests();
         bool safeToWork;
         try { safeToWork = await CanWorkAsync(token).ConfigureAwait(false); }
@@ -338,8 +327,7 @@ public sealed class CastingDomainPool : IAsyncDisposable
             Failed?.Invoke(error);
             return false;
         }
-        if ((currentDesigner is null && designReference is null)
-            || !CastingPoolScheduler.ShouldRun(manualRequest, backgroundEnabled(), safeToWork)) return false;
+        if (!CastingPoolScheduler.ShouldRun(manualRequest, backgroundEnabled(), safeToWork)) return false;
         using var job = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token, token);
         lock (gate) active = job;
         var acquired = false;
@@ -366,8 +354,7 @@ public sealed class CastingDomainPool : IAsyncDisposable
                     targetMap[key] = sex == "masculine"
                         ? Math.Max(0, configuredTargets.Masculine)
                         : Math.Max(0, configuredTargets.Feminine);
-                    if (catalog.GetDomain(domain).SharedVoice
-                        && String.IsNullOrWhiteSpace(promptOverride?.Invoke(domain, currentLanguage, sex)))
+                    if (catalog.GetDomain(domain).SharedVoice)
                         targetMap[key] = 0;
                     readyMap[key] = await registry.CountReadyDomainPoolAsync(
                         domain, currentLanguage, sex, job.Token).ConfigureAwait(false);
@@ -386,7 +373,7 @@ public sealed class CastingDomainPool : IAsyncDisposable
                 .FirstOrDefault();
             if (work is null) return false;
             var attached = AttachPendingResolution(work, placeName);
-            await FillOneAsync(attached.Work, placeName, currentDesigner, job).ConfigureAwait(false);
+            await FillOneAsync(attached.Work, placeName, job).ConfigureAwait(false);
             if (attached.Pending is not null)
                 AcknowledgePendingResolution(attached.Pending);
             work = attached.Work;
@@ -419,7 +406,6 @@ public sealed class CastingDomainPool : IAsyncDisposable
     private async Task FillOneAsync(
         CastingPoolWorkItem work,
         string? placeName,
-        VoiceDesigner? currentDesigner,
         CancellationTokenSource job)
     {
         var token = job.Token;
@@ -431,34 +417,18 @@ public sealed class CastingDomainPool : IAsyncDisposable
             : domain.MasculineSlots;
         var slot = slots[(int)(sequence % slots.Count)];
         var resolution = BuildDomainResolution(work, placeName);
-        var instruction = promptOverride?.Invoke(work.DomainId, work.Language, work.Sex);
-        var hasOverride = !String.IsNullOrWhiteSpace(instruction);
-        if (String.IsNullOrWhiteSpace(instruction))
-            instruction = catalog.BuildPrompt(resolution, work.Language, work.Sex, slot.Id);
+        var instruction = catalog.BuildPrompt(resolution, work.Language, work.Sex, slot.Id);
         var seed = StableSeed($"{work.DomainId}\0{work.Language}\0{work.Sex}\0{sequence}");
         lock (gate) currentGeneration = $"{work.DomainId}/{work.Language}/{work.Sex}/{slot.Id}";
-        var reference = designReference is not null
-            ? await designReference(instruction, seed, work.Language, token).ConfigureAwait(false)
-            : await (currentDesigner ?? throw new InvalidOperationException("VoiceDesign is unavailable"))
-                .DesignReferenceAsync(instruction, seed, work.Language, token).ConfigureAwait(false);
-        int? conditioningCatalogVersion = null;
-        if (!hasOverride)
-        {
-            var variant = catalog.FallbackVariantId(resolution,
-                new SpeakerCastingEvidence("pool", Sex: work.Sex, Age: slot.Age));
-            var prepared = await registry.GetFallbackVoiceAsync(
-                work.DomainId, variant, work.Language, modelHash, token)
-                .ConfigureAwait(false);
-            if (prepared is not null)
-            {
-                conditioningCatalogVersion = prepared.CatalogVersion;
-                reference = prepared.Reference with
-                {
-                    SpeakerEmbedding = VoiceEmbedding.LinearBlend(
-                        prepared.Reference.SpeakerEmbedding, reference.SpeakerEmbedding, 0.05),
-                };
-            }
-        }
+        var variant = catalog.FallbackVariantId(resolution,
+            new SpeakerCastingEvidence("pool", Sex: work.Sex, Age: slot.Age));
+        var prepared = await registry.GetFallbackVoiceAsync(
+            work.DomainId, variant, work.Language, modelHash, token).ConfigureAwait(false);
+        var reference = prepared?.Reference
+            ?? (referenceForTests is not null
+                ? await referenceForTests(instruction, seed, work.Language, token).ConfigureAwait(false)
+                : throw new InvalidOperationException($"Prepared voice '{work.DomainId}/{variant}/{work.Language}' is unavailable"));
+        var conditioningCatalogVersion = prepared?.CatalogVersion ?? 0;
         if (!CastingPoolScheduler.ShouldPersistGeneratedVoice(job.IsCancellationRequested,
                 await CanWorkAsync(token).ConfigureAwait(false)))
         {
@@ -481,11 +451,11 @@ public sealed class CastingDomainPool : IAsyncDisposable
                 sex = work.Sex,
                 slot = slot.Id,
                 modifiers = resolution.ModifierIds,
-                promptOverride = hasOverride,
+                promptOverride = false,
                 conditioningCatalogVersion,
             }),
             domainId: work.DomainId,
-            catalogVersion: hasOverride ? catalog.Version : conditioningCatalogVersion ?? 0,
+            catalogVersion: conditioningCatalogVersion,
             traitsJson: traitsJson);
         token.ThrowIfCancellationRequested();
         await registry.SaveDomainPoolVoiceAsync(

@@ -16,5 +16,7 @@
     <Compile Include="../../src/Tts/WindowsNativeLibrary.cs" Link="WindowsNativeLibrary.cs" />
     <Compile Include="../../src/Bootstrap/ReferenceExtractionProtocol.cs" Link="ReferenceExtractionProtocol.cs" />
     <Compile Include="../../src/Bootstrap/BaseHostTransport.cs" Link="BaseHostTransport.cs" />
+    <Compile Include="../../src/Bootstrap/BenchmarkVoice.cs" Link="BenchmarkVoice.cs" />
+    <EmbeddedResource Include="../../assets/benchmark-voices.json" LogicalName="Resonance.BenchmarkVoices.json" />
   </ItemGroup>
 </Project>

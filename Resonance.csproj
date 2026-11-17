@@ -1,6 +1,6 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <Version>1.5.0.0</Version>
+    <Version>1.6.0.0</Version>
     <AssemblyName>Resonance</AssemblyName>
     <RootNamespace>Resonance</RootNamespace>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
@@ -24,8 +24,9 @@
     <Content Include="Resonance.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="LICENSE" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="THIRD_PARTY_NOTICES.md" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="assets\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="assets\*.json" Exclude="assets\fallback-voices.json;assets\fallback-bank.json;assets\benchmark-voices.json" CopyToOutputDirectory="PreserveNewest" />
     <EmbeddedResource Include="assets\dialogue-cues.json" LogicalName="Resonance.DialogueCues.json" />
+    <EmbeddedResource Include="assets\benchmark-voices.json" LogicalName="Resonance.BenchmarkVoices.json" />
     <Content Include="assets\sound-effects\*.wav" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Compile Remove="tools\ReferenceExtractor\**\*.cs" />
     <Compile Remove="tools\OfficialProfilePackBuilder\**\*.cs" />

@@ -65,16 +65,16 @@ public sealed partial class ConfigWindow
         if (ImGui.CollapsingHeader("Performance measurements and maintenance"))
         {
             var canBenchmark = manager is not null
-                && boot.VoiceDesignPath is not null
+                && boot.IsReady
                 && Volatile.Read(ref benchmarkInFlight) == 0;
             ImGui.BeginDisabled(!canBenchmark);
             if (ImGui.Button(Volatile.Read(ref benchmarkInFlight) == 0
                     ? "Rebuild backend benchmark now"
                     : "Benchmarking backends..."))
-                Run(() => RebuildBackendBenchmarkAsync(manager!, boot.VoiceDesignPath!, shutdown.Token));
+                Run(() => RebuildBackendBenchmarkAsync(manager!, shutdown.Token));
             ImGui.EndDisabled();
 
-            if (ImGui.Button("Regenerate current territory domains"))
+            if (ImGui.Button("Refresh current territory voices"))
                 Run(() => regenerateCurrentTerritory(shutdown.Token));
 
             if (configuration.BackendBenchmark is { } benchmark)
@@ -155,7 +155,7 @@ public sealed partial class ConfigWindow
         var snapshot = poolSnapshot();
         if (snapshot is null)
         {
-            ImGui.TextUnformatted("Pool: VoiceDesign not ready.");
+            ImGui.TextUnformatted("Pool: waiting for the prepared voice bank.");
             return;
         }
         Wrapped($"Active domains: {String.Join(", ", snapshot.ActiveDomains)}");
@@ -174,45 +174,12 @@ public sealed partial class ConfigWindow
             Wrapped($"Failure: {failure}");
     }
 
-    private void DrawVoiceDesign()
-    {
-        Wrapped("Create a temporary voice from a description, then listen to it.", Muted);
-        var snapshot = debugSnapshot(debugLanguage);
-        Wrapped(snapshot.Readiness, snapshot.Ready ? Good : Warning);
-        var selectionFailed = runtime()?.Selection is { } selection
-            && selection.Desired.Name != selection.Effective.Name;
-        ImGui.BeginDisabled(!snapshot.Ready || snapshot.Running);
-        var languageIndex = Math.Max(0, Array.IndexOf(Languages, debugLanguage));
-        ImGui.SetNextItemWidth(160 * Scale);
-        if (ImGui.Combo("Language", ref languageIndex, LanguageLabels, LanguageLabels.Length))
-            debugLanguage = Languages[languageIndex];
-        Section("VOICE DESCRIPTION");
-        Wrapped("Describe the age, tone, accent, or delivery you want.", Muted);
-        ImGui.InputTextMultiline("##VoiceDescription", ref debugInstruction, 4096, new Vector2(-1, 85 * Scale));
-        Section("WHAT TO SAY");
-        ImGui.InputTextMultiline("##DesignedSample", ref debugSentence, 2048, new Vector2(-1, 70 * Scale));
-        ImGui.BeginDisabled(selectionFailed || string.IsNullOrWhiteSpace(debugSentence)
-            || string.IsNullOrWhiteSpace(debugInstruction));
-        if (ImGui.Button("Generate and listen"))
-            Run(() => runVoiceDesignDebug(debugSentence, debugInstruction, debugLanguage, shutdown.Token));
-        ImGui.EndDisabled();
-        ImGui.EndDisabled();
-        if (selectionFailed) Wrapped("The requested backend failed. Choose a working backend in Settings.", Warning);
-        Wrapped(snapshot.Status, Muted);
-        if (snapshot.Running && ImGui.Button("Stop sample")) cancelDebug();
-    }
-
     private void DrawDebugTabs()
     {
         if (!ImGui.BeginTabBar("##DebugSections")) return;
         if (ImGui.BeginTabItem("Listen"))
         {
             DrawVoices();
-            ImGui.EndTabItem();
-        }
-        if (ImGui.BeginTabItem("Voice design"))
-        {
-            DrawVoiceDesign();
             ImGui.EndTabItem();
         }
         if (ImGui.BeginTabItem("Runtime"))
@@ -231,7 +198,7 @@ public sealed partial class ConfigWindow
 
     private void DrawCastingEditor()
     {
-        if (!ImGui.CollapsingHeader("Domain prompt editor")) return;
+        if (!ImGui.CollapsingHeader("Prepared domain voices")) return;
         var domains = catalog.Domains.Select(domain => domain.Id).ToArray();
         var domainIndex = Array.IndexOf(domains, selectedDomain);
         if (domainIndex < 0) domainIndex = 0;
@@ -242,52 +209,11 @@ public sealed partial class ConfigWindow
                 if (!ImGui.Selectable(domains[index], index == domainIndex)) continue;
                 domainIndex = index;
                 selectedDomain = domains[index];
-                loadedKey = null;
             }
             ImGui.EndCombo();
         }
-        var languageIndex = Array.IndexOf(Languages, selectedLanguage);
-        if (languageIndex < 0) languageIndex = 0;
-        if (ImGui.Combo("Language", ref languageIndex, Languages, Languages.Length))
-        {
-            selectedLanguage = Languages[languageIndex];
-            loadedKey = null;
-        }
-        var sexIndex = Array.IndexOf(Sexes, selectedSex);
-        if (sexIndex < 0) sexIndex = 0;
-        if (ImGui.Combo("Sex", ref sexIndex, Sexes, Sexes.Length))
-        {
-            selectedSex = Sexes[sexIndex];
-            loadedKey = null;
-        }
-        var key = CastingPoolScheduler.Key(selectedDomain, selectedLanguage, selectedSex);
-        if (loadedKey != key)
-        {
-            var place = currentTerritoryName();
-            var evidence = new SpeakerCastingEvidence("settings", place, place, Sex: selectedSex);
-            var resolution = catalog.Resolve(evidence) with
-            {
-                DomainId = selectedDomain,
-                ModifierIds = [],
-                CandidateDomainIds = [selectedDomain],
-            };
-            instruction = configuration.GetPromptOverride(selectedDomain, selectedLanguage, selectedSex)
-                ?? catalog.BuildPrompt(resolution, selectedLanguage, selectedSex);
-            loadedKey = key;
-        }
-        ImGui.InputTextMultiline("##DomainInstruction", ref instruction, 4096, new Vector2(-1, 120));
-        if (ImGui.Button("Save domain prompt override"))
-        {
-            configuration.SetPromptOverride(selectedDomain, selectedLanguage, selectedSex, instruction);
-            save();
-        }
-        if (ImGui.Button("Reset domain prompt override"))
-        {
-            configuration.SetPromptOverride(selectedDomain, selectedLanguage, selectedSex, null);
-            loadedKey = null;
-            save();
-        }
-        if (ImGui.Button("Regenerate selected domain"))
+        Wrapped("Uses the prepared voice bank for this domain.", Muted);
+        if (ImGui.Button("Refresh selected domain"))
             Run(() => regenerateDomain(selectedDomain, shutdown.Token));
     }
 

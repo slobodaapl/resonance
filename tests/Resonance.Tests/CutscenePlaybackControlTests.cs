@@ -183,7 +183,7 @@ public sealed class CutscenePlaybackControlTests
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Cancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int Requests;
-        public RuntimeCapabilities Capabilities { get; } = new(true, true, false, true, []);
+        public RuntimeCapabilities Capabilities { get; } = new(true, true, true, []);
         public ValueTask<VoiceReference> ExtractReferenceAsync(ReadOnlyMemory<float> pcm, string text, CancellationToken token)
             => ValueTask.FromResult(new VoiceReference([], [], 0, 0, text));
         public async Task SynthesizeAsync(SynthesisRequest request, StreamingAudioBuffer sink, CancellationToken token)

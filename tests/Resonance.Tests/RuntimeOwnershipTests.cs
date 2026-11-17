@@ -25,16 +25,14 @@ public sealed class RuntimeOwnershipTests
             var talkerPath = Path.Combine(root, "talker.gguf");
             var codecPath = Path.Combine(root, "codec.gguf");
             var helperPath = Path.Combine(root, "ReferenceExtractor.exe");
-            var designPath = Path.Combine(root, "design.gguf");
             Directory.CreateDirectory(runtimePath);
             await File.WriteAllTextAsync(talkerPath, "talker", TestContext.Current.CancellationToken);
             await File.WriteAllTextAsync(codecPath, "codec", TestContext.Current.CancellationToken);
             await File.WriteAllTextAsync(helperPath, "test-helper", TestContext.Current.CancellationToken);
-            await File.WriteAllTextAsync(designPath, "design", TestContext.Current.CancellationToken);
 
             var backend = new BackendInfo("cpu", "CPU", BackendType.Cpu, 0, 1, 1);
             await using var manager = new RuntimeManager(new Configuration(), () => { }, talkerPath, codecPath,
-                "base", "design", "runtime", runtimePath, helperPath,
+                "base", "runtime", runtimePath, helperPath,
                 Path.Combine(root, "work"), new NoOpRunner());
             manager.SetTestBackendState(new BackendSelection(backend, backend, false, null));
             seam = new OwnershipRaceSeam(operation);
@@ -42,7 +40,7 @@ public sealed class RuntimeOwnershipTests
 
             var holder = manager.EnsureReadyAsync(TestContext.Current.CancellationToken);
             await seam.HolderAcquired.Task.WaitAsync(TestContext.Current.CancellationToken);
-            var caller = StartOperation(manager, operation, backend, designPath,
+            var caller = StartOperation(manager, operation, backend,
                 TestContext.Current.CancellationToken);
             await seam.CallerWaiting.Task.WaitAsync(TestContext.Current.CancellationToken);
 
@@ -64,7 +62,6 @@ public sealed class RuntimeOwnershipTests
         RuntimeManager manager,
         string operation,
         BackendInfo backend,
-        string designPath,
         CancellationToken token)
     {
         return operation switch
@@ -72,7 +69,7 @@ public sealed class RuntimeOwnershipTests
             nameof(RuntimeManager.EnsureReadyAsync) => manager.EnsureReadyAsync(token),
             nameof(RuntimeManager.RefreshBackendsAsync) => manager.RefreshBackendsAsync(token),
             nameof(RuntimeManager.RefreshDeviceMemoryAsync) => manager.RefreshDeviceMemoryAsync(token),
-            nameof(RuntimeManager.BenchmarkAndApplyAsync) => manager.BenchmarkAndApplyAsync(designPath, token),
+            nameof(RuntimeManager.BenchmarkAndApplyAsync) => manager.BenchmarkAndApplyAsync(token),
             nameof(RuntimeManager.SetDesiredAsync) => manager.SetDesiredAsync(backend, token),
             nameof(RuntimeManager.SynthesizeAsync) => SynthesizeAsync(manager, token),
             _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, "Unknown runtime operation")

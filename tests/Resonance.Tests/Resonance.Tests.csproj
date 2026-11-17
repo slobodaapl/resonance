@@ -20,6 +20,8 @@
   <ItemGroup>
     <Compile Remove="TestConfiguration.cs" />
     <Compile Remove="TestBenchmarkCache.cs" />
+    <Compile Include="../../src/Bootstrap/BenchmarkVoice.cs" Link="Source/BenchmarkVoice.cs" />
+    <EmbeddedResource Include="../../assets/benchmark-voices.json" LogicalName="Resonance.BenchmarkVoices.json" />
     <Compile Include="..\..\src\Plugin\Configuration.cs" Link="Source\Configuration.cs" />
     <Compile Include="..\..\src\Plugin\ProcessLifetimeLease.cs" Link="Source\ProcessLifetimeLease.cs" />
     <Compile Include="..\..\src\Audio\StreamingAudioBuffer.cs" Link="Source\StreamingAudioBuffer.cs" />
@@ -89,7 +91,6 @@
     <Compile Include="..\..\src\Tts\CastingDomainPool.cs" Link="Source\CastingDomainPool.cs" />
     <Compile Include="..\..\src\Tts\QwenNative.cs" Link="Source\QwenNative.cs" />
     <Compile Include="..\..\src\Tts\QwenCppRuntime.cs" Link="Source\QwenCppRuntime.cs" />
-    <Compile Include="..\..\src\Tts\VoiceDesigner.cs" Link="Source\VoiceDesigner.cs" />
     <Compile Include="..\..\src\Tts\VoiceRegistry.cs" Link="Source\VoiceRegistry.cs" />
     <Compile Include="..\..\src\Tts\VoiceEmbedding.cs" Link="Source\VoiceEmbedding.cs" />
     <None Include="..\..\assets\dub-profiles.json" Link="assets\dub-profiles.json" CopyToOutputDirectory="PreserveNewest" />

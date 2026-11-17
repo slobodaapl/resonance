@@ -17,7 +17,6 @@ public sealed record DebugInferenceSnapshot(
     bool Running,
     string Readiness,
     string Device,
-    string VoiceDesignBackend,
     string Status,
     IReadOnlyList<DebugBaseVoiceOption> BaseVoices,
     bool VoicesCached = false);
@@ -83,7 +82,6 @@ public sealed class SessionCoordinator : IAsyncDisposable
     private readonly object debugCancellationGate = new();
     private readonly object debugRefreshGate = new();
     private readonly object autoAdvanceRetryGate = new();
-    private readonly object backendSwitchGate = new();
     private readonly object coordinatorTaskGate = new();
     private readonly object disposalGate = new();
     private readonly AsyncLocal<Task?> activeFrameworkDispatch = new();
@@ -91,10 +89,6 @@ public sealed class SessionCoordinator : IAsyncDisposable
     private long baseHotLoadSafetyGeneration;
     private AudioEngine? audio;
     private DubScheduler? scheduler;
-    private VoiceDesigner? voiceDesigner;
-    private Task<VoiceDesigner>? voiceDesignerInitialization;
-    private string? voiceDesignPath;
-    private string? voiceDesignCodecPath;
     private RuntimeManager? runtimeManager;
     private CastingDomainPool? domainPool;
     private CutsceneSession? session;
@@ -136,7 +130,6 @@ public sealed class SessionCoordinator : IAsyncDisposable
     private DubLine? debugPlaybackLine;
     private TaskCompletionSource? debugPlaybackCompletion;
     private string? frameworkLanguage;
-    private Task? backendSwitchTask;
     private Task? disposalTask;
     private int frameworkThreadId;
     private readonly HashSet<Task> coordinatorTasks = [];
@@ -217,7 +210,6 @@ public sealed class SessionCoordinator : IAsyncDisposable
         condition.ConditionChange += OnConditionChange;
         framework.Update += OnPreDubUpdate;
         bootstrap.Ready += OnRuntimeReady;
-        bootstrap.VoiceDesignReady += OnVoiceDesignReady;
         // OnLineChangedOnFramework also creates a missing active-cutscene
         // session. This covers plugin reloads and condition/territory event
         // ordering without dropping the Talk line that exposed the gap.
@@ -319,7 +311,6 @@ public sealed class SessionCoordinator : IAsyncDisposable
         manager.SetBaseHotLoadSafetyPredicate(() => new BaseHotLoadSafety(
             Volatile.Read(ref baseHotLoadSafe) != 0,
             Volatile.Read(ref baseHotLoadSafetyGeneration)));
-        manager.SelectionChanged += OnBackendSelectionChanged;
         if (audio is null)
         {
             audio = new AudioEngine(gameMixerBackend);
@@ -396,18 +387,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
         scheduler.BecameIdle += () => QueueFrameworkAction(
             OnSchedulerIdle, "Scheduler-idle framework dispatch failed");
         UpdateBaseHotLoadSafetyOnFramework();
+        InitializeDomainPoolOnFramework(manager);
         SchedulePreDubOnFramework();
-    }
-
-    private void OnVoiceDesignReady(string designPath, string codecPath)
-    {
-        var manager = bootstrap.RuntimeManager;
-        if (manager is null || Volatile.Read(ref disposed) != 0 || bootstrap.IsChangingQuality
-            || designPath != bootstrap.VoiceDesignPath || codecPath != bootstrap.ActiveModels?.CodecPath) return;
-        voiceDesignPath = designPath;
-        voiceDesignCodecPath = codecPath;
-        QueueFrameworkAction(() => InitializeDomainPoolOnFramework(manager),
-            "Casting-domain pool initialization failed");
     }
 
     private void InitializeDomainPoolOnFramework(RuntimeManager manager)
@@ -417,195 +398,19 @@ public sealed class SessionCoordinator : IAsyncDisposable
         var pool = new CastingDomainPool(
             voices,
             catalog,
-            () => voiceDesigner,
             () => true,
             () => territoryPlaceName(client.TerritoryType),
             CurrentLanguage,
             () => (configuration.ReadyMasculineVoices, configuration.ReadyFeminineVoices),
             manager.ModelHash,
-            configuration.GetPromptOverride,
             () => configuration.BackgroundCasting,
             async token => (await CaptureFrameworkStateAsync(token).ConfigureAwait(false)).CanWork,
             async token => (await CaptureFrameworkStateAsync(token).ConfigureAwait(false)).TerritoryPlaceName,
-            async token => (await CaptureFrameworkStateAsync(token).ConfigureAwait(false)).Language,
-            async (instruction, seed, language, token) =>
-            {
-                var designer = await EnsureVoiceDesignerAsync(token).ConfigureAwait(false);
-                return await designer.DesignReferenceAsync(instruction, seed, language, token)
-                    .ConfigureAwait(false);
-            });
+            async token => (await CaptureFrameworkStateAsync(token).ConfigureAwait(false)).Language);
         pool.Failed += error => log.Warning(error, "Background voice casting failed; retrying");
         domainPool = pool;
         pool.ActivateTerritory(territoryPlaceName(client.TerritoryType));
         RequestBaseHotLoadRestore();
-    }
-
-    private Task<VoiceDesigner> EnsureVoiceDesignerAsync(CancellationToken token)
-    {
-        Task<VoiceDesigner> initialization;
-        lock (coordinatorTaskGate)
-        {
-            if (Volatile.Read(ref disposed) != 0)
-                return Task.FromException<VoiceDesigner>(new ObjectDisposedException(nameof(SessionCoordinator)));
-            if (voiceDesigner is { } ready) return Task.FromResult(ready);
-            if (voiceDesignerInitialization is { } existing) return existing.WaitAsync(token);
-            var designPath = voiceDesignPath
-                ?? throw new InvalidOperationException("VoiceDesign model is still downloading");
-            var codecPath = voiceDesignCodecPath
-                ?? throw new InvalidOperationException("VoiceDesign codec is still downloading");
-            initialization = Task.Run(async () =>
-            {
-                VoiceDesigner? created = null;
-                try
-                {
-                    var manager = runtimeManager
-                        ?? throw new InvalidOperationException("Inference runtime is not initialized");
-                    var attemptedBackend = manager.Selection?.Effective.Name
-                        ?? throw new InvalidOperationException("No inference device is selected");
-                    while (true)
-                    {
-                        try
-                        {
-                            created = new VoiceDesigner(manager.Runtime, designPath, codecPath, attemptedBackend,
-                                manager.PluginLifetimeLease,
-                                manager.ExtractReferenceAsync);
-                            var latestBackend = manager.Selection?.Effective.Name;
-                            if (latestBackend is not null && latestBackend != attemptedBackend)
-                            {
-                                attemptedBackend = latestBackend;
-                                await created.SwitchBackendAsync(
-                                    attemptedBackend, officialObservationShutdown.Token).ConfigureAwait(false);
-                            }
-                            break;
-                        }
-                        catch (Exception backendError) when (backendError is not OperationCanceledException)
-                        {
-                            if (created is not null)
-                            {
-                                await created.DisposeAsync().ConfigureAwait(false);
-                                created = null;
-                            }
-                            log.Warning(backendError,
-                                "VoiceDesign rejected backend {Backend} during initialization", attemptedBackend);
-                            var fallback = await manager.RejectBackendAsync(
-                                attemptedBackend, backendError, officialObservationShutdown.Token).ConfigureAwait(false);
-                            if (String.Equals(fallback.Effective.Name, attemptedBackend, StringComparison.Ordinal))
-                                throw;
-                            attemptedBackend = fallback.Effective.Name;
-                        }
-                    }
-                    if (Volatile.Read(ref disposed) != 0)
-                    {
-                        await created.DisposeAsync().ConfigureAwait(false);
-                        throw new ObjectDisposedException(nameof(SessionCoordinator));
-                    }
-                    voiceDesigner = created;
-                    return created;
-                }
-                catch
-                {
-                    if (created is not null && !ReferenceEquals(voiceDesigner, created))
-                        await created.DisposeAsync().ConfigureAwait(false);
-                    throw;
-                }
-            });
-            voiceDesignerInitialization = initialization;
-            coordinatorTasks.Add(initialization);
-        }
-        _ = initialization.ContinueWith(task =>
-        {
-            if (task.IsFaulted) log.Warning(task.Exception!.GetBaseException(),
-                "VoiceDesign initialization task failed");
-            lock (coordinatorTaskGate)
-            {
-                coordinatorTasks.Remove(task);
-                if (task.IsFaulted || task.IsCanceled)
-                    if (ReferenceEquals(voiceDesignerInitialization, task))
-                        voiceDesignerInitialization = null;
-            }
-        }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
-        return initialization.WaitAsync(token);
-    }
-
-    private void OnBackendSelectionChanged(BackendSelection selection)
-    {
-        VoiceDesigner? designer;
-        TaskCompletionSource completion;
-        lock (backendSwitchGate)
-        {
-            designer = voiceDesigner;
-            if (designer is null || Volatile.Read(ref disposed) != 0) return;
-            if (backendSwitchTask is not null) return;
-            completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            backendSwitchTask = completion.Task;
-        }
-        if (designer is null) return;
-        _ = SwitchVoiceDesignBackendAsync(designer, selection.Effective.Name, completion);
-    }
-
-    private async Task SwitchVoiceDesignBackendAsync(
-        VoiceDesigner designer, string backendName, TaskCompletionSource completion)
-    {
-        var entered = false;
-        try
-        {
-            await Task.Yield();
-            await debugGate.WaitAsync(officialObservationShutdown.Token).ConfigureAwait(false);
-            entered = true;
-            if (bootstrap.IsStopping || !ReferenceEquals(voiceDesigner, designer)) return;
-            await designer.SwitchBackendAsync(backendName, officialObservationShutdown.Token)
-                .ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (officialObservationShutdown.IsCancellationRequested) { }
-        catch (Exception error)
-        {
-            log.Error(error, "VoiceDesign backend migration failed");
-            var manager = runtimeManager;
-            if (manager is not null && !bootstrap.IsStopping && Volatile.Read(ref disposed) == 0
-                && ReferenceEquals(voiceDesigner, designer))
-            {
-                try
-                {
-                    var failedBackend = backendName;
-                    var backendError = error;
-                    while (true)
-                    {
-                        var fallback = await manager.RejectBackendAsync(
-                            failedBackend, backendError, officialObservationShutdown.Token).ConfigureAwait(false);
-                        try
-                        {
-                            await designer.SwitchBackendAsync(
-                                fallback.Effective.Name, officialObservationShutdown.Token).ConfigureAwait(false);
-                            log.Warning(
-                                "VoiceDesign rejected backend {Backend}; using {Fallback}",
-                                backendName, fallback.Effective.Name);
-                            break;
-                        }
-                        catch (Exception nextError) when (nextError is not OperationCanceledException)
-                        {
-                            failedBackend = fallback.Effective.Name;
-                            backendError = nextError;
-                            log.Warning(nextError,
-                                "VoiceDesign also rejected fallback backend {Backend}", failedBackend);
-                        }
-                    }
-                }
-                catch (OperationCanceledException) when (officialObservationShutdown.IsCancellationRequested) { }
-                catch (Exception fallbackError)
-                {
-                    log.Error(fallbackError, "VoiceDesign backend fallback failed");
-                }
-            }
-        }
-        finally
-        {
-            if (entered) debugGate.Release();
-            lock (backendSwitchGate)
-            {
-                completion.TrySetResult();
-                if (ReferenceEquals(backendSwitchTask, completion.Task)) backendSwitchTask = null;
-            }
-        }
     }
 
     private void OnCutsceneStarted() => QueueFrameworkAction(
@@ -1542,7 +1347,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
         domainPool?.RequestMissingResolution(casting, language, line.VoiceSex, followsSpeaker: true);
         throw new InvalidOperationException(
             $"No prepared Base profile exists for '{line.SpeakerKey}' in domain "
-            + $"'{casting.DomainId}' ({language}/{currentModelHash}); VoiceDesign is background-only");
+            + $"'{casting.DomainId}' ({language}/{currentModelHash}); waiting for the prepared voice bank");
     }
 
     private async ValueTask<VoiceResolution> ResolveTransientVoiceAsync(
@@ -1562,7 +1367,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
         domainPool?.RequestMissingResolution(casting, language, line.VoiceSex, followsSpeaker: true);
         throw new InvalidOperationException(
             $"No prepared transient Base fallback exists for domain '{casting.DomainId}' "
-            + $"({language}/{currentModelHash}); VoiceDesign is background-only");
+            + $"({language}/{currentModelHash}); waiting for the prepared voice bank");
     }
 
     private async Task<CastingResolution> ResolveCastingAsync(
@@ -1728,13 +1533,12 @@ public sealed class SessionCoordinator : IAsyncDisposable
         var inCutscene = cutscenes.IsInCutscene;
         var inCombat = condition[ConditionFlag.InCombat];
         var manager = runtimeManager;
-        var designer = voiceDesigner;
         var canWork = client.IsLoggedIn && !inCutscene && !inCombat && !IsChangingAreas && preDubSession is null
                       && scheduler?.HasUrgentWork != true
                       && bootstrap.State == BootstrapState.Ready
                       && manager?.IsSwitching != true
                       && manager?.IsReady == true
-                      && (designer is null || designer.IsReady)
+
                       && Volatile.Read(ref debugRunning) == 0
                       && Volatile.Read(ref debugPlaybackActive) == 0
                       && Volatile.Read(ref exclusiveOperationActive) == 0;
@@ -2522,7 +2326,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
         RunCoordinatorExclusiveAsync(token, async operationToken =>
         {
             var pool = domainPool
-                ?? throw new InvalidOperationException("VoiceDesign and the casting-domain pool are not ready");
+                ?? throw new InvalidOperationException("The prepared voice bank is not ready");
             await pool.RegenerateCurrentTerritoryAsync(operationToken).ConfigureAwait(false);
         });
 
@@ -2533,7 +2337,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
         RunCoordinatorExclusiveAsync(token, async operationToken =>
         {
             var pool = domainPool
-                ?? throw new InvalidOperationException("VoiceDesign and the casting-domain pool are not ready");
+                ?? throw new InvalidOperationException("The prepared voice bank is not ready");
             await pool.RegenerateDomainAsync(domainId, operationToken).ConfigureAwait(false);
         });
 
@@ -2624,18 +2428,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
         }
         finally
         {
-            try
-            {
-                Task? migration;
-                lock (backendSwitchGate) migration = backendSwitchTask;
-                if (migration is not null && !bootstrap.IsStopping)
-                    await migration.ConfigureAwait(false);
-            }
-            finally
-            {
-                bootstrap.SetQualityChanging(false);
-                Volatile.Write(ref qualityChangeClaimed, 0);
-            }
+            bootstrap.SetQualityChanging(false);
+            Volatile.Write(ref qualityChangeClaimed, 0);
             if (Volatile.Read(ref disposed) == 0 && !bootstrap.IsStopping)
                 QueueFrameworkAction(() =>
                 {
@@ -2653,7 +2447,6 @@ public sealed class SessionCoordinator : IAsyncDisposable
         var failures = new List<Exception>();
         var manager = runtimeManager;
         runtimeManager = null;
-        if (manager is not null) manager.SelectionChanged -= OnBackendSelectionChanged;
         await eventGate.WaitAsync().ConfigureAwait(false);
         eventGate.Release();
         var oldScheduler = scheduler;
@@ -2670,26 +2463,6 @@ public sealed class SessionCoordinator : IAsyncDisposable
             try { await oldPool.DisposeAsync().ConfigureAwait(false); }
             catch (Exception failure) { failures.Add(failure); }
         }
-        Task<VoiceDesigner>? initialization;
-        lock (coordinatorTaskGate) initialization = voiceDesignerInitialization;
-        if (initialization is not null)
-        {
-            try { await initialization.ConfigureAwait(false); }
-            catch (Exception failure) when (manager?.HasNativeOwnershipFailure == true) { failures.Add(failure); }
-            catch (Exception) { }
-        }
-        lock (coordinatorTaskGate) voiceDesignerInitialization = null;
-        if (voiceDesigner is { } designer)
-        {
-            try
-            {
-                await designer.DisposeAsync().ConfigureAwait(false);
-                voiceDesigner = null;
-            }
-            catch (Exception failure) { failures.Add(failure); }
-        }
-        voiceDesignPath = null;
-        voiceDesignCodecPath = null;
         Volatile.Write(ref debugVoiceCache, null);
         if (failures.Count > 0) throw new AggregateException("Retiring model services failed", failures);
     }
@@ -2698,15 +2471,10 @@ public sealed class SessionCoordinator : IAsyncDisposable
     {
         var manager = bootstrap.RuntimeManager
             ?? throw new InvalidOperationException("The replacement runtime is unavailable");
-        var models = bootstrap.ActiveModels
-            ?? throw new InvalidOperationException("The replacement model assets are unavailable");
         await DispatchFrameworkActionAsync(() =>
         {
             if (!ReferenceEquals(bootstrap.RuntimeManager, manager)) return;
             OnRuntimeReadyOnFramework(manager);
-            voiceDesignPath = models.DesignPath;
-            voiceDesignCodecPath = models.CodecPath;
-            if (models.DesignPath is not null) InitializeDomainPoolOnFramework(manager);
         }, token).ConfigureAwait(false);
         await RefreshDebugBaseVoicesAsync(CurrentLanguage(), token).ConfigureAwait(false);
     }
@@ -2716,9 +2484,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
         {
             var manager = runtimeManager
                 ?? throw new InvalidOperationException("The inference runtime is not ready");
-            var designPath = bootstrap.VoiceDesignPath
-                ?? throw new InvalidOperationException("VoiceDesign is not ready");
-            await manager.BenchmarkAndApplyAsync(designPath, operationToken).ConfigureAwait(false);
+            await manager.BenchmarkAndApplyAsync(operationToken).ConfigureAwait(false);
         });
 
     private Task RunCoordinatorExclusiveAsync(
@@ -2855,12 +2621,11 @@ public sealed class SessionCoordinator : IAsyncDisposable
     {
         var normalizedLanguage = NormalizeLanguage(language);
         var manager = runtimeManager;
-        var designer = voiceDesigner;
         var selected = manager?.Selection?.Effective;
         var normalPlayback = IsSpeaking && Volatile.Read(ref debugPlaybackActive) == 0;
         var ready = bootstrap.State == BootstrapState.Ready
-                    && manager is not null && selected is not null && voiceDesignPath is not null && audio is not null
-                    && manager.IsReady && (designer is null || designer.IsReady)
+                    && manager is not null && selected is not null && audio is not null
+                    && manager.IsReady
                     && !bootstrap.IsChangingQuality && Volatile.Read(ref exclusiveOperationActive) == 0
                     && !normalPlayback;
         var readiness = bootstrap.IsChangingQuality ? "Changing model quality"
@@ -2873,9 +2638,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
                     : Volatile.Read(ref exclusiveOperationActive) != 0
                         ? "Unavailable while backend or casting maintenance is active"
                         : ready
-                        ? designer is null
-                            ? "Ready; VoiceDesign loads on first use"
-                            : "Base and VoiceDesign initialized"
+                        ? "Base voice model ready"
                         : "Waiting for model files, runtime, and audio initialization";
         var cached = Volatile.Read(ref debugVoiceCache);
         var cacheMatches = cached?.Language == normalizedLanguage && cached.ModelHash == manager?.ModelHash;
@@ -2886,7 +2649,6 @@ public sealed class SessionCoordinator : IAsyncDisposable
             Volatile.Read(ref debugRunning) != 0 || Volatile.Read(ref debugPlaybackActive) != 0,
             readiness,
             selected is null ? "Preparing..." : $"{selected.Description} ({selected.Type})",
-            designer?.BackendName ?? "not loaded",
             Volatile.Read(ref debugStatus),
             cacheMatches ? cached!.Options : defaultDebugBaseVoices,
             cacheMatches);
@@ -3013,20 +2775,6 @@ public sealed class SessionCoordinator : IAsyncDisposable
             canonicalKey, language, currentModelHash, token).ConfigureAwait(false);
         return current is { Kind: VoiceProfileKind.Official } ? current : null;
     }
-
-    public Task RunVoiceDesignDebugAsync(
-        string text,
-        string instruction,
-        string language,
-        CancellationToken token) => RunDebugAsync("VoiceDesign", text, language, false, token, async (passage, output, activeToken) =>
-    {
-        var designer = await EnsureVoiceDesignerAsync(activeToken).ConfigureAwait(false);
-        var backend = runtimeManager?.Selection?.Effective.Name
-                      ?? throw new InvalidOperationException("No inference device is selected");
-        await designer.SwitchBackendAsync(backend, activeToken).ConfigureAwait(false);
-        await designer.SynthesizeDesignedLineOnlyAsync(
-            passage, instruction, 0x5245534f4e414e43L, NormalizeLanguage(language), output, activeToken).ConfigureAwait(false);
-    });
 
     public async Task RunBaseDebugAsync(
         string presetKey,
@@ -3367,13 +3115,6 @@ public sealed class SessionCoordinator : IAsyncDisposable
             await debugGate.WaitAsync(TeardownFrameworkWait).ConfigureAwait(false);
             debugGate.Release();
         });
-        Task? backendSwitch;
-        lock (backendSwitchGate) backendSwitch = backendSwitchTask;
-        if (backendSwitch is not null)
-        {
-            var operation = backendSwitch!;
-            await BestEffortAsync("Backend switch", () => operation);
-        }
         cutscenes.Started -= OnCutsceneStarted;
         cutscenes.Ended -= OnCutsceneEnded;
         talk.LineChanged -= OnLineChanged;
@@ -3389,8 +3130,6 @@ public sealed class SessionCoordinator : IAsyncDisposable
         condition.ConditionChange -= OnConditionChange;
         framework.Update -= OnPreDubUpdate;
         bootstrap.Ready -= OnRuntimeReady;
-        bootstrap.VoiceDesignReady -= OnVoiceDesignReady;
-        if (runtimeManager is not null) runtimeManager.SelectionChanged -= OnBackendSelectionChanged;
         if (scheduler is not null)
         {
             scheduler.LineProcessed -= OnSchedulerLineProcessed;
@@ -3422,15 +3161,9 @@ public sealed class SessionCoordinator : IAsyncDisposable
         var schedulerToDispose = scheduler;
         if (schedulerToDispose is not null)
             await BestEffortAsync("Dub scheduler", () => schedulerToDispose.DisposeAsync().AsTask());
-        var voiceDesignerInitializationToDispose = voiceDesignerInitialization;
-        if (voiceDesignerInitializationToDispose is not null)
-            await BestEffortAsync("VoiceDesign initialization", () => voiceDesignerInitializationToDispose);
         var domainPoolToDispose = domainPool;
         if (domainPoolToDispose is not null)
             await BestEffortAsync("Casting-domain pool", () => domainPoolToDispose.DisposeAsync().AsTask());
-        var voiceDesignerToDispose = voiceDesigner;
-        if (voiceDesignerToDispose is not null)
-            await BestEffortAsync("VoiceDesign runtime", () => voiceDesignerToDispose.DisposeAsync().AsTask());
         BestEffortSync("Audio engine", () => audio?.Dispose());
         if (audio is null)
             BestEffortSync("FFXIV game mixer backend", () => gameMixerBackend?.Dispose());

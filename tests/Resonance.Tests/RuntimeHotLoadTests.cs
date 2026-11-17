@@ -173,7 +173,7 @@ public sealed class RuntimeHotLoadTests
         File.WriteAllText(codecPath, "codec");
         File.WriteAllText(helperPath, "test-helper");
         var manager = new RuntimeManager(configuration, () => { }, talkerPath, codecPath,
-            "base", "design", "runtime", runtimePath, helperPath, workPath,
+            "base", "runtime", runtimePath, helperPath, workPath,
             new WritingRunner());
         manager.SetTestSeam(seam);
         return manager;

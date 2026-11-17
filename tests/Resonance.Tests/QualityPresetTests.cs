@@ -6,16 +6,16 @@ namespace Resonance.Tests;
 public sealed class QualityPresetTests
 {
     [Theory]
-    [InlineData(QualityPreset.Q4Base06B, "base-q4", "tokenizer-q4", "voicedesign-q4")]
-    [InlineData(QualityPreset.Q8Base06B, "base-q8", "tokenizer-q8", "voicedesign-q8")]
-    [InlineData(QualityPreset.Q4Base17B, "base-1.7b-q4", "tokenizer-q4", "voicedesign-q4")]
-    [InlineData(QualityPreset.Q8Base17B, "base-1.7b-q8", "tokenizer-q8", "voicedesign-q8")]
+    [InlineData(QualityPreset.Q4Base06B, "base-q4", "tokenizer-q4")]
+    [InlineData(QualityPreset.Q8Base06B, "base-q8", "tokenizer-q8")]
+    [InlineData(QualityPreset.Q4Base17B, "base-1.7b-q4", "tokenizer-q4")]
+    [InlineData(QualityPreset.Q8Base17B, "base-1.7b-q8", "tokenizer-q8")]
     public void PresetSelectsMatchingBaseAndSharedQuantizationAssets(
-        QualityPreset preset, string expectedBase, string expectedTokenizer, string expectedVoiceDesign)
+        QualityPreset preset, string expectedBase, string expectedTokenizer)
     {
         var actual = ModelQualitySelection.Resolve(preset);
 
-        Assert.Equal((expectedBase, expectedTokenizer, expectedVoiceDesign), actual);
+        Assert.Equal((expectedBase, expectedTokenizer), actual);
     }
 
     [Fact]

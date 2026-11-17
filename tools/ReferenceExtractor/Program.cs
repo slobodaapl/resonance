@@ -9,8 +9,7 @@ namespace Resonance.ReferenceExtractor;
 
 internal static class Program
 {
-    // The helper is the sole Base-model host. VoiceDesign remains in the
-    // Dalamud process and does not own this cross-process Base lease.
+    // The helper exclusively owns the cross-process Base lease.
     private const string OwnerName = "Local\\Resonance.QwenNativeOwner";
     private const string LaunchPermitName = "launch.ready";
     private static readonly TimeSpan LaunchPermitTimeout = TimeSpan.FromSeconds(30);
@@ -481,6 +480,7 @@ internal static class Program
             IReadOnlyList<string> backends, string requestId)
         {
             ArgumentNullException.ThrowIfNull(backends);
+            var reference = BenchmarkVoice.Load(launch.TalkerPath);
             var results = new List<BaseHostBenchmarkResult>();
             foreach (var backend in backends)
             {
@@ -500,8 +500,8 @@ internal static class Program
                     if (!TryBeginSynthesis(requestId)) throw new InvalidOperationException("host benchmark is busy");
                     try
                     {
-                        Synthesize(new("A quiet lantern glows beside the harbor.", "english", null,
-                            "A calm, clear adult narrator voice with natural conversational pacing.",
+                        Synthesize(new("A quiet lantern glows beside the harbor.", "english", reference,
+                            null,
                             0x5245534f4e414e43, 192), requestId, (id, samples) =>
                         {
                             first ??= started.Elapsed.TotalSeconds;

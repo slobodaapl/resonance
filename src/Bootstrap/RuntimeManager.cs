@@ -47,7 +47,6 @@ public sealed class RuntimeManager : ITtsRuntime
     private readonly Action saveConfiguration;
     private readonly string talkerPath;
     private readonly string codecPath;
-    private readonly string designModelHash;
     private readonly string runtimeVersion;
     private readonly string runtimePackDirectory;
     private readonly string modelDirectory;
@@ -103,7 +102,7 @@ public sealed class RuntimeManager : ITtsRuntime
         {
             ThrowIfNativeOwnershipPoisoned();
             if (useExternalBaseHost)
-                return new(true, true, false, true, DetectedBackends);
+                return new(true, true, true, DetectedBackends);
             var capabilities = runtime?.Capabilities
                 ?? throw new InvalidOperationException("TTS runtime is not ready");
             return capabilities with { VoiceReferenceExtraction = true };
@@ -588,7 +587,7 @@ public sealed class RuntimeManager : ITtsRuntime
     }
 
     public RuntimeManager(Configuration configuration, Action saveConfiguration, string talkerPath, string codecPath,
-        string modelHash, string designModelHash, string runtimeVersion, string runtimePackDirectory,
+        string modelHash, string runtimeVersion, string runtimePackDirectory,
         string referenceExtractorPath, string referenceExtractionDirectory,
         IReferenceExtractionProcessRunner? referenceProcessRunner = null, string? modelDirectory = null,
         Action<Exception>? nativeFailureReporter = null)
@@ -598,7 +597,6 @@ public sealed class RuntimeManager : ITtsRuntime
         this.talkerPath = talkerPath;
         this.codecPath = codecPath;
         ModelHash = modelHash;
-        this.designModelHash = designModelHash;
         this.runtimeVersion = runtimeVersion;
         this.runtimePackDirectory = runtimePackDirectory;
         this.modelDirectory = Path.GetFullPath(modelDirectory ?? Path.GetDirectoryName(talkerPath)!);
@@ -627,7 +625,7 @@ public sealed class RuntimeManager : ITtsRuntime
                     runtimePackDirectory, ownsProcessLease: false,
                     pluginLifetimeLease: PluginLifetimeLease), token).ConfigureAwait(false);
                 PublishDeviceMemory(DetectedBackends);
-                BenchmarkIdentity = BackendBenchmark.Identity(runtimeVersion, ModelHash, designModelHash, configuration.Compute, DetectedBackends);
+                BenchmarkIdentity = BackendBenchmark.Identity(runtimeVersion, ModelHash, configuration.Compute, DetectedBackends);
                 var selection = selector.Select(configuration, DetectedBackends, BenchmarkIdentity);
                 try
                 {
@@ -791,7 +789,7 @@ public sealed class RuntimeManager : ITtsRuntime
                         refreshSearchPaths: true), token).ConfigureAwait(false);
                 PublishDeviceMemory(detected);
                 var identity = BackendBenchmark.Identity(
-                    runtimeVersion, ModelHash, designModelHash, configuration.Compute, detected);
+                    runtimeVersion, ModelHash, configuration.Compute, detected);
                 var selection = selector.Select(configuration, detected, identity);
                 DetectedBackends = detected;
                 BenchmarkIdentity = identity;
@@ -975,7 +973,7 @@ public sealed class RuntimeManager : ITtsRuntime
         finally { Interlocked.Exchange(ref switching, 0); }
     }
 
-    public async Task BenchmarkAndApplyAsync(string designPath, CancellationToken token)
+    public async Task BenchmarkAndApplyAsync(CancellationToken token)
     {
         await CancelReferenceExtractionAsync().ConfigureAwait(false);
         ThrowIfReferenceProcessAbandoned();
@@ -986,8 +984,8 @@ public sealed class RuntimeManager : ITtsRuntime
             if (configuration.Compute == ComputePreference.Manual)
             {
                 var manualBenchmark = useExternalBaseHost
-                    ? await RunExternalBenchmarkAsync(designPath, token).ConfigureAwait(false)
-                    : await RunInProcessBenchmarkAsync(designPath, token).ConfigureAwait(false);
+                    ? await RunExternalBenchmarkAsync(token).ConfigureAwait(false)
+                    : await RunInProcessBenchmarkAsync(token).ConfigureAwait(false);
                 configuration.BackendBenchmark = manualBenchmark;
                 saveConfiguration();
                 return;
@@ -1014,7 +1012,7 @@ public sealed class RuntimeManager : ITtsRuntime
                 {
                     try
                     {
-                        cachedHost = await RunExternalBenchmarkAsync(designPath, token).ConfigureAwait(false);
+                        cachedHost = await RunExternalBenchmarkAsync(token).ConfigureAwait(false);
                     }
                     catch (BackendBenchmarkCleanupException error)
                     {
@@ -1063,7 +1061,7 @@ public sealed class RuntimeManager : ITtsRuntime
                 try
                 {
                     NativeOperationStarted("backend-benchmark");
-                    cached = await BackendBenchmark.RunAsync(BenchmarkIdentity, designPath, codecPath,
+                    cached = await BackendBenchmark.RunAsync(BenchmarkIdentity, talkerPath, codecPath,
                         DetectedBackends, configuration.Compute, token,
                         PluginLifetimeLease).ConfigureAwait(false);
                 }
@@ -1272,9 +1270,7 @@ public sealed class RuntimeManager : ITtsRuntime
             var backendName = Selection?.Effective.Name
                 ?? throw new InvalidOperationException("TTS backend selection is not ready");
             testSeam?.BaseRuntimeReleased();
-            // This manager owns only the Base model. VoiceDesigner owns the
-            // separate VoiceDesign model and may remain active while the
-            // helper exclusively owns Base extraction.
+            // The helper exclusively owns Base extraction until it exits.
             Interlocked.Exchange(ref switching, 1);
             var previous = runtime;
             if (previous is not null)
@@ -1903,23 +1899,23 @@ public sealed class RuntimeManager : ITtsRuntime
             referenceExtractorPath, talkerPath, codecPath,
             runtimePackDirectory, modelDirectory, referenceExtractionDirectory);
 
-    private IBaseRuntimeHost CreateBenchmarkHost(string designPath) => baseHostFactory?.Invoke(
-        referenceExtractorPath, designPath, codecPath,
+    private IBaseRuntimeHost CreateBenchmarkHost() => baseHostFactory?.Invoke(
+        referenceExtractorPath, talkerPath, codecPath,
         runtimePackDirectory, modelDirectory, referenceExtractionDirectory)
         ?? new BaseRuntimeHostClient(
-            referenceExtractorPath, designPath, codecPath,
+            referenceExtractorPath, talkerPath, codecPath,
             runtimePackDirectory, modelDirectory, referenceExtractionDirectory);
 
     private Task<BackendBenchmarkCache> RunInProcessBenchmarkAsync(
-        string designPath, CancellationToken token)
+        CancellationToken token)
     {
         NativeOperationStarted("backend-benchmark");
-        return BackendBenchmark.RunAsync(BenchmarkIdentity, designPath, codecPath,
+        return BackendBenchmark.RunAsync(BenchmarkIdentity, talkerPath, codecPath,
             DetectedBackends, configuration.Compute, token, PluginLifetimeLease);
     }
 
     private async Task<BackendBenchmarkCache> RunExternalBenchmarkAsync(
-        string designPath, CancellationToken token)
+        CancellationToken token)
     {
         var measurements = new List<BackendBenchmarkMeasurement>(DetectedBackends.Count);
         foreach (var backend in DetectedBackends)
@@ -1930,7 +1926,7 @@ public sealed class RuntimeManager : ITtsRuntime
             Exception? failure = null;
             try
             {
-                host = CreateBenchmarkHost(designPath);
+                host = CreateBenchmarkHost();
                 await host.StartAsync(backend.Name, token).ConfigureAwait(false);
                 var result = await host.BenchmarkAsync([backend], token).ConfigureAwait(false);
                 if (result.Count != 1 || !String.Equals(result[0].BackendName, backend.Name,

@@ -1,0 +1,403 @@
+{
+  "version": 1,
+  "catalogVersion": 5,
+  "preservedDomains": [
+    "gnath",
+    "goblin",
+    "kojin",
+    "mechanoid",
+    "omicron",
+    "vath"
+  ],
+  "domains": {
+    "generic_world": {
+      "masculine_young": "foundation_masculine_child_1",
+      "masculine_adult": "foundation_masculine_adult_1",
+      "masculine_elder": "foundation_masculine_elder_1",
+      "feminine_young": "foundation_feminine_child_1",
+      "feminine_adult": "foundation_feminine_adult_1",
+      "feminine_elder": "foundation_feminine_elder_1"
+    },
+    "lominsan": {
+      "masculine_young": "mix_lominsan_emphatic_masculine_child",
+      "masculine_adult": "mix_lominsan_emphatic_masculine_adult",
+      "masculine_elder": "mix_lominsan_emphatic_masculine_elder",
+      "feminine_young": "mix_lominsan_emphatic_feminine_child",
+      "feminine_adult": "mix_lominsan_emphatic_feminine_adult",
+      "feminine_elder": "mix_lominsan_emphatic_feminine_elder"
+    },
+    "mixed_eorzean": {
+      "masculine_young": "mix_mixed_eorzean_emphatic_masculine_child",
+      "masculine_adult": "mix_mixed_eorzean_emphatic_masculine_adult",
+      "masculine_elder": "mix_mixed_eorzean_emphatic_masculine_elder",
+      "feminine_young": "mix_mixed_eorzean_emphatic_feminine_child",
+      "feminine_adult": "mix_mixed_eorzean_emphatic_feminine_adult",
+      "feminine_elder": "mix_mixed_eorzean_emphatic_feminine_elder"
+    },
+    "gridanian": {
+      "masculine_young": "mix_gridanian_emphatic_masculine_child",
+      "masculine_adult": "mix_gridanian_emphatic_masculine_adult",
+      "masculine_elder": "mix_gridanian_emphatic_masculine_elder",
+      "feminine_young": "mix_gridanian_emphatic_feminine_child",
+      "feminine_adult": "mix_gridanian_emphatic_feminine_adult",
+      "feminine_elder": "mix_gridanian_emphatic_feminine_elder"
+    },
+    "uldahn": {
+      "masculine_young": "mix_uldahn_emphatic_masculine_child",
+      "masculine_adult": "mix_uldahn_emphatic_masculine_adult",
+      "masculine_elder": "mix_uldahn_emphatic_masculine_elder",
+      "feminine_young": "mix_uldahn_emphatic_feminine_child",
+      "feminine_adult": "mix_uldahn_emphatic_feminine_adult",
+      "feminine_elder": "mix_uldahn_emphatic_feminine_elder"
+    },
+    "manderville_entertainment": {
+      "masculine_young": "mix_manderville_entertainment_emphatic_masculine_child",
+      "masculine_adult": "mix_manderville_entertainment_emphatic_masculine_adult",
+      "masculine_elder": "mix_manderville_entertainment_emphatic_masculine_elder",
+      "feminine_young": "mix_manderville_entertainment_emphatic_feminine_child",
+      "feminine_adult": "mix_manderville_entertainment_emphatic_feminine_adult",
+      "feminine_elder": "mix_manderville_entertainment_emphatic_feminine_elder"
+    },
+    "ishgardian": {
+      "masculine_young": "mix_ishgardian_emphatic_masculine_child",
+      "masculine_adult": "mix_ishgardian_emphatic_masculine_adult",
+      "masculine_elder": "mix_ishgardian_emphatic_masculine_elder",
+      "feminine_young": "mix_ishgardian_emphatic_feminine_child",
+      "feminine_adult": "mix_ishgardian_emphatic_feminine_adult",
+      "feminine_elder": "mix_ishgardian_emphatic_feminine_elder"
+    },
+    "dravanian_frontier": {
+      "masculine_young": "mix_dravanian_frontier_emphatic_masculine_child",
+      "masculine_adult": "mix_dravanian_frontier_emphatic_masculine_adult",
+      "masculine_elder": "mix_dravanian_frontier_emphatic_masculine_elder",
+      "feminine_young": "mix_dravanian_frontier_emphatic_feminine_child",
+      "feminine_adult": "mix_dravanian_frontier_emphatic_feminine_adult",
+      "feminine_elder": "mix_dravanian_frontier_emphatic_feminine_elder"
+    },
+    "mixed_sharlayan_frontier": {
+      "masculine_young": "mix_mixed_sharlayan_frontier_emphatic_masculine_child",
+      "masculine_adult": "mix_mixed_sharlayan_frontier_emphatic_masculine_adult",
+      "masculine_elder": "mix_mixed_sharlayan_frontier_emphatic_masculine_elder",
+      "feminine_young": "mix_mixed_sharlayan_frontier_emphatic_feminine_child",
+      "feminine_adult": "mix_mixed_sharlayan_frontier_emphatic_feminine_adult",
+      "feminine_elder": "mix_mixed_sharlayan_frontier_emphatic_feminine_elder"
+    },
+    "mixed_adventurer": {
+      "masculine_young": "mix_mixed_adventurer_emphatic_masculine_child",
+      "masculine_adult": "mix_mixed_adventurer_emphatic_masculine_adult",
+      "masculine_elder": "mix_mixed_adventurer_emphatic_masculine_elder",
+      "feminine_young": "mix_mixed_adventurer_emphatic_feminine_child",
+      "feminine_adult": "mix_mixed_adventurer_emphatic_feminine_adult",
+      "feminine_elder": "mix_mixed_adventurer_emphatic_feminine_elder"
+    },
+    "ala_mhigan": {
+      "masculine_young": "mix_ala_mhigan_emphatic_masculine_child",
+      "masculine_adult": "mix_ala_mhigan_emphatic_masculine_adult",
+      "masculine_elder": "mix_ala_mhigan_emphatic_masculine_elder",
+      "feminine_young": "mix_ala_mhigan_emphatic_feminine_child",
+      "feminine_adult": "mix_ala_mhigan_emphatic_feminine_adult",
+      "feminine_elder": "mix_ala_mhigan_emphatic_feminine_elder"
+    },
+    "sharlayan": {
+      "masculine_young": "mix_sharlayan_emphatic_masculine_child",
+      "masculine_adult": "mix_sharlayan_emphatic_masculine_adult",
+      "masculine_elder": "mix_sharlayan_emphatic_masculine_elder",
+      "feminine_young": "mix_sharlayan_emphatic_feminine_child",
+      "feminine_adult": "mix_sharlayan_emphatic_feminine_adult",
+      "feminine_elder": "mix_sharlayan_emphatic_feminine_elder"
+    },
+    "hingan": {
+      "masculine_young": "mix_hingan_emphatic_masculine_child",
+      "masculine_adult": "mix_hingan_emphatic_masculine_adult",
+      "masculine_elder": "mix_hingan_emphatic_masculine_elder",
+      "feminine_young": "mix_hingan_emphatic_feminine_child",
+      "feminine_adult": "mix_hingan_emphatic_feminine_adult",
+      "feminine_elder": "mix_hingan_emphatic_feminine_elder"
+    },
+    "doman": {
+      "masculine_young": "mix_doman_emphatic_masculine_child",
+      "masculine_adult": "mix_doman_emphatic_masculine_adult",
+      "masculine_elder": "mix_doman_emphatic_masculine_elder",
+      "feminine_young": "mix_doman_emphatic_feminine_child",
+      "feminine_adult": "mix_doman_emphatic_feminine_adult",
+      "feminine_elder": "mix_doman_emphatic_feminine_elder"
+    },
+    "far_east_coastal": {
+      "masculine_young": "mix_far_east_coastal_emphatic_masculine_child",
+      "masculine_adult": "mix_far_east_coastal_emphatic_masculine_adult",
+      "masculine_elder": "mix_far_east_coastal_emphatic_masculine_elder",
+      "feminine_young": "mix_far_east_coastal_emphatic_feminine_child",
+      "feminine_adult": "mix_far_east_coastal_emphatic_feminine_adult",
+      "feminine_elder": "mix_far_east_coastal_emphatic_feminine_elder"
+    },
+    "xaela_steppe": {
+      "masculine_young": "mix_xaela_steppe_emphatic_masculine_child",
+      "masculine_adult": "mix_xaela_steppe_emphatic_masculine_adult",
+      "masculine_elder": "mix_xaela_steppe_emphatic_masculine_elder",
+      "feminine_young": "mix_xaela_steppe_emphatic_feminine_child",
+      "feminine_adult": "mix_xaela_steppe_emphatic_feminine_adult",
+      "feminine_elder": "mix_xaela_steppe_emphatic_feminine_elder"
+    },
+    "norvrandt_common": {
+      "masculine_young": "mix_norvrandt_common_emphatic_masculine_child",
+      "masculine_adult": "mix_norvrandt_common_emphatic_masculine_adult",
+      "masculine_elder": "mix_norvrandt_common_emphatic_masculine_elder",
+      "feminine_young": "mix_norvrandt_common_emphatic_feminine_child",
+      "feminine_adult": "mix_norvrandt_common_emphatic_feminine_adult",
+      "feminine_elder": "mix_norvrandt_common_emphatic_feminine_elder"
+    },
+    "kholusian": {
+      "masculine_young": "mix_kholusian_emphatic_masculine_child",
+      "masculine_adult": "mix_kholusian_emphatic_masculine_adult",
+      "masculine_elder": "mix_kholusian_emphatic_masculine_elder",
+      "feminine_young": "mix_kholusian_emphatic_feminine_child",
+      "feminine_adult": "mix_kholusian_emphatic_feminine_adult",
+      "feminine_elder": "mix_kholusian_emphatic_feminine_elder"
+    },
+    "norvrandt_rural": {
+      "masculine_young": "mix_norvrandt_rural_emphatic_masculine_child",
+      "masculine_adult": "mix_norvrandt_rural_emphatic_masculine_adult",
+      "masculine_elder": "mix_norvrandt_rural_emphatic_masculine_elder",
+      "feminine_young": "mix_norvrandt_rural_emphatic_feminine_child",
+      "feminine_adult": "mix_norvrandt_rural_emphatic_feminine_adult",
+      "feminine_elder": "mix_norvrandt_rural_emphatic_feminine_elder"
+    },
+    "il_mheg_pixie": {
+      "masculine_young": "mix_il_mheg_pixie_emphatic_masculine_child",
+      "masculine_adult": "mix_il_mheg_pixie_emphatic_masculine_adult",
+      "masculine_elder": "mix_il_mheg_pixie_emphatic_masculine_elder",
+      "feminine_young": "mix_il_mheg_pixie_emphatic_feminine_child",
+      "feminine_adult": "mix_il_mheg_pixie_emphatic_feminine_adult",
+      "feminine_elder": "mix_il_mheg_pixie_emphatic_feminine_elder"
+    },
+    "il_mheg_nu_mou": {
+      "masculine_young": "mix_nu_mou_native90_masculine_child",
+      "masculine_adult": "mix_nu_mou_native90_masculine_adult",
+      "masculine_elder": "mix_nu_mou_native90_masculine_elder",
+      "feminine_young": "mix_nu_mou_native90_feminine_child",
+      "feminine_adult": "mix_nu_mou_native90_feminine_adult",
+      "feminine_elder": "mix_nu_mou_native90_feminine_elder"
+    },
+    "rak_tika_viis": {
+      "masculine_young": "mix_rak_tika_viis_emphatic_masculine_child",
+      "masculine_adult": "mix_rak_tika_viis_emphatic_masculine_adult",
+      "masculine_elder": "mix_rak_tika_viis_emphatic_masculine_elder",
+      "feminine_young": "mix_rak_tika_viis_emphatic_feminine_child",
+      "feminine_adult": "mix_rak_tika_viis_emphatic_feminine_adult",
+      "feminine_elder": "mix_rak_tika_viis_emphatic_feminine_elder"
+    },
+    "rak_tika_night_blessed": {
+      "masculine_young": "mix_rak_tika_night_blessed_emphatic_masculine_child",
+      "masculine_adult": "mix_rak_tika_night_blessed_emphatic_masculine_adult",
+      "masculine_elder": "mix_rak_tika_night_blessed_emphatic_masculine_elder",
+      "feminine_young": "mix_rak_tika_night_blessed_emphatic_feminine_child",
+      "feminine_adult": "mix_rak_tika_night_blessed_emphatic_feminine_adult",
+      "feminine_elder": "mix_rak_tika_night_blessed_emphatic_feminine_elder"
+    },
+    "ondo": {
+      "masculine_young": "mix_ondo_emphatic_masculine_child",
+      "masculine_adult": "mix_ondo_emphatic_masculine_adult",
+      "masculine_elder": "mix_ondo_emphatic_masculine_elder",
+      "feminine_young": "mix_ondo_emphatic_feminine_child",
+      "feminine_adult": "mix_ondo_emphatic_feminine_adult",
+      "feminine_elder": "mix_ondo_emphatic_feminine_elder"
+    },
+    "ancient": {
+      "masculine_young": "mix_ancient_emphatic_masculine_child",
+      "masculine_adult": "mix_ancient_emphatic_masculine_adult",
+      "masculine_elder": "mix_ancient_emphatic_masculine_elder",
+      "feminine_young": "mix_ancient_emphatic_feminine_child",
+      "feminine_adult": "mix_ancient_emphatic_feminine_adult",
+      "feminine_elder": "mix_ancient_emphatic_feminine_elder"
+    },
+    "thavnairian": {
+      "masculine_young": "mix_thavnairian_emphatic_masculine_child",
+      "masculine_adult": "mix_thavnairian_emphatic_masculine_adult",
+      "masculine_elder": "mix_thavnairian_emphatic_masculine_elder",
+      "feminine_young": "mix_thavnairian_emphatic_feminine_child",
+      "feminine_adult": "mix_thavnairian_emphatic_feminine_adult",
+      "feminine_elder": "mix_thavnairian_emphatic_feminine_elder"
+    },
+    "garlean": {
+      "masculine_young": "mix_garlean_emphatic_masculine_child",
+      "masculine_adult": "mix_garlean_emphatic_masculine_adult",
+      "masculine_elder": "mix_garlean_emphatic_masculine_elder",
+      "feminine_young": "mix_garlean_emphatic_feminine_child",
+      "feminine_adult": "mix_garlean_emphatic_feminine_adult",
+      "feminine_elder": "mix_garlean_emphatic_feminine_elder"
+    },
+    "loporrit": {
+      "masculine_young": "mix_loporrit_emphatic_masculine_child",
+      "masculine_adult": "mix_loporrit_emphatic_masculine_adult",
+      "masculine_elder": "mix_loporrit_emphatic_masculine_elder",
+      "feminine_young": "mix_loporrit_emphatic_feminine_child",
+      "feminine_adult": "mix_loporrit_emphatic_feminine_adult",
+      "feminine_elder": "mix_loporrit_emphatic_feminine_elder"
+    },
+    "southern_turali": {
+      "masculine_young": "mix_southern_turali_emphatic_masculine_child",
+      "masculine_adult": "mix_southern_turali_emphatic_masculine_adult",
+      "masculine_elder": "mix_southern_turali_emphatic_masculine_elder",
+      "feminine_young": "mix_southern_turali_emphatic_feminine_child",
+      "feminine_adult": "mix_southern_turali_emphatic_feminine_adult",
+      "feminine_elder": "mix_southern_turali_emphatic_feminine_elder"
+    },
+    "pelupelu": {
+      "masculine_young": "mix_pelupelu_emphatic_masculine_child",
+      "masculine_adult": "mix_pelupelu_emphatic_masculine_adult",
+      "masculine_elder": "mix_pelupelu_emphatic_masculine_elder",
+      "feminine_young": "mix_pelupelu_emphatic_feminine_child",
+      "feminine_adult": "mix_pelupelu_emphatic_feminine_adult",
+      "feminine_elder": "mix_pelupelu_emphatic_feminine_elder"
+    },
+    "yok_huy": {
+      "masculine_young": "mix_yok_huy_emphatic_masculine_child",
+      "masculine_adult": "mix_yok_huy_emphatic_masculine_adult",
+      "masculine_elder": "mix_yok_huy_emphatic_masculine_elder",
+      "feminine_young": "mix_yok_huy_emphatic_feminine_child",
+      "feminine_adult": "mix_yok_huy_emphatic_feminine_adult",
+      "feminine_elder": "mix_yok_huy_emphatic_feminine_elder"
+    },
+    "hanuhanu": {
+      "masculine_young": "mix_hanuhanu_emphatic_masculine_child",
+      "masculine_adult": "mix_hanuhanu_emphatic_masculine_adult",
+      "masculine_elder": "mix_hanuhanu_emphatic_masculine_elder",
+      "feminine_young": "mix_hanuhanu_emphatic_feminine_child",
+      "feminine_adult": "mix_hanuhanu_emphatic_feminine_adult",
+      "feminine_elder": "mix_hanuhanu_emphatic_feminine_elder"
+    },
+    "moblin": {
+      "masculine_young": "mix_moblin_emphatic_masculine_child",
+      "masculine_adult": "mix_moblin_emphatic_masculine_adult",
+      "masculine_elder": "mix_moblin_emphatic_masculine_elder",
+      "feminine_young": "mix_moblin_emphatic_feminine_child",
+      "feminine_adult": "mix_moblin_emphatic_feminine_adult",
+      "feminine_elder": "mix_moblin_emphatic_feminine_elder"
+    },
+    "xbraal": {
+      "masculine_young": "mix_xbraal_emphatic_masculine_child",
+      "masculine_adult": "mix_xbraal_emphatic_masculine_adult",
+      "masculine_elder": "mix_xbraal_emphatic_masculine_elder",
+      "feminine_young": "mix_xbraal_emphatic_feminine_child",
+      "feminine_adult": "mix_xbraal_emphatic_feminine_adult",
+      "feminine_elder": "mix_xbraal_emphatic_feminine_elder"
+    },
+    "mamool_ja_tural": {
+      "masculine_young": "mix_mamool_ja_tural_emphatic_masculine_child",
+      "masculine_adult": "mix_mamool_ja_tural_emphatic_masculine_adult",
+      "masculine_elder": "mix_mamool_ja_tural_emphatic_masculine_elder",
+      "feminine_young": "mix_mamool_ja_tural_emphatic_feminine_child",
+      "feminine_adult": "mix_mamool_ja_tural_emphatic_feminine_adult",
+      "feminine_elder": "mix_mamool_ja_tural_emphatic_feminine_elder"
+    },
+    "shaaloani_frontier": {
+      "masculine_young": "mix_shaaloani_frontier_heavy_masculine_child",
+      "masculine_adult": "mix_shaaloani_frontier_heavy_masculine_adult",
+      "masculine_elder": "mix_shaaloani_frontier_heavy_masculine_elder",
+      "feminine_young": "mix_shaaloani_frontier_heavy_feminine_child",
+      "feminine_adult": "mix_shaaloani_frontier_heavy_feminine_adult",
+      "feminine_elder": "mix_shaaloani_frontier_heavy_feminine_elder"
+    },
+    "alexandrian": {
+      "masculine_young": "mix_alexandrian_emphatic_masculine_child",
+      "masculine_adult": "mix_alexandrian_emphatic_masculine_adult",
+      "masculine_elder": "mix_alexandrian_emphatic_masculine_elder",
+      "feminine_young": "mix_alexandrian_emphatic_feminine_child",
+      "feminine_adult": "mix_alexandrian_emphatic_feminine_adult",
+      "feminine_elder": "mix_alexandrian_emphatic_feminine_elder"
+    },
+    "bozjan": {
+      "masculine_young": "mix_bozjan_emphatic_masculine_child",
+      "masculine_adult": "mix_bozjan_emphatic_masculine_adult",
+      "masculine_elder": "mix_bozjan_emphatic_masculine_elder",
+      "feminine_young": "mix_bozjan_emphatic_feminine_child",
+      "feminine_adult": "mix_bozjan_emphatic_feminine_adult",
+      "feminine_elder": "mix_bozjan_emphatic_feminine_elder"
+    },
+    "ananta": {
+      "feminine_young": "mix_ananta_emphatic_feminine_child",
+      "feminine_adult": "mix_ananta_emphatic_feminine_adult",
+      "feminine_elder": "mix_ananta_emphatic_feminine_elder"
+    },
+    "sylph": {
+      "masculine_young": "mix_sylph_emphatic_masculine_child",
+      "masculine_adult": "mix_sylph_emphatic_masculine_adult",
+      "masculine_elder": "mix_sylph_emphatic_masculine_elder",
+      "feminine_young": "mix_sylph_emphatic_feminine_child",
+      "feminine_adult": "mix_sylph_emphatic_feminine_adult",
+      "feminine_elder": "mix_sylph_emphatic_feminine_elder"
+    },
+    "ixal": {
+      "masculine_young": "mix_ixal_emphatic_masculine_child",
+      "masculine_adult": "mix_ixal_emphatic_masculine_adult",
+      "masculine_elder": "mix_ixal_emphatic_masculine_elder",
+      "feminine_young": "mix_ixal_emphatic_feminine_child",
+      "feminine_adult": "mix_ixal_emphatic_feminine_adult",
+      "feminine_elder": "mix_ixal_emphatic_feminine_elder"
+    },
+    "amaljaa": {
+      "masculine_young": "mix_amaljaa_emphatic_masculine_child",
+      "masculine_adult": "mix_amaljaa_emphatic_masculine_adult",
+      "masculine_elder": "mix_amaljaa_emphatic_masculine_elder",
+      "feminine_young": "mix_amaljaa_emphatic_feminine_child",
+      "feminine_adult": "mix_amaljaa_emphatic_feminine_adult",
+      "feminine_elder": "mix_amaljaa_emphatic_feminine_elder"
+    },
+    "kobold": {
+      "masculine_young": "mix_kobold_emphatic_masculine_child",
+      "masculine_adult": "mix_kobold_emphatic_masculine_adult",
+      "masculine_elder": "mix_kobold_emphatic_masculine_elder",
+      "feminine_young": "mix_kobold_emphatic_feminine_child",
+      "feminine_adult": "mix_kobold_emphatic_feminine_adult",
+      "feminine_elder": "mix_kobold_emphatic_feminine_elder"
+    },
+    "sahagin": {
+      "masculine_young": "mix_sahagin_emphatic_masculine_child",
+      "masculine_adult": "mix_sahagin_emphatic_masculine_adult",
+      "masculine_elder": "mix_sahagin_emphatic_masculine_elder",
+      "feminine_young": "mix_sahagin_emphatic_feminine_child",
+      "feminine_adult": "mix_sahagin_emphatic_feminine_adult",
+      "feminine_elder": "mix_sahagin_emphatic_feminine_elder"
+    },
+    "dragon": {
+      "masculine_young": "mix_dragon_emphatic_masculine_child",
+      "masculine_adult": "mix_dragon_emphatic_masculine_adult",
+      "masculine_elder": "mix_dragon_emphatic_masculine_elder",
+      "feminine_young": "mix_dragon_emphatic_feminine_child",
+      "feminine_adult": "mix_dragon_emphatic_feminine_adult",
+      "feminine_elder": "mix_dragon_emphatic_feminine_elder"
+    },
+    "vanu_vanu": {
+      "masculine_young": "mix_vanu_vanu_emphatic_masculine_child",
+      "masculine_adult": "mix_vanu_vanu_emphatic_masculine_adult",
+      "masculine_elder": "mix_vanu_vanu_emphatic_masculine_elder",
+      "feminine_young": "mix_vanu_vanu_emphatic_feminine_child",
+      "feminine_adult": "mix_vanu_vanu_emphatic_feminine_adult",
+      "feminine_elder": "mix_vanu_vanu_emphatic_feminine_elder"
+    },
+    "moogle": {
+      "masculine_young": "mix_moogle_emphatic_masculine_child",
+      "masculine_adult": "mix_moogle_emphatic_masculine_adult",
+      "masculine_elder": "mix_moogle_emphatic_masculine_elder",
+      "feminine_young": "mix_moogle_emphatic_feminine_child",
+      "feminine_adult": "mix_moogle_emphatic_feminine_adult",
+      "feminine_elder": "mix_moogle_emphatic_feminine_elder"
+    },
+    "fuath": {
+      "masculine_young": "mix_fuath_emphatic_masculine_child",
+      "masculine_adult": "mix_fuath_emphatic_masculine_adult",
+      "masculine_elder": "mix_fuath_emphatic_masculine_elder",
+      "feminine_young": "mix_fuath_emphatic_feminine_child",
+      "feminine_adult": "mix_fuath_emphatic_feminine_adult",
+      "feminine_elder": "mix_fuath_emphatic_feminine_elder"
+    },
+    "qitari": {
+      "masculine_young": "mix_qitari_emphatic_masculine_child",
+      "masculine_adult": "mix_qitari_emphatic_masculine_adult",
+      "masculine_elder": "mix_qitari_emphatic_masculine_elder",
+      "feminine_young": "mix_qitari_emphatic_feminine_child",
+      "feminine_adult": "mix_qitari_emphatic_feminine_adult",
+      "feminine_elder": "mix_qitari_emphatic_feminine_elder"
+    }
+  }
+}

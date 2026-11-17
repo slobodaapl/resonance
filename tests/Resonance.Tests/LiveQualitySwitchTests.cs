@@ -23,11 +23,9 @@ public sealed class LiveQualitySwitchTests
         Assert.Equal(1, fixture.LiveModels);
         Assert.EndsWith("base-1.7b-q8.gguf", prepared.BasePath);
         Assert.EndsWith("tokenizer-q8.gguf", prepared.CodecPath);
-        Assert.EndsWith("voicedesign-q8.gguf", prepared.DesignPath);
         await fixture.Bootstrap.SwitchQualityAsync(prepared, TestContext.Current.CancellationToken);
         Assert.False(old.IsReady);
         Assert.Equal(prepared.ModelHash, fixture.Bootstrap.RuntimeManager!.ModelHash);
-        Assert.Equal(prepared.DesignPath, fixture.Bootstrap.VoiceDesignPath);
         Assert.Equal(QualityPreset.Q4Base06B, fixture.Configuration.Quality);
         fixture.Bootstrap.CommitQuality(prepared.Quality);
         Assert.Equal(QualityPreset.Q8Base17B, fixture.Configuration.Quality);
@@ -198,7 +196,7 @@ public sealed class LiveQualitySwitchTests
             Directory.CreateDirectory(Path.Combine(plugin, "assets"));
             Directory.CreateDirectory(Path.Combine(plugin, "reference-extractor"));
             Directory.CreateDirectory(Models);
-            var names = new[] { "base-q4", "base-q8", "base-1.7b-q4", "base-1.7b-q8", "tokenizer-q4", "tokenizer-q8", "voicedesign-q4", "voicedesign-q8" };
+            var names = new[] { "base-q4", "base-q8", "base-1.7b-q4", "base-1.7b-q8", "tokenizer-q4", "tokenizer-q8" };
             var artifacts = names.Select(name =>
             {
                 var content = Encoding.UTF8.GetBytes("model fixture " + name);
@@ -230,7 +228,7 @@ public sealed class LiveQualitySwitchTests
             LiveModels++;
             PeakModels = Math.Max(PeakModels, LiveModels);
             var manager = new RuntimeManager(Configuration, () => { }, models.BasePath, models.CodecPath,
-                models.ModelHash, models.DesignHash, "fixture", Path.Combine(root, "runtime"),
+                models.ModelHash, "fixture", Path.Combine(root, "runtime"),
                 Path.Combine(root, "helper"), Path.Combine(root, "references"), nativeFailureReporter: Lease.Poison);
             manager.SetPluginLifetimeLease(Lease);
             var backend = new BackendInfo("cpu", "CPU", BackendType.Cpu, 0, 1, 1);

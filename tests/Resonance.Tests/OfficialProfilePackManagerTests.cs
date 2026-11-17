@@ -157,14 +157,9 @@ public sealed partial class OfficialProfilePackManagerTests
     }
 
     [Fact]
-    public void RegionalReferencesKeepTheirDeclaredNativePerformanceIntact()
+    public void ManualNativeBlendsKeepTheirDeclaredPerformanceIntact()
     {
         using var recipe = System.Text.Json.JsonDocument.Parse(File.ReadAllText(ProjectPath("assets","fallback-voices.json")));
-        var actors = recipe.RootElement.GetProperty("foundations").EnumerateArray()
-            .ToDictionary(f => f.GetProperty("id").GetString()!,f => f.GetProperty("nativeActor").GetString()!);
-        var recordings = recipe.RootElement.GetProperty("domains").EnumerateArray()
-            .Where(domain => domain.TryGetProperty("recording",out _))
-            .Select(domain => domain.GetProperty("id").GetString()!).ToHashSet();
         var nativeBlends = recipe.RootElement.GetProperty("domains").EnumerateArray()
             .Where(domain => domain.TryGetProperty("nativeBlend", out _))
             .ToDictionary(domain => domain.GetProperty("id").GetString()!, domain => domain.GetProperty("nativeBlend")
@@ -186,8 +181,7 @@ public sealed partial class OfficialProfilePackManagerTests
         var count = 0;
         while (profiles.Read())
         {
-            if (recordings.Contains(profiles.GetString(7))) continue;
-            var actor = nativeBlends.GetValueOrDefault(profiles.GetString(7)) ?? actors[profiles.GetString(0)];
+            if (!nativeBlends.TryGetValue(profiles.GetString(7), out var actor)) continue;
             var expected = native[(actor,profiles.GetString(1),profiles.GetString(2))];
             Assert.Equal(expected.Item1,profiles.GetString(3));
             Assert.Equal(expected.Item2,(byte[])profiles[4]);
@@ -196,7 +190,7 @@ public sealed partial class OfficialProfilePackManagerTests
             count++;
         }
         var catalog = CastingProfileCatalog.Load(ProjectPath("assets","dub-profiles.json"));
-        Assert.Equal(catalog.Domains.Where(domain => !recordings.Contains(domain.Id))
+        Assert.Equal(catalog.Domains.Where(domain => nativeBlends.ContainsKey(domain.Id))
             .Sum(domain => FallbackVariants(domain).Count()) * 4 * 4,count);
     }
 

@@ -31,7 +31,6 @@ public sealed partial class ConfigWindow : Window, IAsyncDisposable
     private readonly Func<string, CancellationToken, Task> regenerateDomain;
     private readonly Func<string, DebugInferenceSnapshot> debugSnapshot;
     private readonly Func<string, CancellationToken, Task> refreshDebugBaseVoices;
-    private readonly Func<string, string, string, CancellationToken, Task> runVoiceDesignDebug;
     private readonly Func<string, string, string, CancellationToken, Task> runBaseDebug;
     private readonly Func<AudioBackendStatus> audioBackendStatus;
     private readonly Func<BackendInfo, CancellationToken, Task>? setBackend;
@@ -48,13 +47,7 @@ public sealed partial class ConfigWindow : Window, IAsyncDisposable
     private PlaybackActivity frameActivity;
     private string? operationError;
     private string selectedDomain = "generic_world";
-    private string selectedLanguage = "english";
-    private string selectedSex = "masculine";
-    private string instruction = string.Empty;
-    private string? loadedKey;
     private string debugLanguage = "english";
-    private string debugSentence = SampleSentence;
-    private string debugInstruction = "A clear, natural adult voice with measured pacing and restrained emotion.";
     private int benchmarkInFlight;
     private readonly object taskGate = new();
     private readonly HashSet<Task> activeTasks = [];
@@ -75,7 +68,6 @@ public sealed partial class ConfigWindow : Window, IAsyncDisposable
         Func<string, CancellationToken, Task> regenerateDomain,
         Func<string, DebugInferenceSnapshot> debugSnapshot,
         Func<string, CancellationToken, Task> refreshDebugBaseVoices,
-        Func<string, string, string, CancellationToken, Task> runVoiceDesignDebug,
         Func<string, string, string, CancellationToken, Task> runBaseDebug,
         Action cancelDebug,
         Action preDubConfigurationChanged,
@@ -105,7 +97,6 @@ public sealed partial class ConfigWindow : Window, IAsyncDisposable
         this.regenerateDomain = regenerateDomain;
         this.debugSnapshot = debugSnapshot;
         this.refreshDebugBaseVoices = refreshDebugBaseVoices;
-        this.runVoiceDesignDebug = runVoiceDesignDebug;
         this.runBaseDebug = runBaseDebug;
         this.audioBackendStatus = audioBackendStatus ?? (() => new AudioBackendStatus(
             AudioOutputBackend.FfxivGameMixer, false, false, false, false,
@@ -141,7 +132,7 @@ public sealed partial class ConfigWindow : Window, IAsyncDisposable
     }
 
     private async Task RebuildBackendBenchmarkAsync(
-        RuntimeManager manager, string voiceDesignPath, CancellationToken token)
+        RuntimeManager manager, CancellationToken token)
     {
         if (Interlocked.Exchange(ref benchmarkInFlight, 1) != 0) return;
         try
@@ -151,7 +142,7 @@ public sealed partial class ConfigWindow : Window, IAsyncDisposable
             if (rebuildBackendBenchmark is not null)
                 await rebuildBackendBenchmark(token).ConfigureAwait(false);
             else
-                await manager.BenchmarkAndApplyAsync(voiceDesignPath, token).ConfigureAwait(false);
+                await manager.BenchmarkAndApplyAsync(token).ConfigureAwait(false);
         }
         finally
         {

@@ -229,10 +229,7 @@ public sealed class DubScheduler : IAsyncDisposable
                         DubLineState.Predicted,
                         DubLineState.Buffered)) continue;
                 operationStarted = Stopwatch.GetTimestamp();
-                // Only persistent profile synthesis is cacheable.  Transient
-                // predictions and direct first-line VoiceDesign streams must
-                // never attach a second unconsumed PCM channel merely for a
-                // cache path that cannot be used.
+                // Transient predictions have no persistent profile to cache.
                 var captureLimitBytes = cacheCaptureLimitBytes();
                 using var capture = line.VoiceProfileId is not null && line.VoiceProfileHash is not null
                     && captureLimitBytes > 0

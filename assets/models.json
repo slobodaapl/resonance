@@ -23,16 +23,6 @@
       "stage": 0
     },
     {
-      "id": "voicedesign-q4",
-      "fileName": "qwen-talker-1.7b-voicedesign-Q4_K_M.gguf",
-      "url": "https://huggingface.co/CC-TM/Qwen3-TTS-GGUF/resolve/9c57e72bc889ca381fe5e463dd9e22e8201e01fa/qwen-talker-1.7b-voicedesign-Q4_K_M.gguf",
-      "length": 1182630816,
-      "sha256": "7605ed0cc5e72059f27468c27f70c070e05d1cc0c7b1c76bfb9cba717a59eee3",
-      "abi": 6,
-      "license": "Apache-2.0",
-      "stage": 1
-    },
-    {
       "id": "base-q8",
       "fileName": "qwen-talker-0.6b-base-Q8_0.gguf",
       "url": "https://huggingface.co/CC-TM/Qwen3-TTS-GGUF/resolve/9c57e72bc889ca381fe5e463dd9e22e8201e01fa/qwen-talker-0.6b-base-Q8_0.gguf",
@@ -71,16 +61,6 @@
       "abi": 6,
       "license": "Apache-2.0",
       "stage": 0
-    },
-    {
-      "id": "voicedesign-q8",
-      "fileName": "qwen-talker-1.7b-voicedesign-Q8_0.gguf",
-      "url": "https://huggingface.co/CC-TM/Qwen3-TTS-GGUF/resolve/9c57e72bc889ca381fe5e463dd9e22e8201e01fa/qwen-talker-1.7b-voicedesign-Q8_0.gguf",
-      "length": 2042833824,
-      "sha256": "575610ab1ddcca4dca6bd9a64bcd859d93bbad8764f9cab24e1dbc0c51f62276",
-      "abi": 6,
-      "license": "Apache-2.0",
-      "stage": 1
     }
   ]
 }
