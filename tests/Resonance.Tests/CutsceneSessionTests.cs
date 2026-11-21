@@ -51,6 +51,39 @@ public sealed class CutsceneSessionTests
         Assert.Null(promoted.VoiceProfileId);
     }
 
+    [Theory]
+    [InlineData("actual-speaker", true)]
+    [InlineData("other-speaker", false)]
+    public void PromotionOnlyReusesAudioForTheSameFallbackSpeaker(string predictedKey, bool reuseAudio)
+    {
+        using var session = new CutsceneSession(4, 10);
+        var evidence = new SpeakerCastingEvidence("npc:42");
+        var casting = new CastingResolution("generic_world", [], CastingEvidenceSource.Identity,
+            null, null, 1, false, false, [], ["generic_world"], []);
+        var actual = new ResolvedLineSpeaker("npc:42", "Detective", 42, evidence, casting,
+            "masculine", "masculine_adult", null, Language: "english", FallbackSpeakerKey: "actual-speaker");
+        var prediction = session.ReconcilePredictions([
+            new CutscenePrediction("cue", actual.SpeakerKey, actual.SpeakerName, "Expected", "english",
+                Resolution: actual with { FallbackSpeakerKey = predictedKey }),
+        ], preserveExisting: true).Single();
+        prediction.VoiceProfileId = "profile";
+        Assert.True(prediction.TryTransition(DubLineState.Buffered, DubLineState.Predicted));
+
+        var promoted = session.PromotePrediction(actual.SpeakerName, "Expected", actual, predictionKey: "cue");
+
+        if (reuseAudio)
+        {
+            Assert.NotNull(promoted);
+            Assert.Same(prediction, promoted);
+            Assert.Equal("profile", promoted.VoiceProfileId);
+        }
+        else
+        {
+            Assert.Null(promoted);
+            Assert.Equal(DubLineState.Invalidated, prediction.State);
+        }
+    }
+
     [Fact]
     public void ReplacingPredictionsInvalidatesOldEpochWork()
     {

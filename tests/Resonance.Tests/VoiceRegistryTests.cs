@@ -498,8 +498,10 @@ public sealed class VoiceRegistryTests
         finally { Directory.Delete(root, true); }
     }
 
-    [Fact]
-    public async Task AmbiguousNormalizedDisplayNameDoesNotGuessPersistentIdentity()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AmbiguousNormalizedDisplayNameDoesNotGuessPersistentIdentity(bool bothHaveVoices)
     {
         var root = CreateRoot();
         try
@@ -510,9 +512,10 @@ public sealed class VoiceRegistryTests
             {
                 var speaker = await registry.ResolveSpeakerAsync(
                     key, null, name, 1, "english", TestContext.Current.CancellationToken);
-                await registry.SaveAndAssignAsync(
-                    speaker.Id, Profile(VoiceProfileKind.Designed, key),
-                    TestContext.Current.CancellationToken);
+                if (bothHaveVoices || key == "npc:a")
+                    await registry.SaveAndAssignAsync(
+                        speaker.Id, Profile(VoiceProfileKind.Designed, key),
+                        TestContext.Current.CancellationToken);
             }
 
             Assert.Null(await registry.GetBestVoiceByDisplayNameAsync(

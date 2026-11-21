@@ -21,6 +21,16 @@ public sealed class CutsceneVoiceManifestProvider
     public string LastStatus { get; private set; } = "not-queried";
     public bool CurrentDialogueIsNative { get; private set; }
     public uint? CurrentCutsceneId { get; private set; }
+    internal string? GetFallbackSpeakerKey(string displayName, CutsceneVoiceLine? line)
+    {
+        if (activeManifest is not { } manifest || manifest.CutsceneId != CurrentCutsceneId) return null;
+        if (line is not null)
+            return CutsceneVoiceLine.FallbackSpeakerKey(manifest.CutscenePath, line.ActorToken, displayName);
+        var name = DialogueText.NormalizeSpeaker(displayName);
+        if (name.Length == 0 || !manifest.Lines.Any(candidate =>
+                DialogueText.NormalizeSpeaker(candidate.ActorToken) == name)) return null;
+        return CutsceneVoiceLine.FallbackSpeakerKey(manifest.CutscenePath, name, displayName);
+    }
 
     public CutsceneVoiceManifestProvider(IDataManager dataManager, IClientState clientState, IPluginLog log,
         CutscenePlanStore? planStore = null, Func<int>? voiceLanguage = null)

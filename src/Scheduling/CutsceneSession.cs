@@ -8,7 +8,8 @@ public sealed record CutscenePrediction(
     string Language,
     string? OfficialVoiceGroupId = null,
     ResolvedLineSpeaker? Resolution = null,
-    string? SourceQuest = null);
+    string? SourceQuest = null,
+    string? FallbackSpeakerKey = null);
 
 public sealed class CutsceneSession : IDisposable
 {
@@ -124,6 +125,7 @@ public sealed class CutsceneSession : IDisposable
                          && line.Text == prediction.Text
                          && line.Language == prediction.Language
                          && line.OfficialVoiceGroupId == prediction.OfficialVoiceGroupId
+                         && line.FallbackSpeakerKey == (prediction.Resolution?.FallbackSpeakerKey ?? prediction.FallbackSpeakerKey)
                          && ResolutionMatches(line, prediction.Resolution);
             if (retain) continue;
             lines.Remove(line.Sequence);
@@ -154,6 +156,7 @@ public sealed class CutsceneSession : IDisposable
                 Text = prediction.Text,
                 Language = prediction.Language,
                 OfficialVoiceGroupId = prediction.OfficialVoiceGroupId,
+                FallbackSpeakerKey = prediction.FallbackSpeakerKey,
                 ActualStatus = ActualStatus.Predicted,
                 NativeVoiceStatus = NativeVoiceStatus.Unknown,
                 PlaybackDeadline = deadline,
@@ -215,6 +218,7 @@ public sealed class CutsceneSession : IDisposable
         var preservePreparedAudio = resolvedSpeaker is not null
             && String.Equals(line.Language, resolvedLanguage, StringComparison.Ordinal)
             && String.Equals(line.SpeakerKey, resolvedSpeaker.SpeakerKey, StringComparison.Ordinal)
+            && String.Equals(line.FallbackSpeakerKey, resolvedSpeaker.FallbackSpeakerKey, StringComparison.Ordinal)
             && (line.VoiceProfileId is not null
                 || line.OfficialVoiceGroupId is not null
                 || line.VoiceSex == resolvedSpeaker.VoiceSex

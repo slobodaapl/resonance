@@ -38,7 +38,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
         string ActorToken,
         string Text,
         string? OfficialGroupId = null,
-        uint? ActorNpcBaseId = null);
+        uint? ActorNpcBaseId = null,
+        string? FallbackSpeakerKey = null);
 
     private sealed record FrameworkStateSnapshot(
         string Language,
@@ -930,10 +931,12 @@ public sealed class SessionCoordinator : IAsyncDisposable
         ResolvedSpeaker capturedResolved, string language, string? firstTerritory,
         CutsceneVoiceLine? declaredVoice, bool nativeOnly = false)
     {
+        var scriptedFallbackKey = cutsceneVoices.GetFallbackSpeakerKey(line.Speaker, declaredVoice);
         var future = declaredVoice is null ? null : cutsceneVoices.GetSyntheticFuture(declaredVoice)
             .Where(value => !String.IsNullOrWhiteSpace(value.Text))
             .Select(value => new FutureDialogue(value.Key, value.ActorToken, value.Text,
-                value.OfficialGroupId, value.ActorNpcBaseId)).ToArray();
+                value.OfficialGroupId, value.ActorNpcBaseId,
+                cutsceneVoices.GetFallbackSpeakerKey(value.ActorToken, value))).ToArray();
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         CancellationTokenSource cancellation;
         lock (coordinatorTaskGate)
@@ -947,18 +950,19 @@ public sealed class SessionCoordinator : IAsyncDisposable
             coordinatorTasks.Add(completion.Task);
         }
         _ = ObserveLineHandlingAsync(completion, line, capturedSession, capturedResolved, language,
-            firstTerritory, declaredVoice, future, nativeOnly, cancellation);
+            firstTerritory, declaredVoice, future, scriptedFallbackKey, nativeOnly, cancellation);
     }
 
     private async Task ObserveLineHandlingAsync(TaskCompletionSource completion, ActualTalkLine line,
         CutsceneSession capturedSession, ResolvedSpeaker capturedResolved, string language,
         string? firstTerritory, CutsceneVoiceLine? declaredVoice,
-        IReadOnlyList<FutureDialogue>? future, bool nativeOnly, CancellationTokenSource cancellation)
+        IReadOnlyList<FutureDialogue>? future, string? scriptedFallbackKey, bool nativeOnly,
+        CancellationTokenSource cancellation)
     {
         try
         {
             await HandleLineAsync(line, capturedSession, capturedResolved, language, firstTerritory,
-                    declaredVoice, future, nativeOnly, cancellation.Token)
+                    declaredVoice, future, scriptedFallbackKey, nativeOnly, cancellation.Token)
                 .ConfigureAwait(false);
             completion.TrySetResult();
         }
@@ -982,7 +986,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
     private async Task HandleLineAsync(
         ActualTalkLine actual, CutsceneSession capturedSession, ResolvedSpeaker capturedResolved,
         string language, string? firstTerritory, CutsceneVoiceLine? declaredVoice,
-        IReadOnlyList<FutureDialogue>? anchoredFuture, bool nativeOnly, CancellationToken operationToken)
+        IReadOnlyList<FutureDialogue>? anchoredFuture, string? scriptedFallbackKey, bool nativeOnly,
+        CancellationToken operationToken)
     {
         await eventGate.WaitAsync(operationToken).ConfigureAwait(false);
         var actualScheduled = false;
@@ -1056,6 +1061,9 @@ public sealed class SessionCoordinator : IAsyncDisposable
             if (!IsCurrentLine()) return;
             if (!resolved.SceneLocal) domainPool?.ActivateResolution(casting);
             var slot = catalog.SelectBestSlot(casting, resolved.Evidence);
+            var fallbackKey = officialGroup is null
+                ? ResolveFallbackKey(actual, current, resolved, scriptedFallbackKey, language)
+                : null;
             var assignment = new ResolvedLineSpeaker(
                 stored?.StableKey ?? resolved.StableKey,
                 actual.Speaker,
@@ -1066,7 +1074,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
                 resolved.Archetype,
                 resolved.Actor,
                 slot.Id,
-                language);
+                language,
+                fallbackKey);
             var line = current.PromotePrediction(
                 actual.Speaker, actual.Text, assignment, predictionKey: declaredVoice?.Key);
             if (line?.SpeechPlan is { HasCues: true } prepared
@@ -1228,6 +1237,9 @@ public sealed class SessionCoordinator : IAsyncDisposable
                 : cutsceneSpeakerKeys.TryGetValue(normalizedActor, out var knownKey)
                     ? knownKey
                     : knownAssignment!.SpeakerKey;
+            var fallbackKey = official is null
+                ? knownAssignment?.FallbackSpeakerKey ?? value.FallbackSpeakerKey
+                : null;
             return new CutscenePrediction(
                 value.Key,
                 stableKey,
@@ -1235,7 +1247,10 @@ public sealed class SessionCoordinator : IAsyncDisposable
                 value.Text,
                 language,
                 official?.Id,
-                official is null ? knownAssignment : null);
+                official is null && knownAssignment is not null
+                    ? knownAssignment with { FallbackSpeakerKey = fallbackKey }
+                    : null,
+                FallbackSpeakerKey: fallbackKey);
         }).Where(value => value is not null).Select(value => value!).ToArray();
         var added = current.ReconcilePredictions(predictions, preserveExisting);
         foreach (var line in added)
@@ -1255,6 +1270,37 @@ public sealed class SessionCoordinator : IAsyncDisposable
         value.ActorNpcBaseId is { } npcBaseId
             ? $"npc:{npcBaseId}"
             : NormalizeSpeakerToken(value.ActorToken);
+
+    private string ResolveFallbackKey(ActualTalkLine line, CutsceneSession current,
+        ResolvedSpeaker speaker, string? scriptedKey, string language)
+    {
+        var name = NormalizeSpeakerToken(line.Speaker);
+        var previous = name.Length == 0 ? null : cutsceneSpeakerAssignments.GetValueOrDefault(name);
+        var previousKey = previous?.FallbackSpeakerKey;
+        if (previous?.Actor is { } old && speaker.Actor is { } now && old.StableKey != now.StableKey)
+            previousKey = null;
+        if (scriptedKey is null)
+            return previousKey ?? $"scene-fallback:{current.Epoch}:{speaker.StableKey}";
+        if (previousKey?.StartsWith("scene-fallback:", StringComparison.Ordinal) == true
+            && runtimeManager is { } manager
+            && profileCache.TryGetValue(ProfileCacheKey(previousKey, language, manager.ModelHash), out var prefixVoice))
+            profileCache.TryAdd(ProfileCacheKey(scriptedKey, language, manager.ModelHash), prefixVoice);
+        return scriptedKey;
+    }
+
+    private StoredVoiceProfile? GetPinnedFallback(DubLine line, string language, string modelHash) =>
+        line.FallbackSpeakerKey is { } key
+        && profileCache.TryGetValue(ProfileCacheKey(key, language, modelHash), out var profile) ? profile : null;
+
+    private VoiceResolution UseVoice(DubLine line, string language, string modelHash, StoredVoiceProfile profile)
+    {
+        line.Token.ThrowIfCancellationRequested();
+        if (line.FallbackSpeakerKey is { } key)
+            profile = FallbackVoiceContinuity.Remember(profileCache, ProfileCacheKey(key, language, modelHash), profile);
+        line.VoiceProfileId = profile.Id;
+        line.VoiceProfileHash = profile.ProfileHash;
+        return VoiceResolution.Ready(profile.Reference);
+    }
 
     private async ValueTask<VoiceResolution> ResolveVoiceAsync(DubLine line, CancellationToken token)
     {
@@ -1283,10 +1329,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
             }
             if (predictedProfile is not null)
             {
-                line.VoiceProfileId = predictedProfile.Id;
-                line.VoiceProfileHash = predictedProfile.ProfileHash;
                 profileCache[predictedCacheKey] = predictedProfile;
-                return VoiceResolution.Ready(predictedProfile.Reference);
+                return UseVoice(line, language, predictedModelHash, predictedProfile);
             }
 
             if (line.SpeakerId is > 0)
@@ -1313,11 +1357,11 @@ public sealed class SessionCoordinator : IAsyncDisposable
                 speakerId, language, currentModelHash, token).ConfigureAwait(false);
         if (stored is not null)
         {
-            line.VoiceProfileId = stored.Id;
-            line.VoiceProfileHash = stored.ProfileHash;
             profileCache[cacheKey] = stored;
-            return VoiceResolution.Ready(stored.Reference);
+            return UseVoice(line, language, currentModelHash, stored);
         }
+        if (GetPinnedFallback(line, language, currentModelHash) is { } pinned)
+            return UseVoice(line, language, currentModelHash, pinned);
         var casting = line.Casting ?? throw new InvalidOperationException("Actual line has no casting resolution");
         var knownTraits = line.CastingEvidence is null ? null : JsonSerializer.Serialize(line.CastingEvidence);
         var pooled = await voices.TryAssignDomainPoolVoiceAsync(
@@ -1325,11 +1369,9 @@ public sealed class SessionCoordinator : IAsyncDisposable
             .ConfigureAwait(false);
         if (pooled is not null)
         {
-            line.VoiceProfileId = pooled.Id;
-            line.VoiceProfileHash = pooled.ProfileHash;
             profileCache[cacheKey] = pooled;
             QueueProfileUpgradeNotification(line.SpeakerKey, pooled.Id);
-            return VoiceResolution.Ready(pooled.Reference);
+            return UseVoice(line, language, currentModelHash, pooled);
         }
         var evidence = line.CastingEvidence ?? new SpeakerCastingEvidence(line.SpeakerKey, Sex: line.VoiceSex);
         var fallbackProfile = await voices.GetFallbackVoiceAsync(
@@ -1339,10 +1381,8 @@ public sealed class SessionCoordinator : IAsyncDisposable
         {
             fallbackProfile = await voices.SaveAndAssignAsync(speakerId, fallbackProfile, token)
                 .ConfigureAwait(false);
-            line.VoiceProfileId = fallbackProfile.Id;
-            line.VoiceProfileHash = fallbackProfile.ProfileHash;
             profileCache[cacheKey] = fallbackProfile;
-            return VoiceResolution.Ready(fallbackProfile.Reference);
+            return UseVoice(line, language, currentModelHash, fallbackProfile);
         }
         domainPool?.RequestMissingResolution(casting, language, line.VoiceSex, followsSpeaker: true);
         throw new InvalidOperationException(
@@ -1353,17 +1393,23 @@ public sealed class SessionCoordinator : IAsyncDisposable
     private async ValueTask<VoiceResolution> ResolveTransientVoiceAsync(
         DubLine line, string language, CancellationToken token)
     {
+        var currentModelHash = (runtimeManager
+            ?? throw new InvalidOperationException("Base runtime is unavailable")).ModelHash;
+        if (GetPinnedFallback(line, language, currentModelHash) is { } pinned)
+            return UseVoice(line, language, currentModelHash, pinned);
+        if (line.ActualStatus == ActualStatus.Actual
+            && await voices.GetBestVoiceByDisplayNameAsync(
+                line.SpeakerName, language, currentModelHash, token).ConfigureAwait(false) is { } match)
+            return UseVoice(line, language, currentModelHash, match.Profile);
         var evidence = line.CastingEvidence ?? new SpeakerCastingEvidence(line.SpeakerKey,
             Sex: line.VoiceSex);
         var casting = line.Casting ?? catalog.Resolve(evidence);
         line.Casting = casting;
-        var currentModelHash = (runtimeManager
-            ?? throw new InvalidOperationException("Base runtime is unavailable")).ModelHash;
         var fallbackProfile = await voices.GetFallbackVoiceAsync(
             casting.DomainId, catalog.FallbackVariantId(casting, evidence), language, currentModelHash, token)
             .ConfigureAwait(false);
         if (fallbackProfile is not null)
-            return VoiceResolution.Ready(fallbackProfile.Reference);
+            return UseVoice(line, language, currentModelHash, fallbackProfile);
         domainPool?.RequestMissingResolution(casting, language, line.VoiceSex, followsSpeaker: true);
         throw new InvalidOperationException(
             $"No prepared transient Base fallback exists for domain '{casting.DomainId}' "
@@ -2279,7 +2325,13 @@ public sealed class SessionCoordinator : IAsyncDisposable
         Volatile.Write(ref autoAdvanceDispatching, 0);
         audio?.Stop();
         lipSync.Stop(avoidFrameworkDispatch);
-        if (session is { } current) scheduler?.InvalidateEpoch(current.Epoch);
+        if (session is { } current)
+        {
+            scheduler?.InvalidateEpoch(current.Epoch);
+            var scenePrefix = $"scene-fallback:{current.Epoch}:";
+            foreach (var key in profileCache.Keys.Where(key => key.StartsWith(scenePrefix, StringComparison.Ordinal)))
+                profileCache.TryRemove(key, out _);
+        }
         session?.Dispose();
         session = null;
         prefetcher.EndSession();

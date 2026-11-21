@@ -249,31 +249,21 @@ public sealed class VoiceRegistry(Database database)
         var normalized = NormalizeDisplayName(displayName);
         if (normalized.Length == 0) return null;
         await using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT s.stable_key,s.display_name,
-                   p.id,p.kind,p.language,p.model_hash,p.palette_version,p.design_instruction,p.seed,
-                   p.ref_text,p.speaker_embedding,p.rvq_codes,p.rvq_length,p.codebooks,
-                   p.domain_id,p.catalog_version,p.traits_json,p.variant_traits_json,
-                   p.source_metadata,p.profile_hash,p.created_utc
-            FROM speaker_voice sv
-            JOIN speaker s ON s.id=sv.speaker_id
-            JOIN voice_profile p ON p.id=sv.profile_id
-            WHERE p.language=$language AND p.model_hash=$model
-            ORDER BY sv.priority DESC,p.created_utc DESC,p.id DESC
-            """;
-        command.Parameters.AddWithValue("$language", language);
-        command.Parameters.AddWithValue("$model", modelHash);
-        SpeakerVoiceMatch? result = null;
-        await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
-        while (await reader.ReadAsync(token).ConfigureAwait(false))
+        command.CommandText = "SELECT id,stable_key,display_name FROM speaker WHERE stable_key NOT LIKE 'fallback:%'";
+        (long Id, string Key, string Name)? match = null;
+        await using (var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false))
         {
-            var candidateName = reader.GetString(1);
-            if (NormalizeDisplayName(candidateName) != normalized) continue;
-            var stableKey = reader.GetString(0);
-            if (result is not null && result.StableKey != stableKey) return null;
-            result ??= new(stableKey, candidateName, ReadProfile(reader, 2));
+            while (await reader.ReadAsync(token).ConfigureAwait(false))
+            {
+                var candidateName = reader.GetString(2);
+                if (NormalizeDisplayName(candidateName) != normalized) continue;
+                if (match is not null) return null;
+                match = (reader.GetInt64(0), reader.GetString(1), candidateName);
+            }
         }
-        return result;
+        if (match is not { } speaker) return null;
+        var profile = await GetBestVoiceCore(connection, speaker.Id, language, modelHash, token).ConfigureAwait(false);
+        return profile is null ? null : new SpeakerVoiceMatch(speaker.Key, speaker.Name, profile);
     }, token);
 
     public Task<IReadOnlyList<NamedVoiceProfile>> GetOfficialVoiceProfilesAsync(

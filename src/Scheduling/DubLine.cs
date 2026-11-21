@@ -31,7 +31,8 @@ public sealed record ResolvedLineSpeaker(
     string VoiceArchetype,
     DialogueActor? Actor,
     string? CastingSlotId = null,
-    string? Language = null);
+    string? Language = null,
+    string? FallbackSpeakerKey = null);
 
 public sealed class DubLine : IDisposable
 {
@@ -51,6 +52,7 @@ public sealed class DubLine : IDisposable
     public string? OfficialVoiceGroupId { get; set; }
     public long? SpeakerId { get; set; }
     public bool TransientSpeaker { get; set; }
+    public string? FallbackSpeakerKey { get; set; }
     public bool DirectSynthesisCompleted { get; set; }
     public bool ApplyBaseCloneCorrection { get; set; }
     public bool CanStartStreaming { get; set; }
@@ -89,6 +91,7 @@ public sealed class DubLine : IDisposable
         SpeakerId = speaker.SpeakerId;
         CastingEvidence = speaker.Evidence;
         Casting = speaker.Casting;
+        FallbackSpeakerKey = speaker.FallbackSpeakerKey;
         CastingSlotId = speaker.CastingSlotId;
         VoiceSex = speaker.VoiceSex;
         VoiceArchetype = speaker.VoiceArchetype;

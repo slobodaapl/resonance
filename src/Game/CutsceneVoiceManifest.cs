@@ -17,6 +17,19 @@ public sealed record CutsceneVoiceLine(
     string? ActorTokenHash = null,
     uint? ActorNpcBaseId = null)
 {
+    public static string? FallbackSpeakerKey(string? cutscenePath, string actorToken, string displayName)
+    {
+        if (cutscenePath is null) return null;
+        var parts = cutscenePath.Split('/');
+        if (parts.Length < 3) return null;
+        var actor = DialogueText.NormalizeSpeaker(actorToken);
+        var name = DialogueText.NormalizeSpeaker(displayName);
+        if (actor.Length == 0 || name.Length == 0 || actor.All(Char.IsDigit)
+            || actor is "all" or "system" or "narration" or "narrator" or "memory" or "nonevoice")
+            return null;
+        return $"cutb:{parts[0]}:{parts[1]}:{actor}:{name}";
+    }
+
     public string SourceKey { get; init; } = Key;
     public int? SourceOffset { get; init; }
     public string NodeId { get; init; } = Convert.ToHexString(
