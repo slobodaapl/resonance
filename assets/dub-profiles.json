@@ -1458,6 +1458,32 @@
       "fallbackDimensions": "sex_age"
     },
     {
+      "id": "qiqirn",
+      "confidence": "B",
+      "prompts": {
+        "english": "Natural English dialogue with precise bright woodland resonance, deliberate communal pacing and patient clarity.",
+        "neutral": "Natural dialogue with precise bright woodland resonance, deliberate communal pacing and patient clarity."
+      },
+      "slotTemplates": {
+        "masculine": [
+          "m_young_light",
+          "m_adult_grounded",
+          "m_adult_resonant",
+          "m_elder_measured",
+          "m_adult_formal"
+        ],
+        "feminine": [
+          "f_young_light",
+          "f_adult_grounded",
+          "f_adult_warm",
+          "f_elder_measured",
+          "f_adult_formal"
+        ]
+      },
+      "fallbackDimensions": "none",
+      "sharedVoice": true
+    },
+    {
       "id": "kojin",
       "confidence": "B",
       "prompts": {
@@ -2189,7 +2215,19 @@
       "id": "rule_species_qitari",
       "kind": "species",
       "value": "Qitari",
-      "domainId": "qitari",
+      "domainId": "qiqirn",
+      "modifierIds": [
+        "species_qitari"
+      ],
+      "speakerCategory": "non_humanoid",
+      "priority": 110,
+      "confidence": "B"
+    },
+    {
+      "id": "rule_species_qiqirn",
+      "kind": "species",
+      "value": "Qiqirn",
+      "domainId": "qiqirn",
       "modifierIds": [
         "species_qitari"
       ],
@@ -2743,6 +2781,23 @@
         ],
         "modelTypes": [
           3
+        ]
+      }
+    },
+    {
+      "id": "metadata_qiqirn",
+      "domainId": "qiqirn",
+      "modifierIds": [
+        "species_qitari"
+      ],
+      "speakerCategory": "non_humanoid",
+      "source": "species",
+      "priority": 140,
+      "confidence": "B",
+      "match": {
+        "modelCharaIds": [
+          14,
+          1726
         ]
       }
     },

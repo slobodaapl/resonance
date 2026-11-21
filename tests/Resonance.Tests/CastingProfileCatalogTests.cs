@@ -100,6 +100,12 @@ public sealed class CastingProfileCatalogTests
         Assert.Equal("ananta", ananta.DomainId);
         Assert.Equal(CastingEvidenceSource.Species, ananta.Source);
 
+        var serpent = catalog.Resolve(new SpeakerCastingEvidence(
+            "npc:stopple-serpent", Category: "non_humanoid", Species: "Qitari",
+            ModelFamilyId: 8333, ModelType: 3));
+        Assert.Equal("qitari", serpent.DomainId);
+        Assert.Equal(CastingEvidenceSource.Species, serpent.Source);
+
         var ondo = catalog.Resolve(new SpeakerCastingEvidence(
             "npc:ondo", "Tempest", Category: "non_humanoid",
             ModelFamilyId: 1007, ModelType: 2, ModelVariant: 5));
@@ -508,7 +514,8 @@ public sealed class CastingProfileCatalogTests
             ("Moogle", "moogle"),
             ("Goblin", "goblin"),
             ("Fuath", "fuath"),
-            ("Qitari", "qitari"),
+            ("Qiqirn", "qiqirn"),
+            ("Qitari", "qiqirn"),
             ("Kojin", "kojin"),
         };
 

@@ -656,6 +656,19 @@
       ]
     },
     {
+      "id": "qiqirn",
+      "flavor": "",
+      "anchors": {},
+      "weight": 0,
+      "sources": [
+        "https://www.youtube.com/watch?v=B0O_BrMIhww&t=0s"
+      ],
+      "recording": {
+        "audioFile": "external/popper-0-8.wav",
+        "transcript": "Clown man is dead. Oh well. Want a treato?"
+      }
+    },
+    {
       "id": "kojin",
       "flavor": "",
       "anchors": {},

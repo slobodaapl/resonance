@@ -8585,6 +8585,83 @@
       "actorTokens": [
         "ZURMURWUR"
       ]
+    },
+    {
+      "id": "ketill",
+      "label": "Ketill",
+      "npcBaseIds": [
+        1058625
+      ],
+      "aliases": {
+        "english": [
+          "Ketill"
+        ],
+        "japanese": [
+          "ケティル"
+        ],
+        "german": [
+          "Ketill"
+        ],
+        "french": [
+          "Ketill"
+        ]
+      },
+      "sources": {},
+      "actorTokens": [
+        "KETILL"
+      ]
+    },
+    {
+      "id": "salvagecrewa",
+      "label": "Salvage Crew A",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SALVAGECREWA"
+      ]
+    },
+    {
+      "id": "salvagecrewb",
+      "label": "Salvage Crew B",
+      "npcBaseIds": [],
+      "aliases": {},
+      "sources": {},
+      "actorTokens": [
+        "SALVAGECREWB"
+      ]
+    },
+    {
+      "id": "visna",
+      "label": "Visna",
+      "npcBaseIds": [
+        1058085,
+        1058868,
+        1058877,
+        1058881,
+        1059372,
+        1059557,
+        1059561,
+        1059565
+      ],
+      "aliases": {
+        "english": [
+          "Visna"
+        ],
+        "japanese": [
+          "ヴィスナ"
+        ],
+        "german": [
+          "Visna"
+        ],
+        "french": [
+          "Visna"
+        ]
+      },
+      "sources": {},
+      "actorTokens": [
+        "VISNA"
+      ]
     }
   ]
 }

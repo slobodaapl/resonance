@@ -7,6 +7,7 @@
     "kojin",
     "mechanoid",
     "omicron",
+    "qiqirn",
     "vath"
   ],
   "domains": {
@@ -392,12 +393,12 @@
       "feminine_elder": "mix_fuath_emphatic_feminine_elder"
     },
     "qitari": {
-      "masculine_young": "mix_qitari_emphatic_masculine_child",
-      "masculine_adult": "mix_qitari_emphatic_masculine_adult",
-      "masculine_elder": "mix_qitari_emphatic_masculine_elder",
-      "feminine_young": "mix_qitari_emphatic_feminine_child",
-      "feminine_adult": "mix_qitari_emphatic_feminine_adult",
-      "feminine_elder": "mix_qitari_emphatic_feminine_elder"
+      "masculine_young": "mix_ananta_emphatic_masculine_child",
+      "masculine_adult": "mix_ananta_emphatic_masculine_adult",
+      "masculine_elder": "mix_ananta_emphatic_masculine_elder",
+      "feminine_young": "mix_ananta_emphatic_feminine_child",
+      "feminine_adult": "mix_ananta_emphatic_feminine_adult",
+      "feminine_elder": "mix_ananta_emphatic_feminine_elder"
     }
   }
 }
