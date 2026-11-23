@@ -83,12 +83,9 @@ public sealed partial class TalkObserver : IDisposable
 
         visible = true;
         addonAddress = args.Addon.Address;
-        var speaker = Normalize(addon->AtkTextNode220 == null
-            ? string.Empty
-            : new ReadOnlySeString(addon->AtkTextNode220->NodeText).ToString());
-        if (speaker.Length == 0) speaker = "Narrator";
-        var text = Normalize(new ReadOnlySeString(addon->String268).ToString());
-        var presentation = identity.Read(args.Addon.Address);
+        var content = ReadContent(addon);
+        var (speaker, text) = content;
+        var presentation = identity.Read(addonAddress, content);
         if (text.Length == 0 || (speaker == lastSpeaker && text == lastText
             && (presentation?.Sequence ?? 0) == lastPresentation))
         {
@@ -335,19 +332,22 @@ public sealed partial class TalkObserver : IDisposable
         return true;
     }
 
-    public unsafe bool IsPresentationReady(long serial) =>
-        visible && TalkAdvancePolicy.CanStartSyntheticPlayback(
-            serial, Current?.Serial, presentationReadySerial, lastPresentation,
-            identity.Read(addonAddress)?.Sequence ?? 0, LiveContentMatches((AddonTalk*)addonAddress));
-
-    private unsafe bool LiveContentMatches(AddonTalk* addon)
+    public unsafe bool IsPresentationReady(long serial)
     {
+        var addon = (AddonTalk*)addonAddress;
         if (addon == null || !addon->IsVisible || Current is not { } current) return false;
+        var content = ReadContent(addon);
+        return visible && TalkAdvancePolicy.CanStartSyntheticPlayback(
+            serial, current.Serial, presentationReadySerial, lastPresentation,
+            identity.Read(addonAddress, content)?.Sequence ?? 0, content == (current.Speaker, current.Text));
+    }
+
+    internal static unsafe (string Speaker, string Text) ReadContent(AddonTalk* addon)
+    {
         var speaker = Normalize(addon->AtkTextNode220 == null ? String.Empty
             : new ReadOnlySeString(addon->AtkTextNode220->NodeText).ToString());
         if (speaker.Length == 0) speaker = "Narrator";
-        return speaker == current.Speaker
-            && Normalize(new ReadOnlySeString(addon->String268).ToString()) == current.Text;
+        return (speaker, Normalize(new ReadOnlySeString(addon->String268).ToString()));
     }
 
     private static unsafe bool IsPresentationReady(AddonTalk* addon)

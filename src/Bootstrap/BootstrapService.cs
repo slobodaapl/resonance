@@ -154,7 +154,7 @@ public sealed class BootstrapService : IAsyncDisposable
             if (installedRuntime is not null)
             {
                 // The Windows loader can resolve DLL imports against a previously loaded pack.
-                WindowsNativeLibrary.RequireUnloaded(["qwen.dll", "ggml.dll", "ggml-base.dll"]);
+                WindowsNativeLibrary.RequireCompatibleRuntime(installedRuntime);
                 runtimeDirectory = installedRuntime;
             }
             else if (!File.Exists(Path.Combine(runtimeDirectory, "qwen.dll")))

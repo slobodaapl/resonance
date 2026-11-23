@@ -7,6 +7,7 @@ using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using FFXIVClientStructs.STD;
 using FFXIVClientStructs.FFXIV.Client.Sound;
+using FFXIVClientStructs.FFXIV.Client.UI;
 using NativeFramework = FFXIVClientStructs.FFXIV.Client.System.Framework.Framework;
 
 namespace Resonance.Game;
@@ -78,7 +79,7 @@ public sealed unsafe class NativeTalkIdentity : IDisposable
         }
     }
 
-    public DialoguePresentation? Read(nint addon) => identity.Read(addon);
+    public DialoguePresentation? Read(nint addon, (string Speaker, string Text) content) => identity.Read(addon, content);
     public bool? TryAdvance(nint addon) => advanceTalk == null ? null : advanceTalk(addon) != 0;
 
     private void OnClipTalk(nint clip)
@@ -181,7 +182,7 @@ public sealed unsafe class NativeTalkIdentity : IDisposable
         if (count == 0 || address == 0) return;
         var type = ((AtkValue*)address)->Type & AtkValueType.TypeMask;
         if (type is AtkValueType.String or AtkValueType.ConstString)
-            identity.Present(args.Addon.Address, ((AtkValue*)address)->String.ToString());
+            identity.Present(args.Addon.Address, TalkObserver.ReadContent((AddonTalk*)args.Addon.Address));
     }
 
     private void OnFinalize(AddonEvent _, AddonArgs args) => identity.Finalize(args.Addon.Address);

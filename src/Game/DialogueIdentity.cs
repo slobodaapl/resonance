@@ -19,7 +19,7 @@ public sealed class DialogueIdentity
 {
     private readonly Dictionary<(nint Owner, nint Entry),
         (DialogueActor? Actor, DialogueRow? Row, DialogueVoice? NativeVoice)> queued = [];
-    private readonly Dictionary<nint, (string Text, DialoguePresentation Presentation)> presentations = [];
+    private readonly Dictionary<nint, ((string Speaker, string Text) Content, DialoguePresentation Presentation)> presentations = [];
     private long sequence;
     private DialogueActor? presenting;
     private DialogueRow? presentingRow;
@@ -64,14 +64,14 @@ public sealed class DialogueIdentity
             queued.Remove(key);
     }
 
-    public void Present(nint addon, string text = "")
+    public void Present(nint addon, (string Speaker, string Text) content)
     {
-        if (!dispatching && presentations.TryGetValue(addon, out var previous) && previous.Text == text) return;
-        presentations[addon] = (text, new(++sequence, presenting, presentingRow, presentingVoice));
+        if (!dispatching && presentations.TryGetValue(addon, out var previous) && previous.Content == content) return;
+        presentations[addon] = (content, new(++sequence, presenting, presentingRow, presentingVoice));
     }
 
-    public DialoguePresentation? Read(nint addon) =>
-        presentations.TryGetValue(addon, out var value) ? value.Presentation : null;
+    public DialoguePresentation? Read(nint addon, (string Speaker, string Text) content) =>
+        presentations.TryGetValue(addon, out var value) && value.Content == content ? value.Presentation : null;
     public void Finalize(nint addon) => presentations.Remove(addon);
     public void Clear()
     {
