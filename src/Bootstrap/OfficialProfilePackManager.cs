@@ -29,6 +29,7 @@ public sealed class OfficialProfilePackManager : IDisposable
     private readonly VoiceRegistry voices;
     private readonly OfficialVoiceCatalog catalog;
     private readonly CastingProfileCatalog castingCatalog;
+    private readonly VoiceDataMigrations migrations;
     private readonly HttpClient http;
     private readonly bool ownsHttp;
     private readonly Uri manifestUri;
@@ -42,13 +43,15 @@ public sealed class OfficialProfilePackManager : IDisposable
         OfficialVoiceCatalog catalog,
         CastingProfileCatalog castingCatalog,
         HttpClient? httpClient = null,
-        string manifestUrl = DefaultManifestUrl)
+        string manifestUrl = DefaultManifestUrl,
+        Action<string, Exception?>? reportMigration = null)
     {
         directory = Path.Combine(Path.GetFullPath(dataDirectory), "official-profile-pack");
         this.database = database;
         this.voices = voices;
         this.catalog = catalog;
         this.castingCatalog = castingCatalog;
+        migrations = new(database, castingCatalog.Version, reportMigration);
         ownsHttp = httpClient is null;
         http = httpClient ?? new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
         manifestUri = new Uri(manifestUrl, UriKind.Absolute);
@@ -56,6 +59,8 @@ public sealed class OfficialProfilePackManager : IDisposable
             throw new ArgumentException("Official profile manifest must use HTTPS", nameof(manifestUrl));
         Directory.CreateDirectory(directory);
     }
+
+    internal Task<int> MigrateInstalledVoicesAsync(CancellationToken token) => migrations.RunAsync(null, token);
 
     public async Task<OfficialProfilePackSyncResult> SynchronizeAsync(
         string modelHash,
@@ -72,6 +77,8 @@ public sealed class OfficialProfilePackManager : IDisposable
                 ReconciledAssignments = await voices.ReconcileOfficialAssignmentsAsync(catalog, modelHash, token)
                     .ConfigureAwait(false)
                     + await voices.ReconcileRegionalAssignmentsAsync(castingCatalog, modelHash, token)
+                        .ConfigureAwait(false)
+                    + await migrations.RunAsync(modelHash, token)
                         .ConfigureAwait(false),
             };
         }

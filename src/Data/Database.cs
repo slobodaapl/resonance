@@ -33,6 +33,12 @@ public sealed class Database : IDisposable
         command.CommandText = """
             CREATE TABLE IF NOT EXISTS schema_version(version INTEGER NOT NULL);
             INSERT INTO schema_version(version) SELECT 6 WHERE NOT EXISTS(SELECT 1 FROM schema_version);
+            CREATE TABLE IF NOT EXISTS voice_data_migration(
+              migration_id INTEGER NOT NULL,
+              model_hash TEXT NOT NULL,
+              applied_utc TEXT NOT NULL,
+              PRIMARY KEY(migration_id, model_hash)
+            );
 
             CREATE TABLE IF NOT EXISTS speaker(
               id INTEGER PRIMARY KEY,

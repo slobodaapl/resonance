@@ -57,6 +57,7 @@ public sealed class Plugin : IDalamudPlugin
     private Task? disposeTask;
     private Exception? startupFailure;
     private string? notifiedFallbackKey;
+    private IActiveNotification? cudaDownloadNotification;
     private int disposed;
     private int openSettingsRequested;
 
@@ -77,6 +78,7 @@ public sealed class Plugin : IDalamudPlugin
             message => Log.Information("Casting configuration: {Message}", message));
         PluginInterface.SavePluginConfig(Configuration);
         PluginInterface.UiBuilder.Draw += windows.Draw;
+        Framework.Update += UpdateCudaDownloadNotification;
         PluginInterface.UiBuilder.DisableCutsceneUiHide = true;
         PluginInterface.UiBuilder.OpenConfigUi += OpenConfigUi;
         PluginInterface.UiBuilder.OpenMainUi += OpenMainUi;
@@ -164,7 +166,13 @@ public sealed class Plugin : IDalamudPlugin
             var createdDatabase = database = new Database(Path.Combine(dataDirectory, "resonance.sqlite3"));
             var createdVoices = new VoiceRegistry(createdDatabase);
             var createdOfficialProfilePacks = officialProfilePacks = new OfficialProfilePackManager(
-                dataDirectory, createdDatabase, createdVoices, officialVoiceCatalog, catalog);
+                dataDirectory, createdDatabase, createdVoices, officialVoiceCatalog, catalog,
+                reportMigration: (message, error) =>
+                {
+                    if (error is null) Log.Debug("{VoiceDataMigration}", message);
+                    else Log.Warning(error, "{VoiceDataMigration}", message);
+                });
+            createdOfficialProfilePacks.MigrateInstalledVoicesAsync(startupShutdown.Token).GetAwaiter().GetResult();
             var createdCutscenes = cutscenes = new CutsceneDetector(Condition);
             SessionCoordinator? createdCoordinator = null;
             var createdTalk = talk = new TalkObserver(
@@ -282,7 +290,8 @@ public sealed class Plugin : IDalamudPlugin
             createdBootstrap.Ready += OnRuntimeReady;
             createdBootstrap.OptionalRuntimeFailed += OnOptionalRuntimeFailed;
             createdBootstrap.OptionalPreparationFailed += OnOptionalPreparationFailed;
-            createdBootstrap.CudaDriverProbeCompleted += OnCudaDriverProbeCompleted;
+            createdBootstrap.CudaDownloadStarted += OnCudaDownloadStarted;
+            createdBootstrap.CudaSetupCompleted += OnCudaSetupCompleted;
             createdBootstrap.Start();
         }
     }
@@ -310,7 +319,11 @@ public sealed class Plugin : IDalamudPlugin
             manager.SelectionChanged += OnBackendSelection;
         }
         if (manager.Selection is not null) OnBackendSelection(manager.Selection);
-        if (bootstrap?.IsChangingQuality != true) StartOfficialProfilePackSync(manager.ModelHash);
+        if (bootstrap?.IsChangingQuality != true)
+        {
+            WarnIfProtonCudaBridgeMissing(manager);
+            StartOfficialProfilePackSync(manager.ModelHash);
+        }
     }
 
     private void StartOfficialProfilePackSync(string modelHash)
@@ -363,11 +376,13 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnBackendSelectionOnFramework(BackendSelection selection)
     {
+        if (!ReferenceEquals(notifiedRuntime?.Selection, selection)) return;
         if (!selection.IsTemporaryCpuFallback || selection.Error is null || !selection.NotifyError)
         {
             notifiedFallbackKey = null;
             return;
         }
+        if (selection.Desired.Type == BackendType.Cuda && bootstrap?.CudaSetup is not null) return;
         var key = $"{selection.Desired.Name}\0{selection.Effective.Name}\0{selection.Error}";
         if (notifiedFallbackKey == key) return;
         notifiedFallbackKey = key;
@@ -390,19 +405,62 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnOptionalRuntimeFailed(Exception error)
     {
+        var cuda = bootstrap?.CudaSetup?.Error is not null;
         QueueFrameworkUi(() =>
         {
             Log.Warning(error, "Optional accelerated runtime installation failed");
             Notifications.AddNotification(new Notification
             {
-                Title = "Resonance acceleration pack unavailable",
-                Content = $"CPU/Vulkan remain available. Optional runtime download failed: {error.Message}",
+                Title = cuda ? "Resonance CUDA setup failed" : "Resonance acceleration setup failed",
+                Content = error.Message,
                 Type = NotificationType.Warning,
                 InitialDuration = TimeSpan.FromSeconds(12),
                 Minimized = true,
             });
         }, "Optional runtime failure notification dispatch failed");
     }
+
+    private void OnCudaDownloadStarted() => QueueFrameworkUi(() =>
+    {
+        if (bootstrap?.CudaSetup is not { Error: null }) return;
+        cudaDownloadNotification = Notifications.AddNotification(new Notification
+        {
+            Title = "Resonance is downloading CUDA support",
+            Content = "A CUDA device was detected. Track the download in Resonance settings (/resonance).",
+            Type = NotificationType.Info,
+            InitialDuration = TimeSpan.MaxValue,
+            ShowIndeterminateIfNoExpiry = false,
+            Minimized = false,
+        });
+    }, "CUDA download notification dispatch failed");
+
+    private void UpdateCudaDownloadNotification(IFramework framework)
+    {
+        if (cudaDownloadNotification is not { } notification) return;
+        if (notification.DismissReason is not null)
+        {
+            cudaDownloadNotification = null;
+            return;
+        }
+        if (bootstrap?.CudaSetup is not { Error: null, Progress: { } progress })
+        {
+            notification.DismissNow();
+            cudaDownloadNotification = null;
+            return;
+        }
+        var fraction = (float)progress.BytesReceived / progress.TotalBytes;
+        if (fraction >= 1 && notification.Progress < 1)
+        {
+            notification.Title = "Resonance is preparing CUDA support";
+            notification.Content = "Resonance is verifying the runtime pack before loading the CUDA backend.";
+        }
+        notification.Progress = fraction;
+    }
+
+    private void OnCudaSetupCompleted(RuntimeManager manager) => QueueFrameworkUi(() =>
+    {
+        if (manager.Selection is { } selection) OnBackendSelectionOnFramework(selection);
+    }, "CUDA setup completion notification dispatch failed");
 
     private void OnOptionalPreparationFailed(Exception error)
     {
@@ -420,10 +478,12 @@ public sealed class Plugin : IDalamudPlugin
         }, "Optional preparation failure notification dispatch failed");
     }
 
-    private void OnCudaDriverProbeCompleted()
+    private void WarnIfProtonCudaBridgeMissing(RuntimeManager manager)
     {
         var boot = bootstrap;
         if (boot?.CudaDriverAvailable != false || !boot.IsWineRuntime) return;
+        if (manager.Selection?.Desired.Type != BackendType.Cuda && !manager.DetectedBackends.Any(backend =>
+                backend.Description.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase))) return;
         var missing = boot.MissingProtonCudaVariables;
         var content = missing.Count > 0
             ? $"Launch XIVLauncher with {String.Join(" and ", missing.Select(name => $"{name}=1"))}, then fully restart XIVLauncher and FFXIV. CPU/Vulkan remain available."
@@ -660,6 +720,9 @@ public sealed class Plugin : IDalamudPlugin
     {
         CommandManager.RemoveHandler("/resonance");
         PluginInterface.UiBuilder.Draw -= windows.Draw;
+        Framework.Update -= UpdateCudaDownloadNotification;
+        cudaDownloadNotification?.DismissNow();
+        cudaDownloadNotification = null;
         PluginInterface.UiBuilder.OpenConfigUi -= OpenConfigUi;
         PluginInterface.UiBuilder.OpenMainUi -= OpenMainUi;
         if (bootstrap is not null)
@@ -668,7 +731,8 @@ public sealed class Plugin : IDalamudPlugin
             bootstrap.Ready -= OnRuntimeReady;
             bootstrap.OptionalRuntimeFailed -= OnOptionalRuntimeFailed;
             bootstrap.OptionalPreparationFailed -= OnOptionalPreparationFailed;
-            bootstrap.CudaDriverProbeCompleted -= OnCudaDriverProbeCompleted;
+            bootstrap.CudaDownloadStarted -= OnCudaDownloadStarted;
+            bootstrap.CudaSetupCompleted -= OnCudaSetupCompleted;
         }
         if (bootstrap?.RuntimeManager is { } manager)
             manager.SelectionChanged -= OnBackendSelection;

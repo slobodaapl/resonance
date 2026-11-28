@@ -8,6 +8,8 @@ namespace Resonance.Bootstrap;
 
 public enum BootstrapState { Starting, DownloadingRuntime, DownloadingBase, InitializingRuntime, Ready, BenchmarkingBackends, Failed, Stopped }
 
+internal sealed record CudaSetupStatus(AssetProgress? Progress = null, string? Error = null);
+
 public sealed class BootstrapService : IAsyncDisposable
 {
     private readonly CancellationTokenSource shutdown = new();
@@ -23,6 +25,9 @@ public sealed class BootstrapService : IAsyncDisposable
     private readonly object disposeGate = new();
     private readonly IProcessLifetimeLease lifetimeLease;
     private readonly Func<PreparedModelQuality, CancellationToken, Task<RuntimeManager>> runtimeFactory;
+    private readonly Action<string> configureNativeRuntime;
+    private readonly Func<(bool BridgeAvailable, bool DeviceAvailable)> probeCuda;
+    private volatile CudaSetupStatus? cudaSetup;
     private Task? task;
     private Task? optionalRuntimeTask;
     private Task? disposeTask;
@@ -40,6 +45,8 @@ public sealed class BootstrapService : IAsyncDisposable
     internal PreparedModelQuality? ActiveModels { get; private set; }
     public Exception? Failure { get; private set; }
     public bool? CudaDriverAvailable { get; private set; }
+    internal bool CudaDeviceAvailable { get; private set; }
+    internal CudaSetupStatus? CudaSetup => cudaSetup;
     public bool IsWineRuntime { get; private set; }
     public IReadOnlyList<string> MissingProtonCudaVariables { get; private set; } = [];
     public AssetProgress? CurrentProgress { get; private set; }
@@ -49,12 +56,15 @@ public sealed class BootstrapService : IAsyncDisposable
     public event Action<RuntimeManager>? Ready;
     public event Action<Exception>? OptionalRuntimeFailed;
     public event Action<Exception>? OptionalPreparationFailed;
-    public event Action? CudaDriverProbeCompleted;
+    internal event Action? CudaDownloadStarted;
+    internal event Action<RuntimeManager>? CudaSetupCompleted;
 
     internal BootstrapService(string pluginDirectory, string dataDirectory, Configuration configuration, Action saveConfiguration,
         IProcessLifetimeLease lifetimeLease,
         Func<PreparedModelQuality, CancellationToken, Task<RuntimeManager>>? runtimeFactory = null,
-        HttpClient? modelHttpClient = null)
+        HttpClient? modelHttpClient = null, HttpClient? runtimeHttpClient = null,
+        Func<(bool BridgeAvailable, bool DeviceAvailable)>? probeCuda = null,
+        Action<string>? configureNativeRuntime = null)
     {
         this.lifetimeLease = lifetimeLease ?? throw new ArgumentNullException(nameof(lifetimeLease));
         manifestPath = Path.Combine(pluginDirectory, "assets", "models.json");
@@ -63,17 +73,30 @@ public sealed class BootstrapService : IAsyncDisposable
         runtimeDirectory = Path.Combine(dataDirectory, "runtimes");
         referenceExtractorPath = StageReferenceExtractor(pluginDirectory, dataDirectory);
         referenceExtractionDirectory = Path.Combine(dataDirectory, "reference-extraction");
-        runtimePacks = new RuntimePackManager(runtimeDirectory, Path.Combine(dataDirectory, "runtime-downloads"));
+        runtimePacks = new RuntimePackManager(runtimeDirectory, Path.Combine(dataDirectory, "runtime-downloads"),
+            runtimeHttpClient);
         void ReportProgress(AssetProgress value)
         {
             CurrentProgress = value;
             Progress?.Invoke(value);
         }
         assets.Progress += ReportProgress;
-        runtimePacks.Progress += ReportProgress;
+        runtimePacks.Progress += value =>
+        {
+            if (!value.Id.Equals("runtime-cuda", StringComparison.OrdinalIgnoreCase))
+            {
+                ReportProgress(value);
+                return;
+            }
+            var started = cudaSetup?.Progress is null;
+            cudaSetup = new(value);
+            if (started) CudaDownloadStarted?.Invoke();
+        };
         this.configuration = configuration;
         this.saveConfiguration = saveConfiguration;
         this.runtimeFactory = runtimeFactory ?? CreateRuntimeAsync;
+        this.probeCuda = probeCuda ?? CudaDriverProbe.Probe;
+        this.configureNativeRuntime = configureNativeRuntime ?? QwenCppRuntime.ConfigureNativeRuntimeDirectory;
     }
 
     private static string StageReferenceExtractor(string pluginDirectory, string dataDirectory)
@@ -138,6 +161,7 @@ public sealed class BootstrapService : IAsyncDisposable
 
     private async Task RunAsync(CancellationToken token)
     {
+        using var optionalShutdown = CancellationTokenSource.CreateLinkedTokenSource(token);
         try
         {
             var manifest = await AssetManager.LoadManifestAsync(manifestPath, token).ConfigureAwait(false);
@@ -161,7 +185,22 @@ public sealed class BootstrapService : IAsyncDisposable
             {
                 throw new InvalidDataException("No core runtime pack is declared and no development runtime is installed");
             }
-            QwenCppRuntime.ConfigureNativeRuntimeDirectory(runtimeDirectory);
+            configureNativeRuntime(runtimeDirectory);
+
+            IsWineRuntime = RuntimeEnvironmentIdentity.IsWine();
+            MissingProtonCudaVariables = RuntimeEnvironmentIdentity.MissingProtonCudaVariables(
+                IsWineRuntime, Environment.GetEnvironmentVariable);
+            var cuda = probeCuda();
+            CudaDriverAvailable = cuda.BridgeAvailable;
+            CudaDeviceAvailable = cuda.DeviceAvailable;
+            var prepareCuda = CudaDeviceAvailable && runtimeManifest.Artifacts.Any(artifact =>
+                artifact.Id.Equals("cuda", StringComparison.OrdinalIgnoreCase));
+            if (prepareCuda) cudaSetup = new();
+            var managerReady = new TaskCompletionSource<RuntimeManager>(TaskCreationOptions.RunContinuationsAsynchronously);
+            optionalRuntimeTask = EnsureOptionalRuntimesAsync(managerReady.Task, runtimeManifest,
+                prepareCuda, optionalShutdown.Token);
+
+            CurrentProgress = null;
             SetState(BootstrapState.DownloadingBase);
             var basePath = await assets.EnsureAsync(baseModel, token).ConfigureAwait(false);
             var codecPath = await assets.EnsureAsync(tokenizer, token).ConfigureAwait(false);
@@ -172,10 +211,12 @@ public sealed class BootstrapService : IAsyncDisposable
             RuntimeManager = manager;
             SetState(BootstrapState.Ready);
             Ready?.Invoke(manager);
-            optionalRuntimeTask = EnsureOptionalRuntimesAsync(manager, runtimeManifest, token);
+            managerReady.SetResult(manager);
             try
             {
-                if (optionalRuntimeTask is not null) await optionalRuntimeTask.ConfigureAwait(false);
+                await optionalRuntimeTask.ConfigureAwait(false);
+                token.ThrowIfCancellationRequested();
+                if (prepareCuda) CudaSetupCompleted?.Invoke(manager);
                 SetState(BootstrapState.Ready);
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
@@ -201,6 +242,14 @@ public sealed class BootstrapService : IAsyncDisposable
         {
             Failure = error;
             SetState(BootstrapState.Failed);
+        }
+        finally
+        {
+            if (optionalRuntimeTask is { IsCompleted: false } pending)
+            {
+                optionalShutdown.Cancel();
+                await pending.ConfigureAwait(false);
+            }
         }
     }
 
@@ -356,29 +405,35 @@ public sealed class BootstrapService : IAsyncDisposable
         }
     }
 
-    private async Task EnsureOptionalRuntimesAsync(RuntimeManager manager, RuntimePackManifest runtimeManifest,
-        CancellationToken token)
+    private async Task EnsureOptionalRuntimesAsync(Task<RuntimeManager> managerReady, RuntimePackManifest runtimeManifest,
+        bool prepareCuda, CancellationToken token)
     {
         try
         {
-            IsWineRuntime = RuntimeEnvironmentIdentity.IsWine();
-            MissingProtonCudaVariables = RuntimeEnvironmentIdentity.MissingProtonCudaVariables(
-                IsWineRuntime, Environment.GetEnvironmentVariable);
-            CudaDriverAvailable = CudaDriverProbe.IsAvailable();
-            CudaDriverProbeCompleted?.Invoke();
+            // Keep DLL installation out of the initial backend scan while downloading in parallel with the models.
+            if (prepareCuda)
+                await runtimePacks.EnsureMatchingAsync(runtimeManifest, [], token, installCudaAfter: managerReady)
+                    .ConfigureAwait(false);
+            var manager = await managerReady.WaitAsync(token).ConfigureAwait(false);
             await runtimePacks.EnsureMatchingAsync(runtimeManifest, manager.DetectedBackends, token,
-                CudaDriverAvailable.Value).ConfigureAwait(false);
+                cudaDriverAvailable: false).ConfigureAwait(false);
             await manager.RefreshBackendsAsync(token).ConfigureAwait(false);
+            if (prepareCuda && !manager.DetectedBackends.Any(candidate => candidate.Type == BackendType.Cuda))
+                throw new InvalidOperationException(QwenCppRuntime.CudaLoadError ?? "The CUDA backend did not detect a usable device.");
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested
-                                                 && !manager.HasAbandonedReferenceProcess) { }
+                                                 && RuntimeManager?.HasAbandonedReferenceProcess != true) { }
         catch (Exception error)
         {
-            CudaDriverAvailable ??= false;
-            if (manager.HasNativeOwnershipFailure)
+            if (prepareCuda) cudaSetup = new(Error: error.Message);
+            if (RuntimeManager?.HasNativeOwnershipFailure == true)
                 throw new InvalidOperationException(
                     "Native inference ownership is poisoned; restart is required", error);
             OptionalRuntimeFailed?.Invoke(error);
+        }
+        finally
+        {
+            if (cudaSetup is { Error: null }) cudaSetup = null;
         }
     }
 

@@ -51,7 +51,9 @@ public sealed partial class ConfigWindow
             {
                 Wrapped("Proton variables are enabled, but this prefix has no loadable nvcuda.dll bridge; refresh it with an UMU-visible CUDA-capable Proton build", Warning);
             }
-            if (boot.CudaDriverAvailable == true
+            if (boot.CudaDriverAvailable == true && !boot.CudaDeviceAvailable)
+                Wrapped("The CUDA driver did not report a usable device.", Muted);
+            if (boot.CudaDeviceAvailable && boot.CudaSetup is null
                 && manager is not null
                 && !manager.DetectedBackends.Any(candidate => candidate.Type == BackendType.Cuda))
             {

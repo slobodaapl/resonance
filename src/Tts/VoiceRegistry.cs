@@ -481,7 +481,8 @@ public sealed class VoiceRegistry(Database database)
             .Select(model => (Model: model, Casting: catalog.Resolve(new SpeakerCastingEvidence(
                 "metadata", Category: "non_humanoid", ModelCharaId: model))))
             .Where(value => value.Casting.Source == CastingEvidenceSource.Species
-                && catalog.GetDomain(value.Casting.DomainId).SharedVoice)
+                && catalog.GetDomain(value.Casting.DomainId).SharedVoice
+                && !VoiceDataMigrations.OwnsOmegaRecast(value.Model, value.Casting.DomainId))
             .ToDictionary(value => value.Model, value => value.Casting.DomainId);
         // Exact shared model identities supersede automatic casts saved before those models were identified.
         await using (var recast = connection.CreateCommand())
@@ -527,6 +528,11 @@ public sealed class VoiceRegistry(Database database)
                 FROM current p JOIN speaker s ON s.id=p.speaker_id
                 LEFT JOIN speaker_casting c ON c.speaker_id=s.id
                 WHERE p.rank=1 AND p.kind=1
+                  AND NOT EXISTS(SELECT 1 FROM json_each($omegaModels) omega
+                    WHERE omega.value=s.model_chara_id AND COALESCE(s.race,0)=0
+                      AND (s.stable_key LIKE 'npc:%' OR s.stable_key LIKE 'bnpc:%')
+                      AND NOT EXISTS(SELECT 1 FROM voice_data_migration m
+                        WHERE m.migration_id=$omegaMigration AND m.model_hash=$model))
                   AND (COALESCE(p.catalog_version,0)<$catalog
                     OR COALESCE(c.domain_id,p.domain_id) IN (SELECT value FROM json_each($shared))
                     OR (EXISTS(SELECT 1 FROM pool_voice pv WHERE pv.profile_id=p.id)
@@ -548,6 +554,8 @@ public sealed class VoiceRegistry(Database database)
             select.Parameters.AddWithValue("$model", modelHash);
             select.Parameters.AddWithValue("$catalog", catalog.Version);
             select.Parameters.AddWithValue("$shared", sharedDomains);
+            select.Parameters.AddWithValue("$omegaModels", VoiceDataMigrations.OmegaModelsJson);
+            select.Parameters.AddWithValue("$omegaMigration", VoiceDataMigrations.OmegaMigrationId);
             await using var reader = await select.ExecuteReaderAsync(token).ConfigureAwait(false);
             while (await reader.ReadAsync(token).ConfigureAwait(false))
                 outdated.Add((reader.GetInt64(0),reader.GetString(1),reader.GetString(2),reader.GetString(3),

@@ -11,6 +11,38 @@ namespace Resonance.Tests;
 public sealed class LiveQualitySwitchTests
 {
     [Fact]
+    public async Task StartupDownloadsCudaAlongsideModelsAndKeepsSpeechReadyIfCudaFails()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var transport = new FirstInstallHandler();
+        await using var fixture = new Fixture(transport);
+        var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var downloadStarts = 0;
+        fixture.Bootstrap.Ready += _ => ready.SetResult();
+        fixture.Bootstrap.CudaSetupCompleted += _ => finished.SetResult();
+        fixture.Bootstrap.CudaDownloadStarted += () => downloadStarts++;
+
+        fixture.Bootstrap.Start();
+        try
+        {
+            await ready.Task.WaitAsync(TimeSpan.FromSeconds(10), token);
+            Assert.True(transport.ModelRequestedDuringCudaDownload);
+            Assert.Equal(1, downloadStarts);
+            Assert.Equal("base-q4", fixture.Bootstrap.CurrentProgress?.Id);
+            Assert.Equal(0, fixture.Bootstrap.CudaSetup?.Progress?.BytesReceived);
+            Assert.Equal(64, fixture.Bootstrap.CudaSetup?.Progress?.TotalBytes);
+            Assert.True(fixture.Bootstrap.IsReady);
+            Assert.False(finished.Task.IsCompleted);
+        }
+        finally { transport.ReleaseCuda.TrySetResult(); }
+
+        await finished.Task.WaitAsync(TimeSpan.FromSeconds(10), token);
+        Assert.Contains("503", fixture.Bootstrap.CudaSetup?.Error);
+        Assert.True(fixture.Bootstrap.IsReady);
+    }
+
+    [Fact]
     public async Task PreparationKeepsCurrentRuntimeAndActivationNeverOverlapsModelOwners()
     {
         await using var fixture = new Fixture();
@@ -169,7 +201,7 @@ public sealed class LiveQualitySwitchTests
     private sealed class Fixture : IAsyncDisposable
     {
         private readonly string root = Path.Combine(AppContext.BaseDirectory, "quality-switch-" + Guid.NewGuid().ToString("N"));
-        private readonly HttpClient http = new(new MissingAssetHandler());
+        private readonly HttpClient http;
         public readonly Configuration Configuration = new() { KeepBaseModelLoaded = false };
         public readonly LeaseBoundary Lease = new();
         public readonly Queue<QualityPreset> Failures = new();
@@ -190,8 +222,9 @@ public sealed class LiveQualitySwitchTests
         public bool BlockRetirement;
         public bool FailSave;
 
-        public Fixture()
+        public Fixture(FirstInstallHandler? transport = null)
         {
+            http = new(transport ?? (HttpMessageHandler)new MissingAssetHandler());
             var plugin = Path.Combine(root, "plugin");
             Directory.CreateDirectory(Path.Combine(plugin, "assets"));
             Directory.CreateDirectory(Path.Combine(plugin, "reference-extractor"));
@@ -208,10 +241,21 @@ public sealed class LiveQualitySwitchTests
             var executable = OperatingSystem.IsWindows() ? "ReferenceExtractor.exe" : "ReferenceExtractor";
             foreach (var name in new[] { executable, "ReferenceExtractor.dll", "ReferenceExtractor.deps.json", "ReferenceExtractor.runtimeconfig.json" })
                 File.WriteAllText(Path.Combine(plugin, "reference-extractor", name), name);
+            if (transport is not null)
+            {
+                File.Delete(Path.Combine(Models, "base-q4.gguf"));
+                var runtimeDirectory = Path.Combine(root, "data", "runtimes");
+                Directory.CreateDirectory(runtimeDirectory);
+                File.WriteAllText(Path.Combine(runtimeDirectory, "qwen.dll"), "fixture");
+                var pack = new RuntimePackArtifact("cuda", "https://example.invalid/cuda.zip", 64,
+                    new string('a', 64), ["NVIDIA"], ["ggml-cuda.dll"]);
+                File.WriteAllText(Path.Combine(plugin, "assets", "runtimes.json"),
+                    JsonSerializer.Serialize(new RuntimePackManifest(1, QwenNative.AbiVersion, [pack])));
+            }
             Bootstrap = new BootstrapService(plugin, Path.Combine(root, "data"), Configuration, () =>
             {
                 if (FailSave) throw new IOException("save failed");
-            }, Lease, Initialize, http);
+            }, Lease, Initialize, http, http, () => (true, true), _ => { });
             Bootstrap.Ready += runtime => Published.Add(runtime.ModelHash);
         }
 
@@ -303,5 +347,24 @@ public sealed class LiveQualitySwitchTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token) =>
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+    }
+
+    private sealed class FirstInstallHandler : HttpMessageHandler
+    {
+        private bool cudaRequested;
+        public readonly TaskCompletionSource ReleaseCuda = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool ModelRequestedDuringCudaDownload { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+        {
+            if (request.RequestUri!.AbsolutePath == "/cuda.zip")
+            {
+                cudaRequested = true;
+                await ReleaseCuda.Task.WaitAsync(token);
+                return new(HttpStatusCode.ServiceUnavailable);
+            }
+            ModelRequestedDuringCudaDownload = cudaRequested && !ReleaseCuda.Task.IsCompleted;
+            return new(HttpStatusCode.OK) { Content = new StringContent("model fixture base-q4") };
+        }
     }
 }

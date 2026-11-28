@@ -31,7 +31,7 @@ public sealed class RuntimePackManager : IDisposable
     }
 
     public async Task EnsureMatchingAsync(RuntimePackManifest manifest, IReadOnlyList<BackendInfo> detected,
-        CancellationToken token, bool cudaDriverAvailable = true)
+        CancellationToken token, bool cudaDriverAvailable = true, Task? installCudaAfter = null)
     {
         var installDirectory = GetInstallDirectory(manifest);
         foreach (var artifact in manifest.Artifacts)
@@ -41,7 +41,7 @@ public sealed class RuntimePackManager : IDisposable
             if (isCuda && !cudaDriverAvailable) continue;
             if (!isCuda && !detected.Any(backend => artifact.MatchDescriptionContains.Any(value =>
                     backend.Description.Contains(value, StringComparison.OrdinalIgnoreCase)))) continue;
-            await EnsureAsync(installDirectory, artifact, token).ConfigureAwait(false);
+            await EnsureAsync(installDirectory, artifact, token, isCuda ? installCudaAfter : null).ConfigureAwait(false);
         }
     }
 
@@ -88,7 +88,8 @@ public sealed class RuntimePackManager : IDisposable
         return manifest;
     }
 
-    private async Task EnsureAsync(string installDirectory, RuntimePackArtifact artifact, CancellationToken token)
+    private async Task EnsureAsync(string installDirectory, RuntimePackArtifact artifact, CancellationToken token,
+        Task? installAfter = null)
     {
         ValidateArtifact(artifact);
         var marker = Path.Combine(installDirectory, $".runtime-{artifact.Id}-{artifact.Sha256}.installed");
@@ -99,6 +100,7 @@ public sealed class RuntimePackManager : IDisposable
         if (!await HasExpectedHashAsync(archive, artifact, token).ConfigureAwait(false))
             await DownloadAsync(artifact, archive, token).ConfigureAwait(false);
 
+        if (installAfter is not null) await installAfter.WaitAsync(token).ConfigureAwait(false);
         using var zip = ZipFile.OpenRead(archive);
         var entries = zip.Entries.Where(entry => entry.Name.Length > 0).ToArray();
         if (entries.Length != artifact.Files.Count
@@ -158,6 +160,7 @@ public sealed class RuntimePackManager : IDisposable
         {
             File.Delete(partial);
             offset = 0;
+            Progress?.Invoke(new($"runtime-{artifact.Id}", offset, artifact.Size));
         }
         response.EnsureSuccessStatusCode();
         await using (var input = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false))

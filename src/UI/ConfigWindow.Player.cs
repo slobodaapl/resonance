@@ -506,26 +506,51 @@ public sealed partial class ConfigWindow
         var failed = boot.Failure is not null || boot.State == BootstrapState.Failed;
         var downloading = boot.State is BootstrapState.DownloadingRuntime or BootstrapState.DownloadingBase;
         var outputFailure = boot.IsReady && (!output.Available || !output.Healthy);
-        var needsSetup = !boot.IsReady || failed || outputFailure || downloading;
-        if (needsSetup)
+        var speechSetup = !boot.IsReady || failed || outputFailure;
+        var cuda = boot.CudaSetup;
+        if (speechSetup || cuda is not null)
         {
             if (BeginPanel("##Setup", Vector2.Zero, true))
             {
-                Heading(failed ? "Setup needs attention" : outputFailure ? "Voice output unavailable"
-                    : downloading ? "Download in progress" : "Getting ready");
-                Wrapped(boot.Failure?.Message ?? (outputFailure ? output.Diagnostic : SetupDescription(boot.State)),
-                    failed || outputFailure ? Warning : Muted);
-                if (boot.CurrentProgress is { } progress && downloading)
+                if (speechSetup)
                 {
-                    var fraction = progress.TotalBytes <= 0 ? 0f
-                        : Math.Clamp((float)progress.BytesReceived / progress.TotalBytes, 0f, 1f);
-                    var total = progress.TotalBytes <= 0 ? $"{progress.BytesReceived / 1_000_000d:F0} MB downloaded"
-                        : $"{progress.BytesReceived / 1_000_000d:F0} / {progress.TotalBytes / 1_000_000d:F0} MB";
-                    ImGui.ProgressBar(fraction, new Vector2(-1, 20 * Scale), total);
+                    Heading(failed ? "Setup needs attention" : outputFailure ? "Voice output unavailable"
+                        : downloading ? "Download in progress" : "Getting ready");
+                    Wrapped(boot.Failure?.Message ?? (outputFailure ? output.Diagnostic : SetupDescription(boot.State)),
+                        failed || outputFailure ? Warning : Muted);
+                    if (boot.CurrentProgress is { } progress && downloading) DrawDownloadProgress(progress);
+                }
+                if (cuda is not null)
+                {
+                    if (speechSetup) ImGui.Spacing();
+                    if (cuda.Error is { } error)
+                    {
+                        Heading("CUDA setup failed");
+                        Wrapped(error, Warning);
+                    }
+                    else if (cuda.Progress is { } progress && progress.BytesReceived < progress.TotalBytes)
+                    {
+                        Heading("Downloading CUDA support");
+                        DrawDownloadProgress(progress);
+                    }
+                    else
+                    {
+                        Heading("Preparing CUDA support");
+                        Wrapped("A CUDA device was detected. Resonance checks the runtime pack before loading the backend.", Muted);
+                    }
                 }
             }
             EndPanel("##Setup");
         }
+    }
+
+    private void DrawDownloadProgress(AssetProgress progress)
+    {
+        var fraction = progress.TotalBytes <= 0 ? 0f
+            : Math.Clamp((float)progress.BytesReceived / progress.TotalBytes, 0f, 1f);
+        var total = progress.TotalBytes <= 0 ? $"{progress.BytesReceived / 1_000_000d:F0} MB downloaded"
+            : $"{progress.BytesReceived / 1_000_000d:F0} / {progress.TotalBytes / 1_000_000d:F0} MB";
+        ImGui.ProgressBar(fraction, new Vector2(-1, 20 * Scale), total);
     }
 
     private void DrawQualityCards()
@@ -627,8 +652,12 @@ public sealed partial class ConfigWindow
         TextAt(chip + new Vector2(10, 8) * Scale, backendLabel, Accent);
         ImGui.Dummy(new Vector2(chipWidth, ImGui.GetFrameHeight()));
         if (device is not null) DrawMemoryProjection(device);
-        if (manager?.Selection?.IsTemporaryCpuFallback == true)
-            Caption("Temporary CPU fallback. See Debug for details.", Warning);
+        if (manager?.Selection is { IsTemporaryCpuFallback: true } selection)
+        {
+            var preparingCuda = selection.Desired.Type == BackendType.Cuda && bootstrap().CudaSetup is { Error: null };
+            Caption(preparingCuda ? "Using CPU while CUDA setup finishes." : "Temporary CPU fallback. See Debug for details.",
+                preparingCuda ? Muted : Warning);
+        }
     }
 
     private void DrawMemoryProjection(Resonance.Tts.BackendInfo selected)
